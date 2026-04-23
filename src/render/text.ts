@@ -28,7 +28,8 @@ export interface TextRenderOptions {
   color?: boolean;
   /**
    * node_id → set of modes the user has already picked. Marks visited nodes
-   * with ✓ (continue) and/or 🌿 (fork) so users can see where they've been.
+   * with ⭐ (binary, GitHub-style — single emoji regardless of mode) so users
+   * can see where they've been. Mode-level detail lives in the picks log.
    */
   picks?: Map<string, Set<'continue' | 'fork'>>;
   /**
@@ -94,6 +95,13 @@ export function displayWidth(s: string): number {
     else if (cp >= 0xfe30 && cp <= 0xfe4f) w += 2;
     else if (cp >= 0xff00 && cp <= 0xff60) w += 2;
     else if (cp >= 0xffe0 && cp <= 0xffe6) w += 2;
+    // Zero-width joiner + variation selectors (U+FE00–FE0F, U+E0100–E01EF)
+    // contribute 0 cells — they modify the previous glyph in-place. Without
+    // this, ZWJ-emoji sequences (👨‍💻 etc.) over-count width by 2-4 and
+    // throw off column alignment.
+    else if (cp === 0x200d) w += 0;
+    else if (cp >= 0xfe00 && cp <= 0xfe0f) w += 0;
+    else if (cp >= 0xe0100 && cp <= 0xe01ef) w += 0;
     else if (cp >= 0x10000) w += 2; // emoji + most astral chars
     else w += 1;
   }
@@ -339,8 +347,10 @@ function collapseRuns(rows: Row[]): Row[] {
 }
 
 function extractFileKey(label: string): string | null {
-  // Matches "<file>.ext (<Tool>)" and returns "<file>.ext"
-  const m = label.match(/^([^\s]+)\s+\(/);
+  // Matches "<file>.ext (<Tool>)" and returns "<file>.ext".
+  // Tightened to require a real extension dot — the previous `[^\s]+` would
+  // group any "foo (Bar)" formatted user prompt as if it were a file row.
+  const m = label.match(/^([\w.\-/]+\.[A-Za-z0-9]+)\s+\(/);
   return m ? m[1] : null;
 }
 
@@ -356,16 +366,21 @@ function pickMarker(row: Row): string {
 
 function colorizeLabel(row: Row, color: boolean): string {
   if (!color) return row.label;
-  // Starred (picked) rows get yellow regardless of category — matches the
-  // ★ marker color so the starred state pops at a glance.
+  // Compute the natural color FIRST. Then apply bold if starred so picks
+  // emphasize without erasing severity (a starred red dead-end still reads
+  // as red — earlier we lost that signal by force-yellowing every pick).
+  let base: string;
+  if (row.isUserText) base = wrap(true, ANSI.cyan, row.label);
+  else if (row.color === 'red') base = wrap(true, ANSI.red, row.label);
+  else if (row.color === 'yellow') base = wrap(true, ANSI.yellow, row.label);
+  else if (row.color === 'green') base = wrap(true, ANSI.green, row.label);
+  else base = wrap(true, ANSI.dim, row.label);
+
   if (row.pickedContinue || row.pickedFork) {
-    return wrap(true, ANSI.yellow, row.label);
+    // Bold + keep underlying color. ⭐ marker carries the yellow accent.
+    return `\x1b[1m${base}\x1b[22m`;
   }
-  if (row.isUserText) return wrap(true, ANSI.cyan, row.label);
-  if (row.color === 'red') return wrap(true, ANSI.red, row.label);
-  if (row.color === 'yellow') return wrap(true, ANSI.yellow, row.label);
-  if (row.color === 'green') return wrap(true, ANSI.green, row.label);
-  return wrap(true, ANSI.dim, row.label);
+  return base;
 }
 
 function shortId(id: string): string {

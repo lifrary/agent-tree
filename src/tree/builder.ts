@@ -162,7 +162,7 @@ export function buildMindMap(
     }
     // Annotate the phase head with summary metadata so the renderer can show
     // `(7 actions · 3 files · 11min)` next to the user prompt.
-    phaseNode.phase_meta = computePhaseMeta(phase, graph.events);
+    phaseNode.phase_meta = computePhaseMeta(phase);
     rootNode.children.push(phaseNode);
   }
 
@@ -275,17 +275,32 @@ function groupSegmentsIntoPhases(
   if (segments.length === 0) return [];
   const phases: SegmentPhase[] = [];
   let current: SegmentPhase | null = null;
+  // Hold leading-noise segments until the first significant one arrives.
+  // They then become children of phase 1, preserving the data without
+  // promoting noise text into the phase 1 LABEL (the previous behavior
+  // produced an unreadable mega-phase whenever a session started with
+  // hook output / shell paste / skill bootstrap text).
+  let pending: TopicSegment[] = [];
   for (const seg of segments) {
     const segEvents = events.slice(seg.start_index, seg.end_index + 1);
     const userText = firstUserMessageText(segEvents);
     const isSignificant =
       !!userText && !looksLikeSystemNoise(userText) && userText.trim().length >= 10;
-    if (!current || isSignificant) {
-      current = { headSegment: seg, children: [] };
+    if (isSignificant) {
+      current = { headSegment: seg, children: pending };
+      pending = [];
       phases.push(current);
-    } else {
+    } else if (current) {
       current.children.push(seg);
+    } else {
+      pending.push(seg);
     }
+  }
+  // Fallback: if NO significant segment ever appeared, preserve data by
+  // making the first noise segment the head (degenerate session — better
+  // than returning an empty tree).
+  if (pending.length > 0 && !current) {
+    phases.push({ headSegment: pending[0], children: pending.slice(1) });
   }
   return phases;
 }
@@ -295,7 +310,7 @@ function groupSegmentsIntoPhases(
  * touched, and rough wall-clock duration. Always includes action count;
  * file count and duration are dropped when zero so the label stays terse.
  */
-function computePhaseMeta(phase: SegmentPhase, events: RawEvent[]): string {
+function computePhaseMeta(phase: SegmentPhase): string {
   const allSegments = [phase.headSegment, ...phase.children];
   const fileSet = new Set<string>();
   for (const s of allSegments) for (const f of s.dominant_files) fileSet.add(f);
@@ -310,7 +325,6 @@ function computePhaseMeta(phase: SegmentPhase, events: RawEvent[]): string {
     durationStr = min >= 60 ? `${Math.floor(min / 60)}h ${min % 60}m` : `${min}min`;
   }
 
-  void events;
   const parts: string[] = [];
   parts.push(`${actionCount} action${actionCount === 1 ? '' : 's'}`);
   if (fileSet.size > 0) parts.push(`${fileSet.size} file${fileSet.size === 1 ? '' : 's'}`);
@@ -396,14 +410,23 @@ function deriveSegmentLabel(
 }
 
 /**
- * Heuristic — Claude Code injects user-shaped messages with bracket-tag
- * prefixes (`<task-notification>`, `<system-reminder>`, `<command-name>`,
- * etc.) for hook output. Treat any user text starting with `<` as system
- * noise so it doesn't crowd out real user intent in segment labels.
+ * Heuristic — Claude Code injects user-shaped messages for hook output, skill
+ * bootstrap, and shell-paste capture that should not surface as phase labels.
+ * Caught shapes:
+ *   - `<task-notification>`, `<system-reminder>`, `<command-name>` (tag-prefixed)
+ *   - `[SYSTEM …]`
+ *   - `Stop hook feedback: …` / `Stop hook output: …` (stop-hook injected text)
+ *   - `Base directory for this skill: …` (skill bootstrap context)
+ *   - shell prompt paste (`❯ …`, `> …`, `$ …`, `# …`)
  */
 function looksLikeSystemNoise(text: string): boolean {
   const t = text.trim();
-  return t.startsWith('<') || t.startsWith('[SYSTEM');
+  if (!t) return true;
+  if (t.startsWith('<') || t.startsWith('[SYSTEM')) return true;
+  if (t.startsWith('Stop hook ')) return true;
+  if (t.startsWith('Base directory for this skill:')) return true;
+  if (/^[❯>$#] /.test(t)) return true;
+  return false;
 }
 
 /**
@@ -440,7 +463,11 @@ function deriveSessionTitle(
   redactor?: Redactor,
 ): string {
   if (override) return truncate(override, 60);
-  const firstUserText = firstUserMessageText(events);
+  // Skip noise (Stop-hook injections, skill bootstrap, shell pastes) so the
+  // root label reflects actual user intent. Falls back to the first user
+  // message regardless if every turn is noise.
+  const firstSignificant = firstSignificantUserText(events);
+  const firstUserText = firstSignificant ?? firstUserMessageText(events);
   if (firstUserText) {
     const cleaned = shortenPaths(firstUserText.replace(/\s+/g, ' '));
     // Redact BEFORE truncating: a sliced secret fragment is shorter than the
@@ -450,6 +477,29 @@ function deriveSessionTitle(
     return truncate(safe, 60);
   }
   return `Session ${shortId(sessionId)}`;
+}
+
+function firstSignificantUserText(events: RawEvent[]): string | null {
+  for (const e of events) {
+    if (e.type !== 'user') continue;
+    const content = (e.message as { content?: unknown } | undefined)?.content;
+    let text: string | null = null;
+    if (typeof content === 'string' && content.trim().length > 0) {
+      text = content;
+    } else if (Array.isArray(content)) {
+      for (const block of content) {
+        const b = block as { type?: string; text?: string };
+        if (b.type === 'text' && typeof b.text === 'string' && b.text.trim()) {
+          text = b.text;
+          break;
+        }
+      }
+    }
+    if (text && !looksLikeSystemNoise(text) && text.trim().length >= 10) {
+      return text;
+    }
+  }
+  return null;
 }
 
 function firstUserMessageText(events: RawEvent[]): string | null {

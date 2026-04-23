@@ -4,6 +4,99 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Post-rebrand audit hardening (2026-04-23)
+
+The rebrand-and-publish prep audit landed 19 fixes across security, UX,
+packaging, and code quality. Severity-rated below; everything compiles + 112
+tests pass. No public CLI flag changed; npm package version bumped 0.0.1 → 0.1.0
+to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
+
+#### Security
+- **HIGH** — `--dump-json <dir>` rewrote: now threads the redactor over every
+  payload (`raw-events.json` was previously dumping the full pre-redaction
+  JSONL stream), refuses well-known sensitive paths (`/etc`, `/var/log`,
+  `/var/db`, `/bin`, `/sbin`, `/usr/{bin,sbin}`, `/System`,
+  `/Library/Launch{Daemons,Agents}`), creates dir at `0o700`, writes files at
+  `0o600` with `flag: 'wx'` so a second dump into the same dir fails loudly
+  instead of silently clobbering. (`src/cli/modes.ts`)
+- **MAJOR** — MCP `agent_tree_snapshot/diff/unstar` were bypassing
+  `runPipeline` (called `buildMindMap` directly without a redactor) → snapshot
+  clipboard markdown could leak secrets the builder-stage redactor was
+  designed to catch. All 5 MCP tools now route through a shared
+  `pipelineFor(match)` helper. (`src/mcp/server.ts`)
+- **MEDIUM** — Path-traversal-via-git CVE-2022-24765 mitigation: extracted
+  `safeGitCwd` to `src/utils/safe_path.ts` (realpath + `isAbsolute` + null-byte
+  reject); MCP snapshot tool feeds resolved cwd to `getGitContext` instead of
+  the raw JSONL `cwd` field.
+- **MEDIUM** — Verbose-mode aux cache writes (`graph.json`, `segments.json`)
+  now run through `redactDeep` before hitting disk.
+- **MEDIUM** — `picksFileFor` rejects `sessionId` not matching
+  `/^[0-9a-f-]{4,40}$/i` so the picks store never composes a path from
+  untrusted input. `removePicksForNode` now writes via `${file}.tmp-{pid}-{ts}`
+  + `rename` so concurrent `recordPick` writes between the read and rewrite
+  aren't silently lost. (`src/utils/picks.ts`)
+- **MEDIUM** — Added 5 missing redaction patterns: `gcp_oauth_token`
+  (`ya29.…`), `github_pat_finegrained` (`github_pat_…` ≥82 chars),
+  `openai_project_key` (`sk-(proj|svcacct|admin)-…`), `stripe_secret_key`
+  (`sk_(live|test)_…`), `huggingface_token` (`hf_…`). (`src/utils/redact.ts`)
+
+#### UX
+- **MAJOR** — `looksLikeSystemNoise` expanded to catch `Stop hook …` /
+  `Base directory for this skill: …` / shell-prompt prefixes (`❯ `, `> `,
+  `$ `, `# `) — these were leaking into phase headers as full-text labels.
+  (`src/tree/builder.ts`)
+- **MAJOR** — First-noise mega-phase fixed: leading-noise segments are now
+  held until the first significant user prompt arrives, then become its
+  children. Phase 1 always carries a real user-intent label. Fallback
+  preserves data when no significant segment ever appears. (`src/tree/builder.ts`)
+- **MAJOR** — Root label (`mindmap.root.label`) skips noise too — finds the
+  first significant user message rather than the literal first user turn.
+- **MINOR** — ⭐ pick marker no longer overrides label color — bold instead.
+  Starred critical-error rows now stay red; starred user prompts stay cyan.
+  (`src/render/text.ts`)
+
+#### Packaging
+- **MAJOR** — `package.json` `files[]` was shipping only `dist/` + 2 docs;
+  npm install gave you the CLI but no plugin manifest, no MCP wiring, no
+  skill. Added `.claude-plugin/`, `skills/`, `CHANGELOG.md`. Dropped the
+  reference to nonexistent `README.ko.md`. Tarball: 7 → 11 files.
+- **MAJOR** — Version aligned: `package.json` 0.0.1 → 0.1.0 (matches
+  `.claude-plugin/plugin.json`, `src/mcp/server.ts`, `skills/agent-tree/SKILL.md`).
+- **MINOR** — `agent_tree_picks` MCP tool accepts an optional `cwd` arg
+  (currently unused) for symmetry with the other 4 tools.
+- **MINOR** — Structured error response for "ambiguous session prefix" via
+  new `resolveMatchSafe` wrapper — every MCP tool now returns
+  `{isError:true, content}` instead of a JSON-RPC fault.
+
+#### Code quality
+- **MINOR** — Dead config keys removed: `output.{dir,format,open_browser}`,
+  `render.{collapse_depth,node_size_scale,default_branch_mode}`, `BranchMode`
+  type. The HTML renderer was deleted in the post-M5 pivot; these survived as
+  zero-referenced clutter. (`src/config/{schema,loader}.ts`)
+- **MINOR** — Removed redundant `sectionDecisions` (returned
+  `inp.llm.summary`, identical to `sectionContext`). (`src/tree/context_snapshot.ts`)
+- **MINOR** — `treeDepth` now uses `MindMap['root']` directly instead of triple
+  `as unknown as` casts. (`src/cli/pipeline.ts`)
+- **MINOR** — `displayWidth` accounts for ZWJ (U+200D) and variation
+  selectors (U+FE00–FE0F, U+E0100–E01EF) — emoji ZWJ sequences (`👨‍💻`) no
+  longer over-count by 2-4 cells. (`src/render/text.ts`)
+- **MINOR** — `extractFileKey` regex tightened to require a real extension
+  dot — `"foo (Bar)"` user-prompt strings no longer get grouped as if they
+  were file rows.
+- **MINOR** — `computePhaseMeta` dropped unused `events` parameter; updated
+  caller. (`src/tree/builder.ts`)
+- **MINOR** — Misc stale comments / docstrings: `redact.ts` (drop OMCM
+  reference, list current sinks), `picks.ts` (✓/🌿 → ⭐), `tui.ts` (drop
+  `--html`).
+
+#### Tests
+- New `tests/security-hardening.test.ts` — 20 tests covering all of the above:
+  new redact patterns × 6, picks validator + atomic delete × 4, dumpArtifacts
+  redaction + protected paths + `flag:'wx'` + perms × 4, safeGitCwd × 5,
+  `looksLikeSystemNoise` end-to-end through builder × 1.
+- `tests/snapshot-clean.test.ts` updated for the dropped `sectionDecisions`
+  heading.
+
 ### Added — In-session plugin (MCP tools)
 - **`src/mcp/server.ts`** — MCP server using `@modelcontextprotocol/sdk` (stdio transport). Five tools registered:
   - `claude_map_list` — numbered ASCII tree as text

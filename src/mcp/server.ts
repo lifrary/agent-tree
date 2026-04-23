@@ -18,14 +18,11 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
-import { detectSegments } from '../analyzer/segments.js';
 import { loadConfig } from '../config/loader.js';
 import { runPipeline } from '../cli/pipeline.js';
-import { buildGraph } from '../reader/graph.js';
-import { readJsonl } from '../reader/jsonl.js';
 import { lookupSnapshot, renderTextTree } from '../render/text.js';
-import { buildMindMap } from '../tree/builder.js';
 import { createLoggerSync } from '../utils/logger.js';
+import { safeGitCwd } from '../utils/safe_path.js';
 import {
   findLatestSession,
   findLatestSessionInProject,
@@ -62,6 +59,64 @@ async function resolveMatch(
   return findLatestSession();
 }
 
+type ToolErrorResponse = {
+  content: Array<{ type: 'text'; text: string }>;
+  isError: true;
+};
+
+type ResolveResult =
+  | { ok: true; value: SessionMatch }
+  | { ok: false; errorResponse: ToolErrorResponse };
+
+/**
+ * MCP-friendly wrapper that converts the throwing/null variants of
+ * `resolveMatch` into a structured `isError: true` response. Centralizes the
+ * error shape so every tool's "no match" / "ambiguous prefix" path looks the
+ * same to the caller (api-reviewer follow-up).
+ */
+async function resolveMatchSafe(
+  sessionId: string | undefined,
+  cwd: string,
+): Promise<ResolveResult> {
+  try {
+    const match = await resolveMatch(sessionId, cwd);
+    if (!match) {
+      return {
+        ok: false,
+        errorResponse: {
+          content: [{ type: 'text', text: 'No matching session found.' }],
+          isError: true,
+        },
+      };
+    }
+    return { ok: true, value: match };
+  } catch (err) {
+    return {
+      ok: false,
+      errorResponse: {
+        content: [
+          {
+            type: 'text',
+            text: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          },
+        ],
+        isError: true,
+      },
+    };
+  }
+}
+
+async function pipelineFor(match: SessionMatch) {
+  const { config } = await loadConfig({ logger });
+  return runPipeline({
+    match,
+    opts: { llm: false },
+    config,
+    logger,
+    quiet: true,
+  });
+}
+
 const logger = createLoggerSync('warn');
 
 // ---------------------------------------------------------------------------
@@ -94,21 +149,10 @@ server.tool(
       .describe('Case-insensitive keyword filter on labels / time / range.'),
   },
   async ({ sessionId, cwd, phasesOnly, filter }) => {
-    const match = await resolveMatch(sessionId, cwd);
-    if (!match) {
-      return {
-        content: [{ type: 'text', text: 'No matching session found.' }],
-        isError: true,
-      };
-    }
-    const { config } = await loadConfig({ logger });
-    const result = await runPipeline({
-      match,
-      opts: { llm: false },
-      config,
-      logger,
-      quiet: true,
-    });
+    const matched = await resolveMatchSafe(sessionId, cwd);
+    if (!matched.ok) return matched.errorResponse;
+    const match = matched.value;
+    const result = await pipelineFor(match);
     if (result.isEmpty) {
       return { content: [{ type: 'text', text: 'Session is empty.' }] };
     }
@@ -151,20 +195,17 @@ server.tool(
       .describe('continue = preserve decisions; fork = discard subsequent turns.'),
   },
   async ({ sessionId, cwd, nodeId, mode }) => {
-    const match = await resolveMatch(sessionId, cwd);
-    if (!match) {
+    const matched = await resolveMatchSafe(sessionId, cwd);
+    if (!matched.ok) return matched.errorResponse;
+    const match = matched.value;
+    const result = await pipelineFor(match);
+    if (result.isEmpty) {
       return {
-        content: [{ type: 'text', text: 'No matching session found.' }],
+        content: [{ type: 'text', text: 'Session is empty.' }],
         isError: true,
       };
     }
-    const { meta, events } = await readJsonl(match.jsonlPath, { logger });
-    const graph = buildGraph(meta, events, { logger });
-    const segments = detectSegments(graph.events);
-    const mindmap = buildMindMap(graph, segments, {
-      jsonlPath: match.jsonlPath,
-      specVersion: 'v0.3',
-    });
+    const { mindmap, graph } = result;
     const tree = renderTextTree(mindmap);
     const node = lookupSnapshot(mindmap, nodeId, tree);
     if (!node) {
@@ -180,8 +221,8 @@ server.tool(
     }
     const snap =
       mode === 'fork' ? node.context_snapshot_fork : node.context_snapshot_continue;
-    const sourceCwd = graph.events[0]?.cwd || cwd;
-    const gitCtx = await getGitContext(sourceCwd);
+    const sourceCwd = await safeGitCwd(graph.events[0]?.cwd, cwd);
+    const gitCtx = sourceCwd ? await getGitContext(sourceCwd) : { available: false as const, cwd: '' };
     const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
     const fullRefIdx = snap.clipboard_markdown.indexOf('## Full session reference');
     const finalMd = gitMd && fullRefIdx >= 0
@@ -200,7 +241,14 @@ server.tool(
 server.tool(
   'agent_tree_picks',
   'List every recorded pick across every session. Shows session id × node × mode × timestamp.',
-  {},
+  {
+    cwd: z
+      .string()
+      .optional()
+      .describe(
+        'Caller cwd (currently unused; accepted for tool-shape symmetry with the other agent_tree_* tools).',
+      ),
+  },
   async () => {
     const all = await listAllPicks();
     if (all.length === 0) {
@@ -235,20 +283,16 @@ server.tool(
     to: z.string().describe('Second node (number or n_NNN id).'),
   },
   async ({ sessionId, cwd, from, to }) => {
-    const match = await resolveMatch(sessionId, cwd);
-    if (!match) {
+    const matched = await resolveMatchSafe(sessionId, cwd);
+    if (!matched.ok) return matched.errorResponse;
+    const result = await pipelineFor(matched.value);
+    if (result.isEmpty) {
       return {
-        content: [{ type: 'text', text: 'No matching session found.' }],
+        content: [{ type: 'text', text: 'Session is empty.' }],
         isError: true,
       };
     }
-    const { meta, events } = await readJsonl(match.jsonlPath, { logger });
-    const graph = buildGraph(meta, events, { logger });
-    const segments = detectSegments(graph.events);
-    const mindmap = buildMindMap(graph, segments, {
-      jsonlPath: match.jsonlPath,
-      specVersion: 'v0.3',
-    });
+    const { mindmap, segments } = result;
     const tree = renderTextTree(mindmap);
     const a = lookupSnapshot(mindmap, from, tree);
     const b = lookupSnapshot(mindmap, to, tree);
@@ -305,22 +349,18 @@ server.tool(
     nodeId: z.string().describe('Node display number or raw id.'),
   },
   async ({ sessionId, cwd, nodeId }) => {
-    const match = await resolveMatch(sessionId, cwd);
-    if (!match) {
+    const matched = await resolveMatchSafe(sessionId, cwd);
+    if (!matched.ok) return matched.errorResponse;
+    const match = matched.value;
+    const result = await pipelineFor(match);
+    if (result.isEmpty) {
       return {
-        content: [{ type: 'text', text: 'No matching session found.' }],
+        content: [{ type: 'text', text: 'Session is empty.' }],
         isError: true,
       };
     }
-    const { meta, events } = await readJsonl(match.jsonlPath, { logger });
-    const graph = buildGraph(meta, events, { logger });
-    const segments = detectSegments(graph.events);
-    const mindmap = buildMindMap(graph, segments, {
-      jsonlPath: match.jsonlPath,
-      specVersion: 'v0.3',
-    });
-    const tree = renderTextTree(mindmap);
-    const node = lookupSnapshot(mindmap, nodeId, tree);
+    const tree = renderTextTree(result.mindmap);
+    const node = lookupSnapshot(result.mindmap, nodeId, tree);
     if (!node) {
       return {
         content: [

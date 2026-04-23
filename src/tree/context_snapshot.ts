@@ -102,12 +102,6 @@ function renderContinueMarkdown(inp: SnapshotInputs): string {
     sections.push('');
   }
 
-  const decisions = sectionDecisions(inp);
-  if (decisions) {
-    sections.push(decisions);
-    sections.push('');
-  }
-
   const files = sectionFiles(inp, 'this branch');
   if (files) {
     sections.push(files);
@@ -153,12 +147,6 @@ function renderForkMarkdown(inp: SnapshotInputs): string {
   const summarySection = sectionContext(inp, /*forkHeading*/ true);
   if (summarySection) {
     sections.push(summarySection);
-    sections.push('');
-  }
-
-  const decisions = sectionDecisions(inp, /*forkHeading*/ true);
-  if (decisions) {
-    sections.push(decisions);
     sections.push('');
   }
 
@@ -230,15 +218,6 @@ function sectionContext(inp: SnapshotInputs, fork = false): string | null {
     return `${heading}\n${bits.join('. ')}.`;
   }
   return null;
-}
-
-function sectionDecisions(inp: SnapshotInputs, fork = false): string | null {
-  if (!inp.llm) return null; // heuristic mode skips this — we don't have decisions data
-  const heading = fork
-    ? '## What we had decided by this point'
-    : '## Decisions locked in before this point';
-  const safe = inp.redactor ? inp.redactor.apply(inp.llm.summary) : inp.llm.summary;
-  return `${heading}\n- ${safe}`;
 }
 
 function sectionFiles(inp: SnapshotInputs, qualifier: string): string | null {

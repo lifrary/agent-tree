@@ -6,6 +6,18 @@
 
 import { Command } from 'commander';
 
+// Injected by esbuild from package.json at build time. `tsx` source-mode
+// runs (npm run cli) read package.json directly; everything else gets the
+// build-time-baked value.
+declare const __PKG_VERSION__: string | undefined;
+const PKG_VERSION = (() => {
+  try {
+    return __PKG_VERSION__;
+  } catch {
+    return undefined;
+  }
+})() ?? '0.0.0-source';
+
 export interface CliOptions {
   latest?: boolean;
   pick?: boolean;
@@ -44,8 +56,9 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   program
     .name('agent-tree')
     .description(
-      'Visualize a Claude Code session as an interactive mindmap and resume from any node.',
+      'Navigate a Claude Code session as a numbered file-tree in your terminal and resume from any node.',
     )
+    .version(PKG_VERSION, '-V, --version', 'print agent-tree version')
     .argument('[session-id]', 'session UUID or short prefix (e.g. 69c2f35e)')
     .option('--latest', 'use the most recently modified session')
     .option('--pick', 'interactive picker over recent sessions')

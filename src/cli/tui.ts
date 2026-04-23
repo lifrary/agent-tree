@@ -1,9 +1,9 @@
 /**
  * Interactive TUI — readline-based numeric selection over the mindmap.
  *
- * Shown to the user when they run `agent-tree <sid>` in a terminal without
- * `--html` and without `--list`. The skill flow uses `--list` + `--snapshot`
- * directly; this TUI is for direct shell use.
+ * Shown to the user when they run `agent-tree <sid>` in a terminal (default
+ * on TTY stdout) without `--list`. The skill / MCP flow uses `--list` +
+ * `--snapshot` directly; this TUI is for direct shell use.
  */
 
 import { createInterface } from 'node:readline/promises';

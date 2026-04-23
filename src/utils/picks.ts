@@ -6,8 +6,20 @@
  * options still surfaces past picks). Append-only JSONL — each line is one
  * pick `{node_id, mode, ts}`.
  *
- * The list / TUI renderers read this map to mark visited nodes with ✓
- * (continue) or 🌿 (fork), giving the user "been there" awareness.
+ * The list / TUI renderers read this map to mark visited nodes with ⭐
+ * (binary, GitHub-style — single emoji regardless of mode), giving the user
+ * "been there" awareness.
+ *
+ * Mutation safety:
+ *   - `recordPick` uses `appendFile`, which on POSIX is atomic for writes
+ *     under PIPE_BUF (typically 4096 bytes). One pick line is ~120 bytes
+ *     so concurrent CLI invocations won't interleave bytes mid-line. This
+ *     is the canonical "append-only log" pattern.
+ *   - `removePicksForNode` writes via tmp-file + atomic `rename` to avoid
+ *     losing concurrent `recordPick` writes between read and rewrite.
+ *   - Path-traversal hardening: `picksFileFor` rejects any sessionId not
+ *     matching `/^[0-9a-f-]{4,40}$/i` — defense in depth on top of the
+ *     `locateSession` validator that already gates the same regex upstream.
  */
 
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
@@ -29,7 +41,15 @@ export interface PickIndex {
   total: number;
 }
 
+// Defense-in-depth: locateSession already validates against /^[0-9a-f-]+$/i,
+// but enforce here too so the picks store never composes a path from
+// untrusted input (path-traversal hardening per security audit MEDIUM-5).
+const SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
+
 function picksFileFor(sessionId: string, root = PICKS_ROOT): string {
+  if (!SESSION_ID_RE.test(sessionId)) {
+    throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
+  }
   return join(root, `${sessionId}.jsonl`);
 }
 
@@ -132,8 +152,17 @@ export async function removePicksForNode(
     }
   }
   if (removed === 0) return 0;
-  const { writeFile } = await import('node:fs/promises');
-  await writeFile(file, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf8');
+  // Atomic-ish: write to a sibling tmp then rename. Concurrent recordPick
+  // writes to `file` between the read and rename will be lost (acceptable
+  // for a navigation-history store; documented in module header).
+  const { writeFile, rename } = await import('node:fs/promises');
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  await writeFile(
+    tmp,
+    kept.length > 0 ? kept.join('\n') + '\n' : '',
+    { encoding: 'utf8', mode: 0o600 },
+  );
+  await rename(tmp, file);
   return removed;
 }
 

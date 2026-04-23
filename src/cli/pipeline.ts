@@ -18,7 +18,7 @@ import { readJsonl } from '../reader/jsonl.js';
 import { buildMindMap } from '../tree/builder.js';
 import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
-import { defaultRedactor, type Redactor } from '../utils/redact.js';
+import { defaultRedactor, redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
 
 import type { ClaudeMapConfig } from '../config/schema.js';
@@ -188,18 +188,21 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   // SPEC §18.3 — verbose mode mirrors intermediate artifacts to the per-input
   // cache dir so users can poke at them without re-running the pipeline.
   if (opts.verbose || opts.trace) {
+    // mindmap is already redacted (buildMindMap consumed `redactor`); raw
+    // graph + segments are not, so redact them at write-time so verbose-mode
+    // disk artifacts honor the SPEC §7.6 sink contract.
     await Promise.all([
       writeJsonCache(cacheHash, 'segments.json', {
         session_id: graph.meta.sessionId,
         count: segments.length,
-        segments,
+        segments: redactDeep(segments, redactor),
       }).catch((err) =>
         logger.warn('aux cache write failed (segments)', { error: String(err) }),
       ),
       writeJsonCache(cacheHash, 'tree.json', mindmap).catch((err) =>
         logger.warn('aux cache write failed (tree)', { error: String(err) }),
       ),
-      writeJsonCache(cacheHash, 'graph.json', graphToDump(graph)).catch((err) =>
+      writeJsonCache(cacheHash, 'graph.json', redactDeep(graphToDump(graph), redactor)).catch((err) =>
         logger.warn('aux cache write failed (graph)', { error: String(err) }),
       ),
     ]);
@@ -252,16 +255,16 @@ function pl(n: number, word: string): string {
 }
 
 function treeDepth(mindmap: MindMap): number {
-  const walk = (n: { children: { children: unknown[] }[] }, d: number): number => {
+  const walk = (n: MindMap['root'], d: number): number => {
     if (n.children.length === 0) return d;
     let best = d;
-    for (const c of n.children as { children: unknown[] }[]) {
-      const cd = walk(c as { children: { children: unknown[] }[] }, d + 1);
+    for (const c of n.children) {
+      const cd = walk(c, d + 1);
       if (cd > best) best = cd;
     }
     return best;
   };
-  return walk(mindmap.root as unknown as { children: { children: unknown[] }[] }, 0);
+  return walk(mindmap.root, 0);
 }
 
 function emptySnapshot(

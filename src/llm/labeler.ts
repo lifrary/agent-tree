@@ -179,8 +179,16 @@ function applyResult(
   stats.cache_creation_tokens += res.usage.cacheCreationTokens;
 
   const { label } = res;
-  entry.node.label = label.label;
-  entry.node.summary = label.summary;
+  // Defense-in-depth: the LLM was given a redacted userMessage so it
+  // shouldn't *see* secrets to echo, but if it ever hallucinates a
+  // key-shaped string (or the redactor missed an entry we add later) the
+  // raw model output would land directly in the tree label. Re-apply the
+  // redactor at the assignment chokepoint so the snapshot factory + render
+  // layer never see un-redacted LLM output.
+  const safeLabel = redactor ? redactor.apply(label.label) : label.label;
+  const safeSummary = redactor ? redactor.apply(label.summary) : label.summary;
+  entry.node.label = safeLabel;
+  entry.node.summary = safeSummary;
   entry.node.type = label.type;
   entry.node.color = label.color;
   entry.node.shape = label.type === 'decision' ? 'diamond' : entry.node.shape;
@@ -192,6 +200,11 @@ function applyResult(
   // Rebuild snapshots from scratch with LLM enrichment. Cleaner than the old
   // regex-replace dance — the snapshot factory handles both heuristic and
   // enriched cases, and we never have stale "M3 placeholder" strings linger.
+  // Pre-redact next_steps too so the snapshot factory doesn't have to know
+  // which fields are LLM-derived vs user-text.
+  const safeNextSteps = redactor
+    ? label.next_steps.map((s) => redactor.apply(s))
+    : label.next_steps;
   const snapInput = {
     sessionId: graph.meta.sessionId,
     jsonlPath,
@@ -201,9 +214,9 @@ function applyResult(
     generatedAt: new Date().toISOString(),
     events: entry.events,
     llm: {
-      label: label.label,
-      summary: label.summary,
-      next_steps: label.next_steps,
+      label: safeLabel,
+      summary: safeSummary,
+      next_steps: safeNextSteps,
     },
     redactor,
   };

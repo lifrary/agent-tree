@@ -125,8 +125,14 @@ describe('LLM-enriched snapshot', () => {
 
     let foundEnriched = false;
     walkMarkdown(mindmap.root, (md) => {
+      // The LLM enrichment must surface in the snapshot:
+      //   - the model's `summary` lands in the "Context up to this point" block
+      //   - each `next_steps` entry lands in the "Suggested continuation" block
+      // ("Decisions locked in" was dropped in the audit pass — its body was
+      // identical to "Context up to this point" so it added no info; the test
+      // used to assert both for redundancy.)
       if (
-        md.includes('## Decisions locked in before this point') &&
+        md.includes('## Context up to this point') &&
         md.includes('## Suggested continuation') &&
         md.includes('- Refactor X') &&
         md.includes('Mocked summary of segment work.')

@@ -1,9 +1,16 @@
 /**
  * Secret redaction — SPEC §7.6 / §19.2
  *
- * Applied before text leaves the machine (LLM request body) and before it
- * reaches the final HTML (`window.OMCM` bundle). Regexes are kept broad but
- * conservative: better to over-redact than leak.
+ * Applied at every sink that emits user-derived text:
+ *   - LLM request body (before SDK call)
+ *   - segment labels in `tree/builder.ts` (before truncation — earlier we had
+ *     a regression where 60-char truncation sliced an API key below the
+ *     20-char regex floor)
+ *   - snapshot markdown returned by CLI/MCP (clipboard / stdout)
+ *   - `--dump-json` artifacts on disk
+ *   - verbose-mode aux cache (`graph.json`, `segments.json`)
+ *
+ * Regexes are kept broad but conservative: better to over-redact than leak.
  *
  * - Default ON via `defaultRedactor()`.
  * - `--redact-strict` adds PII patterns (email, phone, card, SSN/RRN).
@@ -56,6 +63,33 @@ const DEFAULT_PATTERNS: RedactPattern[] = [
     name: 'gcp_api_key',
     regex: /\bAIza[0-9A-Za-z_-]{35}\b/g,
     replacement: 'AIza***REDACTED***',
+  },
+  {
+    name: 'gcp_oauth_token',
+    regex: /\bya29\.[0-9A-Za-z_-]{20,}/g,
+    replacement: 'ya29.***REDACTED***',
+  },
+  {
+    // GitHub fine-grained PAT: `github_pat_<22 alnum>_<59 alnum_>` (≥82 total)
+    name: 'github_pat_finegrained',
+    regex: /\bgithub_pat_[A-Za-z0-9_]{82,}/g,
+    replacement: 'github_pat_***REDACTED***',
+  },
+  {
+    // OpenAI project / service-account / admin keys (added 2024)
+    name: 'openai_project_key',
+    regex: /\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/g,
+    replacement: 'sk-***REDACTED***',
+  },
+  {
+    name: 'stripe_secret_key',
+    regex: /\bsk_(?:live|test)_[A-Za-z0-9]{24,}/g,
+    replacement: 'sk_***REDACTED***',
+  },
+  {
+    name: 'huggingface_token',
+    regex: /\bhf_[A-Za-z0-9]{30,}\b/g,
+    replacement: 'hf_***REDACTED***',
   },
   {
     name: 'private_key_block',

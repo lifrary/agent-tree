@@ -1,9 +1,11 @@
 import { build } from 'esbuild';
-import { chmod, mkdir } from 'node:fs/promises';
+import { chmod, mkdir, readFile } from 'node:fs/promises';
 
 const outfile = 'dist/cli.js';
 
 await mkdir('dist', { recursive: true });
+
+const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 
 const sharedBuild = {
   bundle: true,
@@ -18,6 +20,12 @@ const sharedBuild = {
       "import { createRequire as __createRequire } from 'node:module';",
       'const require = __createRequire(import.meta.url);',
     ].join('\n'),
+  },
+  define: {
+    // Build-time version injection — `agent-tree --version` reads this.
+    // Avoids runtime require('../package.json') path-resolution differences
+    // between `tsx src/cli.ts` (source) and `node dist/cli.js` (bundle).
+    __PKG_VERSION__: JSON.stringify(pkg.version),
   },
   sourcemap: true,
   external: ['@anthropic-ai/sdk'],

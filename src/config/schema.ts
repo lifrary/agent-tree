@@ -6,10 +6,13 @@
  * > DEFAULT_CONFIG and validates the result against this schema before use.
  */
 
-export type BranchMode = 'popup' | 'continue' | 'fork';
 export type SidechainHandling = 'include' | 'flatten' | 'drop';
 export type LangMode = 'auto' | 'ko' | 'en';
 export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
+
+// NOTE: the historical `output.*` and `render.{collapse_depth,node_size_scale,
+// default_branch_mode}` keys were removed when the HTML renderer was deleted.
+// `render.lang` survives for LLM prompt locale selection.
 
 export interface ClaudeMapConfig {
   llm: {
@@ -21,20 +24,12 @@ export interface ClaudeMapConfig {
     cache: boolean;
     parallel: number;
   };
-  output: {
-    dir: string; // supports `{project}` token → cwd
-    format: 'html';
-    open_browser: boolean;
-  };
   redaction: {
     enabled: boolean;
     strict: boolean;
     extra_patterns: string[];
   };
   render: {
-    collapse_depth: number;
-    node_size_scale: boolean;
-    default_branch_mode: BranchMode;
     lang: LangMode;
   };
   analyzer: {
@@ -64,20 +59,12 @@ export const DEFAULT_CONFIG: ClaudeMapConfig = {
     cache: true,
     parallel: 3,
   },
-  output: {
-    dir: '{project}/.claude-sessions/mindmap',
-    format: 'html',
-    open_browser: true,
-  },
   redaction: {
     enabled: true,
     strict: false,
     extra_patterns: [],
   },
   render: {
-    collapse_depth: 3,
-    node_size_scale: true,
-    default_branch_mode: 'popup',
     lang: 'auto',
   },
   analyzer: {

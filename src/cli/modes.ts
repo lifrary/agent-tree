@@ -10,7 +10,7 @@ import { graphToDump } from '../reader/graph.js';
 import { lookupSnapshot, renderTextTree } from '../render/text.js';
 import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
-import type { Redactor } from '../utils/redact.js';
+import { redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
 
 import type { CliOptions } from './options.js';
@@ -251,39 +251,79 @@ export async function runTuiMode(ctx: ModeContext): Promise<number> {
 // --dump-json — debug artifact dump (independent of output mode)
 // ---------------------------------------------------------------------------
 
+// Reject paths that would land in well-known sensitive trees. Defense-only —
+// the running user can still write under their own home; this just stops
+// accidental --dump-json /etc style mishaps.
+//
+// NOTE: deliberately NOT blocking `/var` or `/usr` wholesale — macOS uses
+// `/var/folders/...` as the tmpdir, and `/usr/local/...` is a normal user
+// install path. Block only the directly-dangerous sub-trees.
+const PROTECTED_DUMP_PREFIXES = [
+  '/etc',
+  '/var/log',
+  '/var/db',
+  '/bin',
+  '/sbin',
+  '/usr/bin',
+  '/usr/sbin',
+  '/System',
+  '/Library/LaunchDaemons',
+  '/Library/LaunchAgents',
+];
+
 export async function dumpArtifacts(
   dir: string,
   graph: SessionGraph,
   segments: TopicSegment[],
   mindmap: MindMap,
+  redactor: Redactor,
 ): Promise<void> {
   const outDir = resolve(dir);
-  await mkdir(outDir, { recursive: true });
+  if (
+    PROTECTED_DUMP_PREFIXES.some(
+      (p) => outDir === p || outDir.startsWith(p + '/'),
+    )
+  ) {
+    throw new Error(`refusing to dump into protected path: ${outDir}`);
+  }
+  await mkdir(outDir, { recursive: true, mode: 0o700 });
 
+  // Redact every payload before it touches disk. Skipping any sink here
+  // would re-create the SPEC §7.6 leak that the builder-stage redactor was
+  // designed to close.
+  const safeMeta = redactDeep(graph.meta, redactor);
+  const safeEvents = redactDeep(graph.events, redactor);
+  const safeGraph = redactDeep(graphToDump(graph), redactor);
+  const safeSegments = redactDeep(segments, redactor);
+  const safeTree = redactDeep(mindmap, redactor);
+
+  // `flag: 'wx'` makes overwrites fail loudly so we don't silently clobber
+  // a sibling project's dump dir; `mode: 0o600` keeps cache off other users.
+  const opts = { encoding: 'utf8' as const, mode: 0o600, flag: 'wx' as const };
   await Promise.all([
     writeFile(
       resolve(outDir, 'raw-events.json'),
-      JSON.stringify({ meta: graph.meta, events: graph.events }, null, 2),
-      'utf8',
+      JSON.stringify({ meta: safeMeta, events: safeEvents }, null, 2),
+      opts,
     ),
     writeFile(
       resolve(outDir, 'graph.json'),
-      JSON.stringify(graphToDump(graph), null, 2),
-      'utf8',
+      JSON.stringify(safeGraph, null, 2),
+      opts,
     ),
     writeFile(
       resolve(outDir, 'segments.json'),
       JSON.stringify(
-        { session_id: graph.meta.sessionId, count: segments.length, segments },
+        { session_id: graph.meta.sessionId, count: safeSegments.length, segments: safeSegments },
         null,
         2,
       ),
-      'utf8',
+      opts,
     ),
     writeFile(
       resolve(outDir, 'tree.json'),
-      JSON.stringify(mindmap, null, 2),
-      'utf8',
+      JSON.stringify(safeTree, null, 2),
+      opts,
     ),
   ]);
 }

@@ -58,12 +58,6 @@ function envToPartial(env: NodeJS.ProcessEnv): Partial<ClaudeMapConfig> {
     out.redaction = redaction as ClaudeMapConfig['redaction'];
   }
 
-  const output: Partial<ClaudeMapConfig['output']> = {};
-  if (env.AGENT_TREE_OUT) output.dir = env.AGENT_TREE_OUT;
-  if (Object.keys(output).length > 0) {
-    out.output = output as ClaudeMapConfig['output'];
-  }
-
   const render: Partial<ClaudeMapConfig['render']> = {};
   if (env.AGENT_TREE_LANG === 'ko' || env.AGENT_TREE_LANG === 'en' || env.AGENT_TREE_LANG === 'auto') {
     render.lang = env.AGENT_TREE_LANG;

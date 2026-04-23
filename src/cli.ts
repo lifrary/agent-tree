@@ -76,7 +76,13 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   }
 
   if (opts.dumpJson) {
-    await dumpArtifacts(opts.dumpJson, result.graph, result.segments, result.mindmap);
+    await dumpArtifacts(
+      opts.dumpJson,
+      result.graph,
+      result.segments,
+      result.mindmap,
+      result.redactor,
+    );
     logger.info(`dumped JSON artifacts`, { dir: resolve(opts.dumpJson) });
   }
 
