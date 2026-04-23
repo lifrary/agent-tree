@@ -1,0 +1,63 @@
+# ──────────────── Node / TypeScript ────────────────
+node_modules/
+pnpm-lock.yaml
+*.tsbuildinfo
+dist/
+build/
+
+# ──────────────── Logs ────────────────
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ──────────────── Environment ────────────────
+.env
+.env.local
+.env.*.local
+
+# ──────────────── OS ────────────────
+.DS_Store
+Thumbs.db
+
+# ──────────────── Editor ────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# ──────────────── Test / Coverage ────────────────
+coverage/
+.nyc_output/
+
+# ──────────────── Caches ────────────────
+.cache/
+.turbo/
+
+# ──────────────── Claude Code ecosystem (never committed) ────────────────
+CLAUDE.md
+.claude/
+.claude-sessions/
+.mcp.json
+.claude.json
+.claude.json.*
+settings.local.json
+# But DO commit our plugin manifest — agent-tree ships an MCP server
+!.claude-plugin/.mcp.json
+
+# ──────────────── OMC / oh-my-claudecode ────────────────
+.omc/
+.ralph/
+AGENTS.md
+
+# ──────────────── oh-my-codex ────────────────
+.omx/
+
+# ──────────────── Obsidian ────────────────
+.obsidian/
+
+# ──────────────── Project scratch ────────────────
+.tmp/
+.scratch/

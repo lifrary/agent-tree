@@ -1,0 +1,169 @@
+/**
+ * Pick history — track which nodes the user has already snapshotted.
+ *
+ * Recorded at `~/.cache/agent-tree/picks/<session-id>.jsonl` (session-scoped,
+ * not config-scoped, so re-running with different `--no-llm` / sidechain
+ * options still surfaces past picks). Append-only JSONL — each line is one
+ * pick `{node_id, mode, ts}`.
+ *
+ * The list / TUI renderers read this map to mark visited nodes with ✓
+ * (continue) or 🌿 (fork), giving the user "been there" awareness.
+ */
+
+import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import { homedir } from 'node:os';
+import { dirname, join } from 'node:path';
+
+const PICKS_ROOT = join(homedir(), '.cache', 'agent-tree', 'picks');
+
+export interface Pick {
+  node_id: string;
+  mode: 'continue' | 'fork';
+  ts: string; // ISO-8601
+}
+
+export interface PickIndex {
+  /** node_id → set of modes ever picked */
+  modesByNode: Map<string, Set<'continue' | 'fork'>>;
+  /** total picks recorded */
+  total: number;
+}
+
+function picksFileFor(sessionId: string, root = PICKS_ROOT): string {
+  return join(root, `${sessionId}.jsonl`);
+}
+
+export async function recordPick(
+  sessionId: string,
+  nodeId: string,
+  mode: 'continue' | 'fork',
+  opts: { root?: string } = {},
+): Promise<void> {
+  const file = picksFileFor(sessionId, opts.root);
+  await mkdir(dirname(file), { recursive: true, mode: 0o700 });
+  const entry: Pick = { node_id: nodeId, mode, ts: new Date().toISOString() };
+  await appendFile(file, JSON.stringify(entry) + '\n', 'utf8');
+}
+
+export interface SessionPicks {
+  sessionId: string;
+  picks: Pick[];
+}
+
+/**
+ * List every recorded pick across every session, newest first. Used by
+ * `agent-tree --picks` so users can review their navigation history.
+ */
+export async function listAllPicks(
+  opts: { root?: string } = {},
+): Promise<SessionPicks[]> {
+  const root = opts.root ?? PICKS_ROOT;
+  const { readdir } = await import('node:fs/promises');
+  let files: string[];
+  try {
+    files = await readdir(root);
+  } catch {
+    return [];
+  }
+  const out: SessionPicks[] = [];
+  for (const fname of files) {
+    if (!fname.endsWith('.jsonl')) continue;
+    const sessionId = fname.slice(0, -'.jsonl'.length);
+    const filePath = join(root, fname);
+    let raw: string;
+    try {
+      raw = await readFile(filePath, 'utf8');
+    } catch {
+      continue;
+    }
+    const picks: Pick[] = [];
+    for (const line of raw.split('\n')) {
+      const trimmed = line.trim();
+      if (!trimmed) continue;
+      try {
+        const parsed = JSON.parse(trimmed) as Pick;
+        if (parsed.node_id) picks.push(parsed);
+      } catch {
+        // ignore
+      }
+    }
+    if (picks.length > 0) out.push({ sessionId, picks });
+  }
+  // Newest session activity first (compare last pick timestamp)
+  out.sort((a, b) => {
+    const ta = a.picks[a.picks.length - 1]?.ts ?? '';
+    const tb = b.picks[b.picks.length - 1]?.ts ?? '';
+    return tb.localeCompare(ta);
+  });
+  return out;
+}
+
+/**
+ * Remove every pick entry for a given (session, node_id) pair. Returns the
+ * number of entries removed. Atomic-ish via rewrite-then-rename.
+ */
+export async function removePicksForNode(
+  sessionId: string,
+  nodeId: string,
+  opts: { root?: string } = {},
+): Promise<number> {
+  const file = picksFileFor(sessionId, opts.root);
+  let raw: string;
+  try {
+    raw = await readFile(file, 'utf8');
+  } catch {
+    return 0;
+  }
+  const lines = raw.split('\n');
+  let removed = 0;
+  const kept: string[] = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Pick;
+      if (parsed.node_id === nodeId) {
+        removed += 1;
+        continue;
+      }
+      kept.push(trimmed);
+    } catch {
+      kept.push(trimmed);
+    }
+  }
+  if (removed === 0) return 0;
+  const { writeFile } = await import('node:fs/promises');
+  await writeFile(file, kept.length > 0 ? kept.join('\n') + '\n' : '', 'utf8');
+  return removed;
+}
+
+export async function readPicks(
+  sessionId: string,
+  opts: { root?: string } = {},
+): Promise<PickIndex> {
+  const file = picksFileFor(sessionId, opts.root);
+  const index: PickIndex = { modesByNode: new Map(), total: 0 };
+  let raw: string;
+  try {
+    raw = await readFile(file, 'utf8');
+  } catch {
+    return index;
+  }
+  for (const line of raw.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    try {
+      const parsed = JSON.parse(trimmed) as Pick;
+      if (!parsed.node_id || (parsed.mode !== 'continue' && parsed.mode !== 'fork')) {
+        continue;
+      }
+      const set = index.modesByNode.get(parsed.node_id) ?? new Set();
+      set.add(parsed.mode);
+      index.modesByNode.set(parsed.node_id, set);
+      index.total += 1;
+    } catch {
+      // ignore malformed entries
+    }
+  }
+  return index;
+}

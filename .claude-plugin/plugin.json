@@ -1,0 +1,22 @@
+{
+  "name": "agent-tree",
+  "version": "0.1.0",
+  "description": "Visualize a Claude Code session as a numbered tree in your terminal/chat and resume from any node. Terminal-only — no browser.",
+  "author": {
+    "name": "Seungwoo Lee"
+  },
+  "repository": "https://github.com/lifrary/agent-tree",
+  "homepage": "https://github.com/lifrary/agent-tree",
+  "license": "MIT",
+  "keywords": [
+    "claude",
+    "claude-code",
+    "session",
+    "mindmap",
+    "resume",
+    "fork",
+    "navigation"
+  ],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json"
+}
