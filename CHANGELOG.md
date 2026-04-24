@@ -4,6 +4,30 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Security: token-class boundary audit (2026-04-24)
+
+Two built-in redaction patterns had a latent class/`\b` bug that let
+trailing-`-` tokens leak. `\b` requires a word↔non-word transition, but
+classes like `[A-Za-z0-9_-]` include both word and non-word characters.
+When a token happened to end on `-` (non-word) and the next char was also
+non-word (space / `.` / EOF), `\b` couldn't match at the seam:
+
+- **`jwt`** — base64url signature can legally end in `-` or `_` (RFC 4648
+  §5). With fixed `{10,}` minimums the engine either truncated the match
+  one byte short (leaking the trailing dash) or couldn't match at all
+  when the signature ended in multiple dashes.
+- **`gcp_api_key`** — fixed-length `{35}` so no length backtracking. A
+  trailing `-` on the key made `\b` fail and the entire key leaked.
+
+Fix: replace trailing `\b` with a negative lookahead `(?![A-Za-z0-9_-])`
+against the same class, which terminates correctly regardless of
+word-ness at the seam (including at EOF).
+
+Audited all 14 `DEFAULT_PATTERNS` + 5 `STRICT_EXTRA` entries for the same
+shape; `hf_token`, `bearer_token`, `aws_*`, `stripe_*`, `github_pat_*`,
+and `npm_token` are already safe by construction and are now locked in
+via `tests/security-hardening.test.ts` "token class-boundary audit" block.
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)

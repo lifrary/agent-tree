@@ -112,6 +112,81 @@ describe('redactor — new patterns added in audit pass', () => {
 });
 
 // ---------------------------------------------------------------------------
+// 1b. Token class-boundary audit — trailing `-`/`_` characters
+//
+// Patterns whose character class contains `-` and use a trailing `\b` to
+// terminate had a latent bug: `\b` requires a word↔non-word transition, but
+// a token ending on `-` (non-word) followed by space / `.` / EOF (non-word)
+// has no such transition — `\b` fails to match, and the token either leaks
+// partially or not at all. Fixed via negative-lookahead `(?![class])`.
+// This block pins the fix and also locks in the "already safe" status of
+// audited-but-untouched patterns (hf_token has no `-` in class;
+// bearer_token has no trailing anchor).
+// ---------------------------------------------------------------------------
+
+describe('token class-boundary audit — trailing `-`/`_` hardening', () => {
+  const r = defaultRedactor();
+
+  it('redacts GCP API key whose 35th char is `-` (fixed-length {35} + \\b bug)', () => {
+    // 35 chars after `AIza`; last one is `-`. Old regex `/\bAIza[0-9A-Za-z_-]{35}\b/g`
+    // could not shorten the match (fixed length), so `\b` failure on the
+    // trailing `-` left the whole key unredacted.
+    const key = 'AIza' + 'x'.repeat(34) + '-';
+    expect(key.length).toBe(4 + 35);
+    const text = `key=${key} done`;
+    const out = r.apply(text);
+    expect(out).not.toContain(key);
+    expect(out).toContain('AIza***REDACTED***');
+  });
+
+  it('redacts GCP API key whose 35th char is `_`', () => {
+    const key = 'AIza' + 'y'.repeat(34) + '_';
+    // `_` IS a word char, so the old regex caught this one — but we want the
+    // new lookahead to keep behaving identically (no regression).
+    expect(r.apply(`auth=${key}.`)).toContain('AIza***REDACTED***');
+  });
+
+  it('redacts JWT whose signature ends in `--`', () => {
+    // base64url signature can end with `-`. With multiple trailing `-`s the
+    // old regex could not back off within `{10,}` to land on a word char
+    // (would undershoot the minimum) — the entire JWT would leak.
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.' +
+      'eyJzdWIiOiIxMjM0NSJ9.' +
+      'abcdefghij--';
+    const text = `auth: ${jwt} next`;
+    const out = r.apply(text);
+    expect(out).not.toContain('abcdefghij--');
+    expect(out).toContain('eyJ***REDACTED.JWT***');
+  });
+
+  it('redacts JWT at end-of-input (no trailing char at all)', () => {
+    // Lookahead `(?![class])` is satisfied at EOF (no next char).
+    const jwt =
+      'eyJhbGciOiJIUzI1NiJ9.' +
+      'eyJzdWIiOiIxMjM0NSJ9.' +
+      'SlGGjaSU_SigFin';
+    expect(r.apply(jwt)).toBe('eyJ***REDACTED.JWT***');
+  });
+
+  it('audit: hf_token class has no `-`, so trailing \\b is already safe', () => {
+    // Lock in the audit finding — `hf_[A-Za-z0-9]` has no `-`, so `\b` works.
+    const token = 'hf_' + 'Z'.repeat(35);
+    expect(r.apply(`auth=${token}`)).toContain('hf_***REDACTED***');
+  });
+
+  it('audit: bearer_token has no trailing anchor, so greedy match eats the seam', () => {
+    // Bearer pattern uses `{20,}` unbounded-greedy with no end anchor — the
+    // trailing-class-`\b` bug can't apply. Whatever characters the class
+    // accepts get eaten.
+    const payload = 'X'.repeat(30) + '-._-';
+    const out = r.apply(`Bearer ${payload} done`);
+    expect(out).toContain('Bearer ***REDACTED***');
+    expect(out).not.toContain(payload);
+  });
+});
+
+// ---------------------------------------------------------------------------
 // 2. picksFileFor validator + atomic removePicksForNode
 // ---------------------------------------------------------------------------
 

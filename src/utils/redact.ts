@@ -60,8 +60,15 @@ const DEFAULT_PATTERNS: RedactPattern[] = [
     replacement: 'ASIA***REDACTED***',
   },
   {
+    // 35-char alphanumeric + `_-` suffix. `\b` at the end would fail when the
+    // key happens to end in `-` (a non-word char), because the next char is
+    // also typically non-word (space/`.`/EOF) and `\b` needs a word↔non-word
+    // transition. `{35}` is fixed-length, so the engine can't shorten the
+    // match to dodge the boundary — the whole key would leak unredacted.
+    // Use a negative lookahead against the same class to terminate correctly
+    // regardless of word-ness at the seam.
     name: 'gcp_api_key',
-    regex: /\bAIza[0-9A-Za-z_-]{35}\b/g,
+    regex: /\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g,
     replacement: 'AIza***REDACTED***',
   },
   {
@@ -105,8 +112,16 @@ const DEFAULT_PATTERNS: RedactPattern[] = [
     replacement: '-----REDACTED PRIVATE KEY-----',
   },
   {
+    // base64url (RFC 4648 §5) alphabet is `[A-Za-z0-9_-]` — signature portion
+    // can legally end in `-` or `_`. Trailing `\b` required a word↔non-word
+    // transition and would fail whenever the signature happened to end on a
+    // `-`/`_` with non-word context after (space / EOF / punctuation). The
+    // engine could sometimes backtrack within the `{10,}` to land on a word
+    // char, leaking the trailing byte; when the signature was ≤10 chars of
+    // trailing `-`s it couldn't match at all. Replace with a negative
+    // lookahead against the same class.
     name: 'jwt',
-    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
     replacement: 'eyJ***REDACTED.JWT***',
   },
 ];
