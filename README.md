@@ -2,9 +2,9 @@
 
 > Navigate any Claude Code session as a numbered file-tree in your terminal — and resume from any node.
 
+[![npm version](https://img.shields.io/npm/v/@seungwoolee/agent-tree.svg?color=cb3837&label=npm)](https://www.npmjs.com/package/@seungwoolee/agent-tree)
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
-[![npm](https://img.shields.io/badge/npm-%40seungwoolee%2Fagent--tree-cb3837.svg)](https://www.npmjs.com/package/@seungwoolee/agent-tree)
 
 A finished Claude Code session can run thousands of turns across hours of work. Linear `/wrap` summaries flatten that into prose and lose the branches, dead-ends, and good-but-discarded ideas. **`agent-tree`** parses the session JSONL into a `tree`-style hierarchy you read directly in your terminal: each user-prompt is a phase, each segment underneath is a sub-action, and any node you've previously resumed from is marked with ⭐. Pick a number, and the resume markdown lands on your clipboard ready to paste into a fresh `claude` session.
 
@@ -50,7 +50,7 @@ npm install -g @seungwoolee/agent-tree
 
 Two bins are exposed: `agent-tree` (primary) and `atree` (alias).
 
-### As a Claude Code plugin (recommended — MCP integration)
+### As a Claude Code plugin (for in-session MCP integration)
 
 The plugin manifest ships an MCP server so the tools surface natively in every Claude Code session. No subprocess spawn, no `--no-llm` flag juggling.
 
@@ -254,7 +254,7 @@ The `agent-tree` name is the long-term commitment; multi-agent support is the re
 git clone https://github.com/lifrary/agent-tree.git
 cd agent-tree
 npm install
-npm test            # vitest, 92 tests / 11 files
+npm test            # vitest, 113 tests / 12 files
 npm run typecheck   # tsc --noEmit, strict
 npm run lint        # eslint
 npm run build       # esbuild → dist/cli.js + dist/mcp-server.js
