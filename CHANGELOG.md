@@ -93,6 +93,23 @@ Added 4 random bytes (8 hex chars via `crypto.randomBytes(4)`) to the
 suffix; collision now requires ≥32-bit entropy collision on top of the
 pid+ms match.
 
+### Code quality: `resolveSession` discriminated union (2026-04-24)
+
+`src/cli.ts#resolveSession` previously returned `SessionMatch | null |
+undefined` — null meant "user cancelled, exit 130", undefined meant "not
+found, exit 2". Caller disambiguated via `match === null ? 130 : 2`.
+Converted to a discriminated union `{ ok: true; match } | { ok: false;
+reason: 'cancelled' | 'not_found' }` so the exit-code mapping is
+explicit and typechecked; no more hidden fragility at the null /
+undefined seam.
+
+### Tests: 119 → 134 (+15)
+
+- `tests/security-hardening.test.ts`: +6 "token class-boundary audit"
+  + +6 "passesRedosFuzz" = +12 total.
+- `tests/graph.test.ts`: +3 (indirect cycle break, diamond preservation,
+  empty-events safety).
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)

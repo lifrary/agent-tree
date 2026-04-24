@@ -52,8 +52,14 @@ export async function main(argv: string[] = process.argv): Promise<number> {
 
   // No explicit selector → smart default: latest session in current project,
   // falling back to globally latest if this project has no sessions yet.
-  const match = await resolveSession(sessionArg, opts, logger);
-  if (!match) return match === null ? 130 : 2;
+  const resolved = await resolveSession(sessionArg, opts, logger);
+  if (!resolved.ok) {
+    // 130 = SIGINT-style "user cancelled" (conventional for interactive pick
+    // aborts). 2 = POSIX "misuse / not found". Discriminated union makes
+    // this mapping explicit instead of leaning on null-vs-undefined.
+    return resolved.reason === 'cancelled' ? 130 : 2;
+  }
+  const match = resolved.match;
 
   // Demoted from `info` → `debug`: surfacing the JSONL path on every run is
   // chat noise; users with `--verbose` still get it.
@@ -121,31 +127,36 @@ export async function main(argv: string[] = process.argv): Promise<number> {
  *   3. positional session id / prefix
  *   4. smart default: latest session in current project, then globally latest
  *
- * Returns:
- *   - SessionMatch on success
- *   - null when user explicitly cancelled an interactive pick
- *   - undefined when nothing matched (caller should exit 2)
+ * Returns a discriminated union so callers can map the failure mode onto a
+ * specific exit code without inspecting truthiness of `null` vs `undefined`:
+ *   - `{ ok: true, match }` — continue
+ *   - `{ ok: false, reason: 'cancelled' }` — user aborted an interactive pick (exit 130)
+ *   - `{ ok: false, reason: 'not_found' }` — no matching session (exit 2)
  */
+type SessionResolution =
+  | { ok: true; match: SessionMatch }
+  | { ok: false; reason: 'cancelled' | 'not_found' };
+
 async function resolveSession(
   sessionArg: string | undefined,
   opts: { pick?: boolean; latest?: boolean },
   logger: { info(msg: string, extra?: unknown): void; debug(msg: string, extra?: unknown): void },
-): Promise<SessionMatch | null | undefined> {
+): Promise<SessionResolution> {
   if (opts.pick) {
     const picked = await pickSession();
     if (!picked) {
       console.error('Selection cancelled.');
-      return null;
+      return { ok: false, reason: 'cancelled' };
     }
-    return picked;
+    return { ok: true, match: picked };
   }
   if (opts.latest) {
     const latest = await findLatestSession();
     if (!latest) {
       console.error('error: no sessions found under ~/.claude/projects/.');
-      return undefined;
+      return { ok: false, reason: 'not_found' };
     }
-    return latest;
+    return { ok: true, match: latest };
   }
   if (!sessionArg) {
     // Smart default — try this project's latest first
@@ -154,7 +165,7 @@ async function resolveSession(
       logger.debug('smart default → this project\'s latest session', {
         sessionId: inProject.sessionId,
       });
-      return inProject;
+      return { ok: true, match: inProject };
     }
     // Fall back to globally latest with a brief notice
     const global = await findLatestSession();
@@ -162,17 +173,17 @@ async function resolveSession(
       console.error(
         `(no session in this project — falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`,
       );
-      return global;
+      return { ok: true, match: global };
     }
     console.error('error: no sessions found under ~/.claude/projects/.');
-    return undefined;
+    return { ok: false, reason: 'not_found' };
   }
   const matches = await locateSession(sessionArg);
   if (matches.length === 0) {
     console.error(
       `error: no session matched "${sessionArg}" under ~/.claude/projects/.`,
     );
-    return undefined;
+    return { ok: false, reason: 'not_found' };
   }
   if (matches.length > 1) {
     const lines = matches
@@ -183,9 +194,9 @@ async function resolveSession(
       `error: "${sessionArg}" is ambiguous; ${matches.length} matches:\n${lines}\n` +
         `\nRe-run with a longer prefix.`,
     );
-    return undefined;
+    return { ok: false, reason: 'not_found' };
   }
-  return matches[0];
+  return { ok: true, match: matches[0] };
 }
 
 const invokedDirectly =
