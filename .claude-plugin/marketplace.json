@@ -1,0 +1,34 @@
+{
+  "name": "agent-tree",
+  "owner": {
+    "name": "Seungwoo Lee"
+  },
+  "metadata": {
+    "description": "Single-plugin marketplace for agent-tree. Navigate any Claude Code session as a numbered tree and resume from any node.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "agent-tree",
+      "description": "Visualize a Claude Code session as a numbered tree in your terminal/chat and resume from any node. Terminal-only — no browser.",
+      "version": "0.1.0",
+      "author": {
+        "name": "Seungwoo Lee"
+      },
+      "source": "./",
+      "category": "development",
+      "homepage": "https://github.com/lifrary/agent-tree",
+      "repository": "https://github.com/lifrary/agent-tree",
+      "license": "MIT",
+      "keywords": [
+        "claude",
+        "claude-code",
+        "session",
+        "mindmap",
+        "resume",
+        "fork",
+        "navigation"
+      ]
+    }
+  ]
+}

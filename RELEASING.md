@@ -92,15 +92,40 @@ echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
 # Must list all 5 agent_tree_* tools
 ```
 
-### 8. Re-link plugin (if dev install is symlinked)
+### 8. Re-install the plugin so Claude Code picks up the new build
 
-If you symlinked `~/.claude/plugins/local/agent-tree` → `~/Code/oh-my-claude-map`,
-the symlink target now has the new build. Restart Claude Code so the plugin
-loader picks up the new manifest version.
+`~/.claude/plugins/local/` is **not** auto-scanned by Claude Code — a symlink
+or copy there does not register the plugin's MCP server or skill. The
+CLI-sanctioned install path writes to `installed_plugins.json` and
+`settings.json#enabledPlugins`, and that registry entry is what triggers the
+MCP spawn at session start.
 
-> External users do `git pull && npm install && npm run build` in their
-> `~/.claude/plugins/local/agent-tree/` clone — their flow is unchanged
-> across versions.
+**Maintainer (you) — after publishing a new version:**
+
+```bash
+# Re-install from the local marketplace so the cache copy is refreshed
+claude plugin install agent-tree@agent-tree   # overwrites cache/.../<version>/
+```
+
+Then restart Claude Code.
+
+**Bootstrapping a fresh machine (you or external user):**
+
+```bash
+# If using the local repo clone as the marketplace source:
+cd <where-you-cloned>
+npm install && npm run build                  # dist/ is gitignored; must exist before install
+claude plugin marketplace add "$PWD"
+claude plugin install agent-tree@agent-tree
+# → Restart Claude Code
+```
+
+> **External-user caveat (github-URL marketplace)**: `claude plugin
+> marketplace add github:lifrary/agent-tree` → `install` does a `git clone`,
+> which skips the gitignored `dist/`. The MCP server will fail to start.
+> Deferred fix: either commit built artifacts to a release branch, or ship a
+> postinstall step. For now, external users must clone and build locally,
+> then `marketplace add <local-path>`.
 
 ## Hotfix flow (vX.Y.Z+1)
 

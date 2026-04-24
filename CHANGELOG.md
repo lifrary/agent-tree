@@ -4,6 +4,34 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Plugin install path fixed (2026-04-24)
+
+Empirical verification after v0.1.0 publish revealed that Claude Code's
+`~/.claude/plugins/local/` directory is **not** auto-scanned for plugin
+registration — MCP servers and skills from symlinked plugins there do not
+surface in-session (confirmed against `claude-code-achievements`, whose
+commands only appear because `~/.claude/commands/*.md` were symlinked by
+hand, not because local/ scan loaded them).
+
+The CLI-sanctioned install path is `claude plugin marketplace add + claude
+plugin install`, which writes to `installed_plugins.json` and
+`settings.json#enabledPlugins` — those entries are what trigger MCP spawn at
+Claude Code startup.
+
+- **Added** — `.claude-plugin/marketplace.json` — single-plugin marketplace
+  manifest (ouroboros / openai-codex style). Enables
+  `claude plugin marketplace add <path-or-github-url>` followed by
+  `claude plugin install agent-tree@agent-tree`.
+- **Verified** — path-based marketplace install copies the entire plugin
+  directory (including un-gitted `dist/`) into
+  `~/.claude/plugins/cache/agent-tree/agent-tree/0.1.0/`. So local-path
+  installs work without committing build artifacts. GitHub-URL installs
+  (`claude plugin marketplace add github:lifrary/agent-tree`) would
+  `git clone` and skip `dist/` — that pathway still needs a
+  built-artifact-in-git story (deferred to v0.1.1+).
+- **Docs** — `RELEASING.md` Step 8 rewritten. Old instructions assumed a
+  `~/.claude/plugins/local/` symlink would register the plugin; it does not.
+
 ### Post-rebrand audit hardening (2026-04-23)
 
 The rebrand-and-publish prep audit landed 19 fixes across security, UX,
