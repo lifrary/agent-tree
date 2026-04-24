@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### dist/*.js now committed (2026-04-24)
+
+`dist/*.js` is no longer gitignored, so `claude plugin marketplace add
+github:lifrary/agent-tree` followed by `claude plugin install` works without
+a local build step. Source-maps (`dist/*.map`) stay ignored. The commit
+adds `.gitattributes` marking the bundled JS as `binary
+linguist-generated=true` so git log and GitHub code review don't drown in
+minified diff noise.
+
+Before: github-URL marketplace installs would `git clone` the repo,
+`dist/` was empty, `${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js` was missing,
+MCP spawn failed silently.
+
+Release flow change: each release's `npm run build` regenerates
+`dist/*.js`; the existing `git add -A && git commit -m "release: vX.Y.Z"`
+in step 4 picks them up automatically — no new manual step.
+
 ### Plugin install path fixed (2026-04-24)
 
 Empirical verification after v0.1.0 publish revealed that Claude Code's

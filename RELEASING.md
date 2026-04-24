@@ -43,6 +43,11 @@ npm run lint && npm run typecheck && npm test && npm run build
 
 > Already enforced by `prepublishOnly`, but run manually first so you can
 > see test output without the publish progress bar fighting for the terminal.
+>
+> **dist/ is committed**: `dist/*.js` is tracked in git (source-maps are
+> ignored) so that `claude plugin marketplace add github:lifrary/agent-tree`
+> → `install` works out of the box. `git add -A` in the next step will pick
+> up any regenerated bundle.
 
 ### 4. Commit on dev → fast-forward main
 
@@ -120,12 +125,16 @@ claude plugin install agent-tree@agent-tree
 # → Restart Claude Code
 ```
 
-> **External-user caveat (github-URL marketplace)**: `claude plugin
-> marketplace add github:lifrary/agent-tree` → `install` does a `git clone`,
-> which skips the gitignored `dist/`. The MCP server will fail to start.
-> Deferred fix: either commit built artifacts to a release branch, or ship a
-> postinstall step. For now, external users must clone and build locally,
-> then `marketplace add <local-path>`.
+**External users — github-URL marketplace (from v0.1.1 onward)**:
+
+```bash
+claude plugin marketplace add github:lifrary/agent-tree
+claude plugin install agent-tree@agent-tree
+# → Restart Claude Code
+```
+
+This works because `dist/*.js` is now committed (`.gitignore` exempts it);
+`git clone` pulls the built bundle along with the manifests.
 
 ## Hotfix flow (vX.Y.Z+1)
 

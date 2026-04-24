@@ -1,0 +1,4 @@
+# Built bundles — committed so plugin installs via `git clone` (GitHub URL
+# marketplace) work out of the box. Mark as generated/binary so git log and
+# GitHub code review don't drown in minified diff noise.
+dist/*.js binary linguist-generated=true

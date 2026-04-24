@@ -2,7 +2,10 @@
 node_modules/
 pnpm-lock.yaml
 *.tsbuildinfo
-dist/
+# dist/*.js is committed so `claude plugin marketplace add github:...` works
+# (git clone skips gitignored files → MCP server file would be missing). Only
+# the source-maps stay ignored to keep the repo slim.
+dist/*.map
 build/
 
 # ──────────────── Logs ────────────────
