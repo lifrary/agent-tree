@@ -14,12 +14,14 @@
  * Transport: stdio (claude-plugin spawns this process).
  */
 
+import { stat } from 'node:fs/promises';
+
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { z } from 'zod';
 
 import { loadConfig } from '../config/loader.js';
-import { runPipeline } from '../cli/pipeline.js';
+import { runPipeline, type PipelineResult } from '../cli/pipeline.js';
 import { lookupSnapshot, renderTextTree } from '../render/text.js';
 import { createLoggerSync } from '../utils/logger.js';
 import { safeGitCwd } from '../utils/safe_path.js';
@@ -106,7 +108,65 @@ async function resolveMatchSafe(
   }
 }
 
-async function pipelineFor(match: SessionMatch) {
+// ---------------------------------------------------------------------------
+// Pipeline cache — tiny in-process LRU
+//
+// A single MCP session typically calls `agent_tree_list` → `agent_tree_snapshot`
+// (or `diff`) back-to-back on the same session. Without a cache each call
+// re-parses the same JSONL, rebuilds the graph, re-segments, and re-renders
+// the mindmap — O(events) work per tool invocation, wasted on an unchanged
+// file.
+//
+// Cache key folds in the JSONL's mtime so an in-progress session that gains
+// new events between calls invalidates automatically (user switches to an
+// active session, runs another Claude turn, calls back). Size is intentionally
+// small (3 entries) — three is enough to cover the list → snapshot → diff
+// pattern plus one spare, while keeping resident memory modest (each entry
+// carries a full graph / segments / mindmap tree, ~MB scale for long
+// sessions).
+// ---------------------------------------------------------------------------
+
+interface PipelineCacheEntry {
+  key: string;
+  result: PipelineResult;
+}
+
+const PIPELINE_CACHE_MAX = 3;
+const pipelineCache: PipelineCacheEntry[] = [];
+
+async function pipelineFor(match: SessionMatch): Promise<PipelineResult> {
+  let mtimeMs: number | null = null;
+  try {
+    mtimeMs = (await stat(match.jsonlPath)).mtimeMs;
+  } catch {
+    // stat failure → bypass cache + run fresh; runPipeline's own readJsonl
+    // will surface any real I/O problem.
+    mtimeMs = null;
+  }
+
+  if (mtimeMs !== null) {
+    const key = `${match.sessionId}:${match.jsonlPath}:${mtimeMs}`;
+    const idx = pipelineCache.findIndex((e) => e.key === key);
+    if (idx >= 0) {
+      // LRU hit — move to front.
+      const [hit] = pipelineCache.splice(idx, 1);
+      pipelineCache.unshift(hit);
+      return hit.result;
+    }
+
+    const { config } = await loadConfig({ logger });
+    const result = await runPipeline({
+      match,
+      opts: { llm: false },
+      config,
+      logger,
+      quiet: true,
+    });
+    pipelineCache.unshift({ key, result });
+    if (pipelineCache.length > PIPELINE_CACHE_MAX) pipelineCache.pop();
+    return result;
+  }
+
   const { config } = await loadConfig({ logger });
   return runPipeline({
     match,

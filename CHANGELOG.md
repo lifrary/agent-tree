@@ -61,6 +61,19 @@ redactor:
 Patterns that fail are dropped with a `logger.warn`; the rest of
 `extra_patterns` still ships.
 
+### Perf: MCP pipeline LRU cache (2026-04-24)
+
+The MCP server's 4 session-bound tools (`agent_tree_list`, `snapshot`,
+`diff`, `unstar`) each re-parsed the entire JSONL on every call. A
+typical agent workflow (list → snapshot → diff on the same session)
+redid all of that work 3×. Added a 3-entry in-process LRU in
+`src/mcp/server.ts`'s `pipelineFor`, keyed on
+`sessionId:jsonlPath:mtimeMs`. mtime in the key means an in-progress
+session that gains new events between calls invalidates automatically.
+Size 3 covers the common list/snapshot/diff pattern with one spare while
+keeping resident memory modest (a pipeline result carries graph +
+segments + mindmap, ~MB scale for long sessions).
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)
