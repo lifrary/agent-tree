@@ -4,6 +4,40 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### MCP manifest location fix (2026-04-24)
+
+The plugin's MCP server is now declared **inline** in
+`.claude-plugin/plugin.json` via an `mcpServers` object, replacing the prior
+external `.mcp.json` file reference. The file itself is deleted.
+
+**Root cause (original bug)**: `.claude-plugin/.mcp.json` was nested under
+`.claude-plugin/`, but Claude Code resolves `plugin.json`'s
+`"mcpServers": "./.mcp.json"` relative to the **plugin root**, not the
+`plugin.json` file's own directory. So it looked for
+`${plugin_root}/.mcp.json`, didn't find it, and silently skipped MCP
+registration. The plugin appeared in `claude plugin list` and in
+`settings.json#enabledPlugins`, but `claude mcp list` omitted `agent-tree`
+entirely and no `mcp__agent_tree__*` tools surfaced in-session. Direct
+spawn of `dist/mcp-server.js` always worked — the server was healthy;
+discovery was broken.
+
+**Why inline instead of moving `.mcp.json` to plugin root**: Claude Code
+*also* auto-discovers `.mcp.json` at any cwd as a **project-scope** MCP
+config. For a plugin whose developer runs `claude` inside the plugin's own
+source directory, that double-duty filename produces a duplicate registration
+where `${CLAUDE_PLUGIN_ROOT}` never gets substituted — one broken entry in
+`claude mcp list` per developer session. Moving the file to plugin root
+would fix the discovery bug but keep the collision. Inline
+(`plugin.json#mcpServers` as `object`) kills both issues: no file, no
+collision, and the schema supports it — per [plugins-reference](https://code.claude.com/docs/en/plugins-reference#plugin-manifest-schema)
+`mcpServers` is `string | array | object`.
+
+- **Added** — `.claude-plugin/plugin.json#mcpServers` inline block:
+  `{"agent-tree": {"command": "node", "args": ["${CLAUDE_PLUGIN_ROOT}/dist/mcp-server.js"]}}`
+- **Deleted** — `.claude-plugin/.mcp.json` (no longer needed)
+- **Unchanged** — `.gitignore` keeps `.mcp.json` ignored at root (with an
+  explanatory comment); no allowlist needed since we ship nothing by that name
+
 ### Phone regex ReDoS hardening (2026-04-24)
 
 The strict-mode phone pattern used three optional separators inside an

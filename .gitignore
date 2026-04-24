@@ -47,8 +47,13 @@ CLAUDE.md
 .claude.json
 .claude.json.*
 settings.local.json
-# But DO commit our plugin manifest — agent-tree ships an MCP server
-!.claude-plugin/.mcp.json
+# agent-tree's MCP server is declared inline in .claude-plugin/plugin.json
+# ("mcpServers" as an object, not a file reference). We intentionally do NOT
+# ship a .mcp.json file — if one appears at repo root, Claude Code would
+# auto-register it as a project-scope MCP server (with no plugin-root
+# substitution for ${CLAUDE_PLUGIN_ROOT}), producing a duplicate broken
+# entry in `claude mcp list` every time the developer runs claude from this
+# repo. Keep the ignore rule, do not add an allowlist.
 
 # ──────────────── OMC / oh-my-claudecode ────────────────
 .omc/
