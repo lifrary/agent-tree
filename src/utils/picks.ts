@@ -22,6 +22,7 @@
  *     `locateSession` validator that already gates the same regex upstream.
  */
 
+import { randomBytes } from 'node:crypto';
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
@@ -155,8 +156,14 @@ export async function removePicksForNode(
   // Atomic-ish: write to a sibling tmp then rename. Concurrent recordPick
   // writes to `file` between the read and rename will be lost (acceptable
   // for a navigation-history store; documented in module header).
+  //
+  // Suffix = pid + ms + 4 random bytes. pid + ms alone is vulnerable to
+  // collision on same-ms invocations across reused pids (modern OSes recycle
+  // pid space aggressively); random bytes add 32 bits of entropy and
+  // eliminate the race in practice.
   const { writeFile, rename } = await import('node:fs/promises');
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  const rand = randomBytes(4).toString('hex');
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${rand}`;
   await writeFile(
     tmp,
     kept.length > 0 ? kept.join('\n') + '\n' : '',

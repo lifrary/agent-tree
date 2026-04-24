@@ -84,6 +84,15 @@ kills the child and returns the partial output. Downstream formatter
 already truncates to ~800 chars so this is strictly a memory guard, not
 a behavior change.
 
+### Safety: `picks.ts` tmp-filename collision (2026-04-24)
+
+`removePicksForNode` wrote a tmp file at `${file}.tmp-${pid}-${ms}` then
+renamed. Two processes with a recycled pid landing in the same
+millisecond would collide; modern OSes recycle pid space aggressively.
+Added 4 random bytes (8 hex chars via `crypto.randomBytes(4)`) to the
+suffix; collision now requires ≥32-bit entropy collision on top of the
+pid+ms match.
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)
