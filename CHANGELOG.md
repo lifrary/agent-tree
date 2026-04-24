@@ -74,6 +74,16 @@ Size 3 covers the common list/snapshot/diff pattern with one spare while
 keeping resident memory modest (a pipeline result carries graph +
 segments + mindmap, ~MB scale for long sessions).
 
+### Safety: `git.ts` stdout byte cap (2026-04-24)
+
+`runGit()` was accumulating the entire child stdout into a JS string
+with no bound — `git status --short` in a massive monorepo, or an
+unexpectedly noisy flag, could stream megabytes before the process
+closed. Cap at 32 KB (`STDOUT_CAP_BYTES`); once reached the handler
+kills the child and returns the partial output. Downstream formatter
+already truncates to ~800 chars so this is strictly a memory guard, not
+a behavior change.
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)

@@ -21,6 +21,14 @@ export interface GitContext {
 
 const TIMEOUT_MS = 1500;
 
+// Stdout byte cap per git subprocess. `git status --short` in a giant
+// monorepo, or `git log` against an unexpected flag, could stream
+// megabytes before close; accumulating all of it into a JS string is an
+// OOM / slow-path risk. 32 KB is comfortably larger than what we format
+// for the snapshot (`truncate(..., 800)` downstream) but small enough to
+// cap worst-case memory.
+const STDOUT_CAP_BYTES = 32 * 1024;
+
 export async function getGitContext(cwd: string): Promise<GitContext> {
   if (!cwd) return { cwd, available: false, reason: 'no cwd' };
 
@@ -64,6 +72,7 @@ function runGit(cwd: string, args: string[]): Promise<RunResult> {
     let settled = false;
     const child = spawn('git', args, { cwd, stdio: ['ignore', 'pipe', 'ignore'] });
     let stdout = '';
+    let capped = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -76,7 +85,20 @@ function runGit(cwd: string, args: string[]): Promise<RunResult> {
     }, TIMEOUT_MS);
 
     child.stdout?.on('data', (chunk) => {
+      if (capped) return;
       stdout += chunk.toString();
+      if (stdout.length >= STDOUT_CAP_BYTES) {
+        capped = true;
+        stdout = stdout.slice(0, STDOUT_CAP_BYTES);
+        // Stop the subprocess; we have enough bytes. Treat the result as
+        // successful partial capture — the caller (snapshot formatter)
+        // already truncates to ~800 chars, so this is just a memory guard.
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+      }
     });
     child.on('error', () => {
       if (settled) return;
@@ -88,7 +110,9 @@ function runGit(cwd: string, args: string[]): Promise<RunResult> {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve({ ok: code === 0, stdout });
+      // If we killed the child after capping, `code` is null (SIGTERM); the
+      // partial stdout is still usable for our formatting needs.
+      resolve({ ok: capped || code === 0, stdout });
     });
   });
 }
