@@ -27,10 +27,10 @@ agent-tree · session fd8b7e83 · 8602 events · 1916 turns · 210 nodes · 2707
 
  1. 🎯 Build agent-tree per SPEC.md v0.3                                        (root)
  2. ├─ "Read SPEC.md — self-contained spec v0.3 …"   (23 actions · 21 files · 19min) T0      events 0–40
- 3. ├─ "ralph: M5까지 알아서 잘 해봐 ultrathink"     (24 actions · 19 files · 14min) T+1h 8m  events 1362–1494
- 4. ├─ ⭐ "무조건 터미널 안에서 실행되어야해"         (15 actions · 15 files · 12min) T+23h 43m events 5885–5918
- 5. ├─ "mindmap인건 중요치않아 … 파일 위치 구조화처럼"  (1 action · 1 file · 3min)    T+24h 44m events 6583–6587
- 6. └─ ⭐ "꼼꼼히 실행해. ultrathink"                   (9 actions · 9 files · 4min)  T+43h 17m events 7077–7144
+ 3. ├─ "Implement milestones M1 through M5 end-to-end"  (24 actions · 19 files · 14min) T+1h 8m   events 1362–1494
+ 4. ├─ ⭐ "Must run strictly inside the terminal"        (15 actions · 15 files · 12min) T+23h 43m events 5885–5918
+ 5. ├─ "Layout is secondary — think file-tree hierarchy"  (1 action · 1 file · 3min)    T+24h 44m events 6583–6587
+ 6. └─ ⭐ "Polish the output carefully"                   (9 actions · 9 files · 4min)  T+43h 17m events 7077–7144
 
 Pick a number to copy that node's resume context.
   N        → continue mode (preserve decisions, change direction)
