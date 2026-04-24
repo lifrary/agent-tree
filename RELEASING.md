@@ -119,8 +119,11 @@ MCP spawn at session start.
 **Maintainer (you) — after publishing a new version:**
 
 ```bash
-# Re-install from the local marketplace so the cache copy is refreshed
-claude plugin install agent-tree@agent-tree   # overwrites cache/.../<version>/
+# `claude plugin install` is idempotent when the plugin is already
+# registered — it reports "already installed" and does NOT overwrite the
+# cache. Must uninstall first to force a fresh copy of the new build.
+claude plugin uninstall agent-tree@agent-tree
+claude plugin install agent-tree@agent-tree   # writes cache/.../<new-version>/
 ```
 
 Then restart Claude Code.
@@ -166,3 +169,12 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
   so the registry / GitHub / repo all tell the same story.
 - macOS / Linux only for the smoke test in step 7. Windows users would
   need different shell syntax for the JSON-RPC pipe.
+- **Tag-push vs `npm publish` ordering**: the canonical sequence in Step
+  4–6 pushes `vX.Y.Z` tag *before* `npm publish`. If `npm publish` fails
+  at auth (silently-expired `.npmrc` token → `E401`), you're stuck with a
+  live tag pointing to a version the registry doesn't have — fixing
+  requires delete-tag-and-re-tag or a version bump. Defensive alternative
+  proven on v0.1.1: run `npm publish` **before** `git push origin vX.Y.Z`
+  (the release commit can still push to main first so CI sees it; only
+  the tag-push waits). Always `npm whoami` as a publish preflight — the
+  canonical token-failure mode only surfaces at publish time.
