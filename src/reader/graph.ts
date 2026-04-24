@@ -75,7 +75,62 @@ export function buildGraph(
     bucket.push(e.uuid);
   }
 
+  // Defense in depth — the build loop catches direct self-reference
+  // (A→A) but not indirect cycles (A→B→A). A duplicate-uuid jsonl entry
+  // with a conflicting parentUuid is enough to synthesize one. If a
+  // downstream consumer walks `childrenOf` without its own guard, a cycle
+  // sends it into an infinite loop. Break back-edges here so the returned
+  // DAG is guaranteed acyclic.
+  breakIndirectCycles(roots, childrenOf, logger);
+
   return { meta, events, childrenOf, roots, byUuid };
+}
+
+/**
+ * Iterative DFS over the built `childrenOf` map. When we revisit a node
+ * that's still on the active traversal stack, that edge closes a cycle;
+ * drop it from the parent's children array and warn. The iterative form
+ * avoids blowing the call stack on deep linear-ish parent chains (a long
+ * session can chain thousands of turns).
+ */
+function breakIndirectCycles(
+  roots: string[],
+  childrenOf: Map<string, string[]>,
+  logger: Logger | undefined,
+): void {
+  const visited = new Set<string>();
+  for (const root of roots) {
+    if (visited.has(root)) continue;
+    const stack: Array<{ uuid: string; childIdx: number }> = [
+      { uuid: root, childIdx: 0 },
+    ];
+    const inStack = new Set<string>([root]);
+    visited.add(root);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const children = childrenOf.get(top.uuid);
+      if (!children || top.childIdx >= children.length) {
+        inStack.delete(top.uuid);
+        stack.pop();
+        continue;
+      }
+      const child = children[top.childIdx];
+      if (inStack.has(child)) {
+        logger?.warn('cycle detected in parentUuid chain, dropping back-edge', {
+          from: top.uuid,
+          to: child,
+        });
+        children.splice(top.childIdx, 1);
+        // Do not advance childIdx — splice shifted the next child down.
+        continue;
+      }
+      top.childIdx += 1;
+      if (visited.has(child)) continue;
+      visited.add(child);
+      inStack.add(child);
+      stack.push({ uuid: child, childIdx: 0 });
+    }
+  }
 }
 
 export function graphToDump(graph: SessionGraph): SessionGraphDump {

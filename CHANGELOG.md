@@ -28,6 +28,18 @@ shape; `hf_token`, `bearer_token`, `aws_*`, `stripe_*`, `github_pat_*`,
 and `npm_token` are already safe by construction and are now locked in
 via `tests/security-hardening.test.ts` "token class-boundary audit" block.
 
+### Safety: indirect-cycle guard in `buildGraph` (2026-04-24)
+
+`src/reader/graph.ts` previously caught only direct self-reference
+(`parentUuid === uuid`). A duplicate-uuid jsonl entry with a conflicting
+`parentUuid` synthesizes an indirect cycle (A↔B, or deeper), which a
+downstream tree walker would follow into infinite loop. Added an
+iterative DFS post-build pass that detects back-edges against the active
+traversal stack and splices them from the `childrenOf` map; returned
+graph is now guaranteed acyclic regardless of jsonl pathology. Iterative
+form avoids stack overflow on long linear parent chains. Test fixtures
+in `tests/graph.test.ts`: cycle break, diamond preservation, empty graph.
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)
