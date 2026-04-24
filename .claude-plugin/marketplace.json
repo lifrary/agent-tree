@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Single-plugin marketplace for agent-tree. Navigate any Claude Code session as a numbered tree and resume from any node.",
-    "version": "0.1.0"
+    "version": "0.1.1"
   },
   "plugins": [
     {
       "name": "agent-tree",
       "description": "Visualize a Claude Code session as a numbered tree in your terminal/chat and resume from any node. Terminal-only — no browser.",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "author": {
         "name": "Seungwoo Lee"
       },

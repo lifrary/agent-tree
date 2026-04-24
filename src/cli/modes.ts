@@ -18,6 +18,7 @@ import type { ResolvedConfig } from './pipeline.js';
 import { runTui } from './tui.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
+import { safeGitCwd } from '../utils/safe_path.js';
 import {
   listAllPicks,
   readPicks,
@@ -84,8 +85,13 @@ export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
 
   // Probe git for the source cwd at snapshot time — it's cheap (~50ms) and
   // gives the new session a concrete code-state anchor to work against.
-  const sourceCwd = ctx.graph.events[0]?.cwd || process.cwd();
-  const gitCtx = await getGitContext(sourceCwd);
+  // safeGitCwd rejects non-absolute / null-byte-laced / non-resolvable paths
+  // so an attacker-authored JSONL can't point us at a poisoned .git/config
+  // (CVE-2022-24765). Matches src/mcp/server.ts parity.
+  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, process.cwd());
+  const gitCtx = sourceCwd
+    ? await getGitContext(sourceCwd)
+    : { available: false as const, cwd: '' };
   const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
   const finalMarkdown = gitMd
     ? appendGitSection(baseSnap.clipboard_markdown, gitMd)

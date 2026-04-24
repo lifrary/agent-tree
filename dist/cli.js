@@ -5702,7 +5702,7 @@ var {
 // src/cli/options.ts
 var PKG_VERSION = (() => {
   try {
-    return "0.1.0";
+    return "0.1.1";
   } catch {
     return void 0;
   }
@@ -7415,6 +7415,14 @@ var DEFAULT_PATTERNS = [
     replacement: "hf_***REDACTED***"
   },
   {
+    // npm automation / publish tokens — 36 alnum after `npm_`. Common in
+    // `.npmrc` pastes that developers drop into chat while debugging
+    // publish failures.
+    name: "npm_token",
+    regex: /\bnpm_[A-Za-z0-9]{36}\b/g,
+    replacement: "npm_***REDACTED***"
+  },
+  {
     name: "private_key_block",
     regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
     replacement: "-----REDACTED PRIVATE KEY-----"
@@ -8091,6 +8099,23 @@ function pickCommand() {
   }
 }
 
+// src/utils/safe_path.ts
+import { realpath } from "node:fs/promises";
+import { isAbsolute } from "node:path";
+async function safeGitCwd(eventsCwd, callerCwd) {
+  for (const candidate of [eventsCwd, callerCwd]) {
+    if (!candidate || candidate.includes("\0") || !isAbsolute(candidate)) {
+      continue;
+    }
+    try {
+      const real = await realpath(candidate);
+      if (isAbsolute(real)) return real;
+    } catch {
+    }
+  }
+  return null;
+}
+
 // src/utils/picks.ts
 import { appendFile, mkdir as mkdir2, readFile as readFile2 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
@@ -8247,8 +8272,8 @@ async function runSnapshotMode(ctx) {
   }
   const wantFork = (ctx.opts.mode ?? "continue") === "fork";
   const baseSnap = wantFork ? node.context_snapshot_fork : node.context_snapshot_continue;
-  const sourceCwd = ctx.graph.events[0]?.cwd || process.cwd();
-  const gitCtx = await getGitContext(sourceCwd);
+  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, process.cwd());
+  const gitCtx = sourceCwd ? await getGitContext(sourceCwd) : { available: false, cwd: "" };
   const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
   const finalMarkdown = gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown;
   process.stdout.write(finalMarkdown);

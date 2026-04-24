@@ -1,6 +1,6 @@
 {
   "name": "@seungwoolee/agent-tree",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Navigate any Claude Code (and future Codex/Gemini) session as a numbered tree in your terminal and resume from any node.",
   "license": "MIT",
   "author": "Seungwoo Lee",

@@ -78,6 +78,14 @@ describe('redactor — new patterns added in audit pass', () => {
     }
   });
 
+  it('catches npm automation tokens (npm_<36 alnum>) from pasted .npmrc', () => {
+    const fake = 'npm_abcdefghij0123456789ABCDEFGHIJ012345';
+    expect(fake.length).toBe('npm_'.length + 36);
+    const text = `//registry.npmjs.org/:_authToken=${fake}\n`;
+    expect(r.apply(text)).not.toContain(fake);
+    expect(r.apply(text)).toContain('npm_***REDACTED***');
+  });
+
   it('catches Hugging Face access tokens (hf_<30+ chars>)', () => {
     const fake = 'hf_abcdefghij0123456789ABCDEFGHIJ';
     const text = `auth=${fake}`;

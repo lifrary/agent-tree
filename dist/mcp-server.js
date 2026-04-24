@@ -40259,6 +40259,14 @@ var DEFAULT_PATTERNS = [
     replacement: "hf_***REDACTED***"
   },
   {
+    // npm automation / publish tokens — 36 alnum after `npm_`. Common in
+    // `.npmrc` pastes that developers drop into chat while debugging
+    // publish failures.
+    name: "npm_token",
+    regex: /\bnpm_[A-Za-z0-9]{36}\b/g,
+    replacement: "npm_***REDACTED***"
+  },
+  {
     name: "private_key_block",
     regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
     replacement: "-----REDACTED PRIVATE KEY-----"
@@ -41160,7 +41168,7 @@ async function pipelineFor(match) {
 var logger = createLoggerSync("warn");
 var server = new McpServer({
   name: "agent-tree",
-  version: "0.1.0"
+  version: "0.1.1"
 });
 server.tool(
   "agent_tree_list",

@@ -4,6 +4,27 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [v0.1.1] — 2026-04-24
+
+### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)
+
+`agent-tree --snapshot` was feeding the raw `cwd` field from JSONL into
+`getGitContext` without going through the `safeGitCwd` realpath /
+absolute / null-byte guard that the MCP tool already used. An attacker-
+authored session could point `cwd` at a directory with a poisoned
+`.git/config` (CVE-2022-24765) and achieve arbitrary command execution
+on `agent-tree --snapshot` via `git` auto-evaluating `core.pager` /
+`core.sshCommand` / `core.fsmonitor` hooks. Fix routes through
+`safeGitCwd(eventsCwd, process.cwd())` — parity with `src/mcp/server.ts`.
+Closes parity gap flagged by the v0.1.1 pre-ship security audit.
+
+### Added — `npm_token` redact pattern (2026-04-24)
+
+Developers routinely paste `.npmrc` snippets (including the
+`//registry.npmjs.org/:_authToken=npm_<36 alnum>` line) into chat while
+debugging publish failures. Added `/\bnpm_[A-Za-z0-9]{36}\b/g` to
+`DEFAULT_PATTERNS`; test at `tests/security-hardening.test.ts`.
+
 ### MCP manifest location fix (2026-04-24)
 
 The plugin's MCP server is now declared **inline** in

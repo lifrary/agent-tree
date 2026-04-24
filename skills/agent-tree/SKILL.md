@@ -1,7 +1,7 @@
 ---
 name: agent-tree
 description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", or wants to navigate / restart from a specific point in a previous Claude Code session. Renders the session as a numbered file-tree in chat and emits a continue/fork resume block on selection. Available as both an MCP tool (agent_tree_list / agent_tree_snapshot / agent_tree_picks / agent_tree_diff / agent_tree_unstar) and a CLI fallback.
-version: 0.1.0
+version: 0.1.1
 ---
 
 # agent-tree skill

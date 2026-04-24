@@ -1,6 +1,6 @@
 {
   "name": "agent-tree",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Visualize a Claude Code session as a numbered tree in your terminal/chat and resume from any node. Terminal-only — no browser.",
   "author": {
     "name": "Seungwoo Lee"
