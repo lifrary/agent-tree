@@ -54,11 +54,19 @@ Two bins are exposed: `agent-tree` (primary) and `atree` (alias).
 
 The plugin manifest ships an MCP server so the tools surface natively in every Claude Code session. No subprocess spawn, no `--no-llm` flag juggling.
 
+Use Claude Code's plugin CLI — `~/.claude/plugins/local/` is **not** auto-scanned, so a plain `git clone` there will not register the plugin. The canonical registration path is:
+
 ```bash
-git clone https://github.com/lifrary/agent-tree ~/.claude/plugins/local/agent-tree
-cd ~/.claude/plugins/local/agent-tree
-npm install
-npm run build
+# Option A — directly from GitHub (recommended)
+claude plugin marketplace add github:lifrary/agent-tree
+claude plugin install agent-tree@agent-tree
+
+# Option B — from a local clone (contributors / live dev)
+git clone https://github.com/lifrary/agent-tree ~/Code/agent-tree
+cd ~/Code/agent-tree
+npm install && npm run build     # dist/*.js ships in git too, so this step is optional for Option A
+claude plugin marketplace add "$PWD"
+claude plugin install agent-tree@agent-tree
 ```
 
 Restart Claude Code. The following MCP tools become available:
@@ -75,27 +83,29 @@ The bundled skill (`skills/agent-tree/SKILL.md`) instructs Claude Code to prefer
 
 #### Verify the install
 
-After restarting Claude Code, in any session:
+After restarting Claude Code, in any session run `/mcp` — the list should include `agent-tree` with a `connected` status and 5 tools under it. Or invoke directly:
 
 ```
 > Use the agent_tree_list MCP tool with cwd="/path/to/any/project"
 ```
 
-Claude Code should call the tool and return a numbered file-tree of that project's most-recent session. If you see "Tool agent_tree_list not found":
+Claude Code should call the tool and return a numbered file-tree of that project's most-recent session. If the tools don't surface:
 
-1. Confirm the plugin lives at `~/.claude/plugins/local/agent-tree/` (not just symlinked from elsewhere — Claude Code's plugin loader doesn't follow symlinks consistently).
-2. Confirm `dist/mcp-server.js` exists (run `npm run build` if missing).
-3. Restart Claude Code (the plugin loader only scans on startup).
-4. Check `~/.claude/logs/` for plugin-load errors.
-
-Smoke-test the server outside Claude Code:
-
-```bash
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | node dist/mcp-server.js | head -200
-```
-
-You should see all 5 `agent_tree_*` tools listed.
+1. Confirm the plugin is CLI-registered and enabled:
+   ```bash
+   claude plugin list | grep agent-tree   # → should show "Status: ✔ enabled"
+   ```
+2. Confirm the cache has the MCP server file:
+   ```bash
+   ls ~/.claude/plugins/cache/agent-tree/agent-tree/0.1.0/dist/mcp-server.js
+   ```
+3. Restart Claude Code (the plugin loader only spawns MCP servers at startup).
+4. Smoke-test the server standalone:
+   ```bash
+   echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
+     | node ~/.claude/plugins/cache/agent-tree/agent-tree/0.1.0/dist/mcp-server.js
+   ```
+   Should list all 5 `agent_tree_*` tools. If this works but in-session `/mcp` still doesn't show agent-tree, the plugin registration drifted — try `claude plugin uninstall agent-tree@agent-tree && claude plugin install agent-tree@agent-tree`.
 
 ## Quickstart
 

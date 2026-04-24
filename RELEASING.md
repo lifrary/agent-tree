@@ -18,17 +18,28 @@ post-publish smoke test, MCP plugin re-install).
 
 ### 1. Bump version everywhere
 
-Four sources of truth must move together:
+Five sources of truth (six fields) must move together:
 
 - `package.json` → `"version": "0.X.Y"`
 - `.claude-plugin/plugin.json` → `"version": "0.X.Y"`
+- `.claude-plugin/marketplace.json` → **both** `metadata.version` AND
+  `plugins[0].version` → `"0.X.Y"`
 - `src/mcp/server.ts` → `version: '0.X.Y'` in the `McpServer({...})` block
 - `skills/agent-tree/SKILL.md` → frontmatter `version: 0.X.Y`
 
-> **Why**: the plugin/skill/MCP version surfaces in Claude Code's plugin
-> registry — drift causes confusion about which version is loaded. esbuild
-> bakes `package.json#version` into `dist/cli.js` via `__PKG_VERSION__`, so
-> `agent-tree --version` always matches `package.json` after build.
+> **Why**: the plugin/skill/MCP/marketplace version surfaces in Claude
+> Code's plugin registry — drift causes confusion about which version is
+> loaded. esbuild bakes `package.json#version` into `dist/cli.js` via
+> `__PKG_VERSION__`, so `agent-tree --version` always matches
+> `package.json` after build.
+>
+> Quick sanity grep before committing:
+> ```bash
+> grep -nE '"version": "0\.[0-9]+\.[0-9]+"' package.json .claude-plugin/*.json
+> grep -nE "version: '0\.[0-9]+\.[0-9]+'" src/mcp/server.ts
+> grep -nE '^version: 0\.[0-9]+\.[0-9]+' skills/agent-tree/SKILL.md
+> # All six occurrences must show the same 0.X.Y.
+> ```
 
 ### 2. Update CHANGELOG.md
 
