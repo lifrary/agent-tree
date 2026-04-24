@@ -5702,7 +5702,7 @@ var {
 // src/cli/options.ts
 var PKG_VERSION = (() => {
   try {
-    return "0.1.1";
+    return "0.1.2";
   } catch {
     return void 0;
   }
@@ -6114,7 +6114,42 @@ function buildGraph(meta, events, opts = {}) {
     }
     bucket.push(e.uuid);
   }
+  breakIndirectCycles(roots, childrenOf, logger);
   return { meta, events, childrenOf, roots, byUuid };
+}
+function breakIndirectCycles(roots, childrenOf, logger) {
+  const visited = /* @__PURE__ */ new Set();
+  for (const root of roots) {
+    if (visited.has(root)) continue;
+    const stack = [
+      { uuid: root, childIdx: 0 }
+    ];
+    const inStack = /* @__PURE__ */ new Set([root]);
+    visited.add(root);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const children = childrenOf.get(top.uuid);
+      if (!children || top.childIdx >= children.length) {
+        inStack.delete(top.uuid);
+        stack.pop();
+        continue;
+      }
+      const child = children[top.childIdx];
+      if (inStack.has(child)) {
+        logger?.warn("cycle detected in parentUuid chain, dropping back-edge", {
+          from: top.uuid,
+          to: child
+        });
+        children.splice(top.childIdx, 1);
+        continue;
+      }
+      top.childIdx += 1;
+      if (visited.has(child)) continue;
+      visited.add(child);
+      inStack.add(child);
+      stack.push({ uuid: child, childIdx: 0 });
+    }
+  }
 }
 function graphToDump(graph) {
   const childrenOf = {};
@@ -6288,6 +6323,7 @@ function defaultSleep(ms) {
 // src/utils/git.ts
 import { spawn } from "node:child_process";
 var TIMEOUT_MS = 1500;
+var STDOUT_CAP_BYTES = 32 * 1024;
 async function getGitContext(cwd) {
   if (!cwd) return { cwd, available: false, reason: "no cwd" };
   const inside = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
@@ -6314,6 +6350,7 @@ function runGit(cwd, args) {
     let settled = false;
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
+    let capped = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -6324,7 +6361,16 @@ function runGit(cwd, args) {
       resolve5({ ok: false, stdout: "" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => {
+      if (capped) return;
       stdout += chunk.toString();
+      if (stdout.length >= STDOUT_CAP_BYTES) {
+        capped = true;
+        stdout = stdout.slice(0, STDOUT_CAP_BYTES);
+        try {
+          child.kill();
+        } catch {
+        }
+      }
     });
     child.on("error", () => {
       if (settled) return;
@@ -6336,7 +6382,7 @@ function runGit(cwd, args) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve5({ ok: code === 0, stdout });
+      resolve5({ ok: capped || code === 0, stdout });
     });
   });
 }
@@ -7383,8 +7429,15 @@ var DEFAULT_PATTERNS = [
     replacement: "ASIA***REDACTED***"
   },
   {
+    // 35-char alphanumeric + `_-` suffix. `\b` at the end would fail when the
+    // key happens to end in `-` (a non-word char), because the next char is
+    // also typically non-word (space/`.`/EOF) and `\b` needs a word↔non-word
+    // transition. `{35}` is fixed-length, so the engine can't shorten the
+    // match to dodge the boundary — the whole key would leak unredacted.
+    // Use a negative lookahead against the same class to terminate correctly
+    // regardless of word-ness at the seam.
     name: "gcp_api_key",
-    regex: /\bAIza[0-9A-Za-z_-]{35}\b/g,
+    regex: /\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g,
     replacement: "AIza***REDACTED***"
   },
   {
@@ -7428,8 +7481,16 @@ var DEFAULT_PATTERNS = [
     replacement: "-----REDACTED PRIVATE KEY-----"
   },
   {
+    // base64url (RFC 4648 §5) alphabet is `[A-Za-z0-9_-]` — signature portion
+    // can legally end in `-` or `_`. Trailing `\b` required a word↔non-word
+    // transition and would fail whenever the signature happened to end on a
+    // `-`/`_` with non-word context after (space / EOF / punctuation). The
+    // engine could sometimes backtrack within the `{10,}` to land on a word
+    // char, leaking the trailing byte; when the signature was ≤10 chars of
+    // trailing `-`s it couldn't match at all. Replace with a negative
+    // lookahead against the same class.
     name: "jwt",
-    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
     replacement: "eyJ***REDACTED.JWT***"
   }
 ];
@@ -7701,9 +7762,17 @@ function buildRedactor(opts, config, logger) {
     strict: Boolean(opts.redactStrict) || config.redaction.strict,
     extraPatterns: (config.redaction.extra_patterns ?? []).map((pattern, i) => {
       try {
+        const regex = new RegExp(pattern, "g");
+        if (!passesRedosFuzz(regex)) {
+          logger.warn(
+            "redaction.extra_patterns entry failed ReDoS fuzz guard \u2014 dropping",
+            { pattern }
+          );
+          return null;
+        }
         return {
           name: `extra_${i}`,
-          regex: new RegExp(pattern, "g"),
+          regex,
           replacement: "[REDACTED]"
         };
       } catch {
@@ -7712,6 +7781,29 @@ function buildRedactor(opts, config, logger) {
       }
     }).filter((x) => x !== null)
   });
+}
+var REDOS_PROBE_BUDGET_MS = 50;
+function passesRedosFuzz(re) {
+  const src = re.source;
+  if (/\([^()]*[+*][^()]*\)[+*]/.test(src)) return false;
+  if (/\((\w+)\|\1\)[+*]/.test(src)) return false;
+  const inputs = [
+    "a".repeat(20),
+    "1".repeat(20),
+    "ab".repeat(10),
+    "a-".repeat(10)
+  ];
+  for (const input of inputs) {
+    const probe = new RegExp(src, re.flags);
+    const start = Date.now();
+    try {
+      probe.test(input);
+    } catch {
+      return false;
+    }
+    if (Date.now() - start > REDOS_PROBE_BUDGET_MS) return false;
+  }
+  return true;
 }
 function pickSidechainMode(opts, config) {
   if (opts.dropSidechains) return "drop";
@@ -8117,6 +8209,7 @@ async function safeGitCwd(eventsCwd, callerCwd) {
 }
 
 // src/utils/picks.ts
+import { randomBytes } from "node:crypto";
 import { appendFile, mkdir as mkdir2, readFile as readFile2 } from "node:fs/promises";
 import { homedir as homedir2 } from "node:os";
 import { dirname, join as join2 } from "node:path";
@@ -8200,7 +8293,8 @@ async function removePicksForNode(sessionId, nodeId, opts = {}) {
   }
   if (removed === 0) return 0;
   const { writeFile: writeFile3, rename } = await import("node:fs/promises");
-  const tmp = `${file}.tmp-${process.pid}-${Date.now()}`;
+  const rand = randomBytes(4).toString("hex");
+  const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${rand}`;
   await writeFile3(
     tmp,
     kept.length > 0 ? kept.join("\n") + "\n" : "",
@@ -8819,8 +8913,11 @@ async function main(argv = process.argv) {
   if (opts.picks) {
     return runPicksMode();
   }
-  const match = await resolveSession(sessionArg, opts, logger);
-  if (!match) return match === null ? 130 : 2;
+  const resolved = await resolveSession(sessionArg, opts, logger);
+  if (!resolved.ok) {
+    return resolved.reason === "cancelled" ? 130 : 2;
+  }
+  const match = resolved.match;
   logger.debug(`session located`, {
     sessionId: match.sessionId,
     jsonl: match.jsonlPath
@@ -8870,17 +8967,17 @@ async function resolveSession(sessionArg, opts, logger) {
     const picked = await pickSession();
     if (!picked) {
       console.error("Selection cancelled.");
-      return null;
+      return { ok: false, reason: "cancelled" };
     }
-    return picked;
+    return { ok: true, match: picked };
   }
   if (opts.latest) {
     const latest = await findLatestSession();
     if (!latest) {
       console.error("error: no sessions found under ~/.claude/projects/.");
-      return void 0;
+      return { ok: false, reason: "not_found" };
     }
-    return latest;
+    return { ok: true, match: latest };
   }
   if (!sessionArg) {
     const inProject = await findLatestSessionInProject(process.cwd());
@@ -8888,24 +8985,24 @@ async function resolveSession(sessionArg, opts, logger) {
       logger.debug("smart default \u2192 this project's latest session", {
         sessionId: inProject.sessionId
       });
-      return inProject;
+      return { ok: true, match: inProject };
     }
     const global = await findLatestSession();
     if (global) {
       console.error(
         `(no session in this project \u2014 falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`
       );
-      return global;
+      return { ok: true, match: global };
     }
     console.error("error: no sessions found under ~/.claude/projects/.");
-    return void 0;
+    return { ok: false, reason: "not_found" };
   }
   const matches = await locateSession(sessionArg);
   if (matches.length === 0) {
     console.error(
       `error: no session matched "${sessionArg}" under ~/.claude/projects/.`
     );
-    return void 0;
+    return { ok: false, reason: "not_found" };
   }
   if (matches.length > 1) {
     const lines = matches.slice(0, 5).map((m) => `  \u2022 ${m.sessionId}  (${m.projectDir})`).join("\n");
@@ -8915,9 +9012,9 @@ ${lines}
 
 Re-run with a longer prefix.`
     );
-    return void 0;
+    return { ok: false, reason: "not_found" };
   }
-  return matches[0];
+  return { ok: true, match: matches[0] };
 }
 var invokedDirectly = typeof process !== "undefined" && process.argv[1] && /(^|\/)(cli\.(m?js|ts)|agent-tree|atree)$/.test(
   process.argv[1]

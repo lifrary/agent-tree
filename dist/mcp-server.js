@@ -15144,6 +15144,9 @@ var init_js_yaml = __esm({
   }
 });
 
+// src/mcp/server.ts
+import { stat as stat2 } from "node:fs/promises";
+
 // node_modules/zod/v3/helpers/util.js
 var util;
 (function(util2) {
@@ -38958,7 +38961,42 @@ function buildGraph(meta3, events, opts = {}) {
     }
     bucket.push(e.uuid);
   }
+  breakIndirectCycles(roots, childrenOf, logger2);
   return { meta: meta3, events, childrenOf, roots, byUuid };
+}
+function breakIndirectCycles(roots, childrenOf, logger2) {
+  const visited = /* @__PURE__ */ new Set();
+  for (const root of roots) {
+    if (visited.has(root)) continue;
+    const stack = [
+      { uuid: root, childIdx: 0 }
+    ];
+    const inStack = /* @__PURE__ */ new Set([root]);
+    visited.add(root);
+    while (stack.length > 0) {
+      const top = stack[stack.length - 1];
+      const children = childrenOf.get(top.uuid);
+      if (!children || top.childIdx >= children.length) {
+        inStack.delete(top.uuid);
+        stack.pop();
+        continue;
+      }
+      const child = children[top.childIdx];
+      if (inStack.has(child)) {
+        logger2?.warn("cycle detected in parentUuid chain, dropping back-edge", {
+          from: top.uuid,
+          to: child
+        });
+        children.splice(top.childIdx, 1);
+        continue;
+      }
+      top.childIdx += 1;
+      if (visited.has(child)) continue;
+      visited.add(child);
+      inStack.add(child);
+      stack.push({ uuid: child, childIdx: 0 });
+    }
+  }
 }
 function graphToDump(graph) {
   const childrenOf = {};
@@ -39132,6 +39170,7 @@ function defaultSleep(ms) {
 // src/utils/git.ts
 import { spawn } from "node:child_process";
 var TIMEOUT_MS = 1500;
+var STDOUT_CAP_BYTES = 32 * 1024;
 async function getGitContext(cwd) {
   if (!cwd) return { cwd, available: false, reason: "no cwd" };
   const inside = await runGit(cwd, ["rev-parse", "--is-inside-work-tree"]);
@@ -39158,6 +39197,7 @@ function runGit(cwd, args) {
     let settled = false;
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
+    let capped = false;
     const timer = setTimeout(() => {
       if (settled) return;
       settled = true;
@@ -39168,7 +39208,16 @@ function runGit(cwd, args) {
       resolve3({ ok: false, stdout: "" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => {
+      if (capped) return;
       stdout += chunk.toString();
+      if (stdout.length >= STDOUT_CAP_BYTES) {
+        capped = true;
+        stdout = stdout.slice(0, STDOUT_CAP_BYTES);
+        try {
+          child.kill();
+        } catch {
+        }
+      }
     });
     child.on("error", () => {
       if (settled) return;
@@ -39180,7 +39229,7 @@ function runGit(cwd, args) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve3({ ok: code === 0, stdout });
+      resolve3({ ok: capped || code === 0, stdout });
     });
   });
 }
@@ -40227,8 +40276,15 @@ var DEFAULT_PATTERNS = [
     replacement: "ASIA***REDACTED***"
   },
   {
+    // 35-char alphanumeric + `_-` suffix. `\b` at the end would fail when the
+    // key happens to end in `-` (a non-word char), because the next char is
+    // also typically non-word (space/`.`/EOF) and `\b` needs a word↔non-word
+    // transition. `{35}` is fixed-length, so the engine can't shorten the
+    // match to dodge the boundary — the whole key would leak unredacted.
+    // Use a negative lookahead against the same class to terminate correctly
+    // regardless of word-ness at the seam.
     name: "gcp_api_key",
-    regex: /\bAIza[0-9A-Za-z_-]{35}\b/g,
+    regex: /\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g,
     replacement: "AIza***REDACTED***"
   },
   {
@@ -40272,8 +40328,16 @@ var DEFAULT_PATTERNS = [
     replacement: "-----REDACTED PRIVATE KEY-----"
   },
   {
+    // base64url (RFC 4648 §5) alphabet is `[A-Za-z0-9_-]` — signature portion
+    // can legally end in `-` or `_`. Trailing `\b` required a word↔non-word
+    // transition and would fail whenever the signature happened to end on a
+    // `-`/`_` with non-word context after (space / EOF / punctuation). The
+    // engine could sometimes backtrack within the `{10,}` to land on a word
+    // char, leaking the trailing byte; when the signature was ≤10 chars of
+    // trailing `-`s it couldn't match at all. Replace with a negative
+    // lookahead against the same class.
     name: "jwt",
-    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g,
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
     replacement: "eyJ***REDACTED.JWT***"
   }
 ];
@@ -40545,9 +40609,17 @@ function buildRedactor(opts, config2, logger2) {
     strict: Boolean(opts.redactStrict) || config2.redaction.strict,
     extraPatterns: (config2.redaction.extra_patterns ?? []).map((pattern, i) => {
       try {
+        const regex = new RegExp(pattern, "g");
+        if (!passesRedosFuzz(regex)) {
+          logger2.warn(
+            "redaction.extra_patterns entry failed ReDoS fuzz guard \u2014 dropping",
+            { pattern }
+          );
+          return null;
+        }
         return {
           name: `extra_${i}`,
-          regex: new RegExp(pattern, "g"),
+          regex,
           replacement: "[REDACTED]"
         };
       } catch {
@@ -40556,6 +40628,29 @@ function buildRedactor(opts, config2, logger2) {
       }
     }).filter((x) => x !== null)
   });
+}
+var REDOS_PROBE_BUDGET_MS = 50;
+function passesRedosFuzz(re) {
+  const src = re.source;
+  if (/\([^()]*[+*][^()]*\)[+*]/.test(src)) return false;
+  if (/\((\w+)\|\1\)[+*]/.test(src)) return false;
+  const inputs = [
+    "a".repeat(20),
+    "1".repeat(20),
+    "ab".repeat(10),
+    "a-".repeat(10)
+  ];
+  for (const input of inputs) {
+    const probe = new RegExp(src, re.flags);
+    const start = Date.now();
+    try {
+      probe.test(input);
+    } catch {
+      return false;
+    }
+    if (Date.now() - start > REDOS_PROBE_BUDGET_MS) return false;
+  }
+  return true;
 }
 function pickSidechainMode(opts, config2) {
   if (opts.dropSidechains) return "drop";
@@ -40992,6 +41087,7 @@ async function safeReaddir(path) {
 }
 
 // src/utils/picks.ts
+import { randomBytes } from "node:crypto";
 import { appendFile, mkdir as mkdir2, readFile as readFile3 } from "node:fs/promises";
 import { homedir as homedir4 } from "node:os";
 import { dirname, join as join4 } from "node:path";
@@ -41075,7 +41171,8 @@ async function removePicksForNode(sessionId, nodeId, opts = {}) {
   }
   if (removed === 0) return 0;
   const { writeFile: writeFile2, rename } = await import("node:fs/promises");
-  const tmp = `${file2}.tmp-${process.pid}-${Date.now()}`;
+  const rand = randomBytes(4).toString("hex");
+  const tmp = `${file2}.tmp-${process.pid}-${Date.now()}-${rand}`;
   await writeFile2(
     tmp,
     kept.length > 0 ? kept.join("\n") + "\n" : "",
@@ -41155,7 +41252,35 @@ async function resolveMatchSafe(sessionId, cwd) {
     };
   }
 }
+var PIPELINE_CACHE_MAX = 3;
+var pipelineCache = [];
 async function pipelineFor(match) {
+  let mtimeMs = null;
+  try {
+    mtimeMs = (await stat2(match.jsonlPath)).mtimeMs;
+  } catch {
+    mtimeMs = null;
+  }
+  if (mtimeMs !== null) {
+    const key = `${match.sessionId}:${match.jsonlPath}:${mtimeMs}`;
+    const idx = pipelineCache.findIndex((e) => e.key === key);
+    if (idx >= 0) {
+      const [hit] = pipelineCache.splice(idx, 1);
+      pipelineCache.unshift(hit);
+      return hit.result;
+    }
+    const { config: config3 } = await loadConfig({ logger });
+    const result = await runPipeline({
+      match,
+      opts: { llm: false },
+      config: config3,
+      logger,
+      quiet: true
+    });
+    pipelineCache.unshift({ key, result });
+    if (pipelineCache.length > PIPELINE_CACHE_MAX) pipelineCache.pop();
+    return result;
+  }
   const { config: config2 } = await loadConfig({ logger });
   return runPipeline({
     match,
@@ -41168,7 +41293,7 @@ async function pipelineFor(match) {
 var logger = createLoggerSync("warn");
 var server = new McpServer({
   name: "agent-tree",
-  version: "0.1.1"
+  version: "0.1.2"
 });
 server.tool(
   "agent_tree_list",

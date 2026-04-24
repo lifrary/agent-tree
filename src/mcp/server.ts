@@ -185,7 +185,7 @@ const logger = createLoggerSync('warn');
 
 const server = new McpServer({
   name: 'agent-tree',
-  version: '0.1.1',
+  version: '0.1.2',
 });
 
 // agent_tree_list ------------------------------------------------------------

@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [v0.1.2] — 2026-04-24
+
 ### Security: token-class boundary audit (2026-04-24)
 
 Two built-in redaction patterns had a latent class/`\b` bug that let
