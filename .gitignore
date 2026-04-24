@@ -61,3 +61,10 @@ AGENTS.md
 # ──────────────── Project scratch ────────────────
 .tmp/
 .scratch/
+
+# ──────────────── Historical / pre-rebrand local docs ────────────────
+# SPEC.md (v0.3 markmap era) and PROMPTS.md (M1–M5 milestone notes) are
+# kept locally for archeology but are not part of the published surface;
+# CHANGELOG.md + RELEASING.md + CONTRIBUTING.md are the live docs.
+SPEC.md
+PROMPTS.md

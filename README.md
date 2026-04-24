@@ -236,7 +236,7 @@ Default schema lives in [`src/config/schema.ts`](./src/config/schema.ts).
          MCP tools  (when running as Claude Code plugin)
 ```
 
-For the deep version, see [`CLAUDE.md`](./CLAUDE.md).
+Source layout is documented inline in `src/` module headers; the [`CHANGELOG.md`](./CHANGELOG.md) explains *why* the current shape exists (every pivot left a paper trail).
 
 ## Roadmap
 
@@ -261,7 +261,7 @@ npm run build       # esbuild → dist/cli.js + dist/mcp-server.js
 ./dist/cli.js --help
 ```
 
-Project conventions live in [`CLAUDE.md`](./CLAUDE.md). Historical design context is in [`SPEC.md`](./SPEC.md) (v0.3, frozen reference).
+Contributor workflow lives in [`CONTRIBUTING.md`](./CONTRIBUTING.md); release procedure in [`RELEASING.md`](./RELEASING.md); decision history in [`CHANGELOG.md`](./CHANGELOG.md).
 
 ## License
 
