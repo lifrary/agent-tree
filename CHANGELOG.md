@@ -40,6 +40,27 @@ graph is now guaranteed acyclic regardless of jsonl pathology. Iterative
 form avoids stack overflow on long linear parent chains. Test fixtures
 in `tests/graph.test.ts`: cycle break, diamond preservation, empty graph.
 
+### Safety: ReDoS fuzz guard for `redaction.extra_patterns` (2026-04-24)
+
+`config.redaction.extra_patterns` compiles user-supplied strings into
+RegExps that then run against every string flowing through the redactor
+sinks. A pathological pattern like `/(a+)+b/` would hang the entire CLI
+on innocent input — self-DoS. Added `passesRedosFuzz` (exported from
+`src/cli/pipeline.ts`) that each candidate must clear before joining the
+redactor:
+
+1. Syntactic pre-filter — rejects classic nested-quantifier and
+   alternation-overlap shapes (`(x+)+`, `(x*)*`, `(x|x)*`) that cover
+   most practical ReDoS without having to run the regex at all.
+2. Short-input probe — 20-char worst-case inputs run against the
+   compiled regex with a 50ms per-probe budget. Catches patterns that
+   slip past the syntactic filter. Input size is deliberately tiny
+   because JavaScript's RegExp is uninterruptible, so long probes would
+   be vulnerable to the very DoS they're meant to detect.
+
+Patterns that fail are dropped with a `logger.warn`; the rest of
+`extra_patterns` still ships.
+
 ## [v0.1.1] — 2026-04-24
 
 ### Security: CLI snapshot now uses `safeGitCwd` (2026-04-24)

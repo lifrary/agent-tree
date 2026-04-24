@@ -26,6 +26,7 @@ import { dirname } from 'node:path';
 
 import { detectSegments } from '../src/analyzer/segments.js';
 import { dumpArtifacts } from '../src/cli/modes.js';
+import { passesRedosFuzz } from '../src/cli/pipeline.js';
 import { labelMindMap } from '../src/llm/labeler.js';
 import { buildGraph } from '../src/reader/graph.js';
 import { readJsonl } from '../src/reader/jsonl.js';
@@ -582,5 +583,60 @@ describe('phone regex — ReDoS hardening', () => {
     // to order / SKU / tracking numbers, so we skip rather than over-redact.
     expect(r.apply('order 12345678901')).toBe('order 12345678901');
     expect(r.apply('sku 0987654321')).toBe('sku 0987654321');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// 8. passesRedosFuzz — user config extra_patterns self-DoS guard (v0.1.2)
+//
+// `config.redaction.extra_patterns` compiles user-supplied strings into
+// RegExps that then run against every string flowing through the sinks.
+// A classic evil pattern like `/(a+)+b/` hangs the CLI on benign input —
+// the user self-DoSes their own session. `passesRedosFuzz` probes the
+// compiled regex against worst-case inputs; anything exceeding the
+// per-probe budget is dropped from the redactor's pattern list.
+// ---------------------------------------------------------------------------
+
+describe('passesRedosFuzz — extra_patterns self-DoS guard', () => {
+  it('accepts a well-formed linear pattern', () => {
+    expect(passesRedosFuzz(/foo-\d{4}/g)).toBe(true);
+    expect(passesRedosFuzz(/[A-Z]{3}-\d{6}/g)).toBe(true);
+  });
+
+  it('accepts the hard-coded `hf_` / `npm_` / `AIza` shapes (self-check)', () => {
+    // Same shape as DEFAULT_PATTERNS — if the guard rejects its own
+    // patterns that's a regression.
+    expect(passesRedosFuzz(/\bhf_[A-Za-z0-9]{30,}\b/g)).toBe(true);
+    expect(passesRedosFuzz(/\bnpm_[A-Za-z0-9]{36}\b/g)).toBe(true);
+    expect(passesRedosFuzz(/\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g)).toBe(true);
+  });
+
+  it('rejects the canonical `(a+)+b` nested-quantifier evil pattern', () => {
+    // Caught by syntactic pre-filter — `(...+...)+` shape without ever
+    // having to run the regex. Textbook exponential backtracking on input
+    // like `'a'.repeat(N)` (no `b`).
+    expect(passesRedosFuzz(/(a+)+b/g)).toBe(false);
+  });
+
+  it('rejects alternation-overlap `(a|a)*b`', () => {
+    // Caught by syntactic alternation-overlap check (backreference to the
+    // same captured token). Ambiguity at every step → exponential branching.
+    expect(passesRedosFuzz(/(a|a)*b/g)).toBe(false);
+  });
+
+  it('rejects `(x+x+)+y` — nested repeat within a repeat group', () => {
+    // Also caught syntactically — the `[^()]*[+*][^()]*` window inside
+    // the outer `(...)` matches `x+x`.
+    expect(passesRedosFuzz(/(x+x+)+y/g)).toBe(false);
+  });
+
+  it('is bounded — guard itself completes in < 1 second on any input', () => {
+    // The probe inputs cap at 20 chars. Four probes × per-probe worst-case
+    // ≤ ~100ms on V8 Irregexp = total < 500ms. CI slack 2×.
+    const evil = /([a-z]+[a-z]+)+z/g;
+    const start = Date.now();
+    passesRedosFuzz(evil);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(1000);
   });
 });

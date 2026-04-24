@@ -226,9 +226,17 @@ function buildRedactor(
     extraPatterns: (config.redaction.extra_patterns ?? [])
       .map((pattern, i) => {
         try {
+          const regex = new RegExp(pattern, 'g');
+          if (!passesRedosFuzz(regex)) {
+            logger.warn(
+              'redaction.extra_patterns entry failed ReDoS fuzz guard — dropping',
+              { pattern },
+            );
+            return null;
+          }
           return {
             name: `extra_${i}`,
-            regex: new RegExp(pattern, 'g'),
+            regex,
             replacement: '[REDACTED]',
           };
         } catch {
@@ -238,6 +246,71 @@ function buildRedactor(
       })
       .filter((x): x is NonNullable<typeof x> => x !== null),
   });
+}
+
+/**
+ * Guard against catastrophic backtracking in user-supplied regexes.
+ *
+ * `config.redaction.extra_patterns` compiles whatever the user wrote into a
+ * RegExp and runs it against every string that flows through the sinks
+ * (segment labels, snapshot markdown, cached artifacts). A pathological
+ * pattern like `/(a+)+b/` will hang the entire CLI on innocent inputs —
+ * the user self-DoSes themselves.
+ *
+ * Hard constraint: JavaScript's RegExp runs on a single thread and is
+ * **uninterruptible** — a truly evil pattern hangs this probe just as
+ * reliably as it would hang the user's session. We can't rely on runtime
+ * timeouts alone. The guard is therefore a hybrid:
+ *
+ *   1. Syntactic pre-filter — cheap, always safe. Rejects classic
+ *      nested-quantifier and alternation-overlap shapes responsible for
+ *      most practical ReDoS (`(x+)+`, `(x*)+`, `(x|x)*`, etc.).
+ *   2. Short-input probe — 20-char worst-case-shaped inputs run against
+ *      the compiled regex. At 20 chars even `(a+)+b` stays under ~100ms
+ *      on V8 Irregexp, so the probe itself can't hang startup. Catches
+ *      cases that slip past the syntactic filter (e.g. three nested
+ *      classes in a repeat).
+ *
+ * False-positive bias: we'd rather drop a legitimate-but-weird pattern than
+ * freeze the CLI; the user sees a `logger.warn` and can rephrase.
+ */
+export const REDOS_PROBE_BUDGET_MS = 50;
+export function passesRedosFuzz(re: RegExp): boolean {
+  const src = re.source;
+
+  // Nested quantifier inside a repeat group: `(x+)+`, `(x*)*`, `(x+)*`,
+  // `(x*)+`. The `[^()]*` guards keep this from matching across nested
+  // parens where the structure might actually be safe.
+  if (/\([^()]*[+*][^()]*\)[+*]/.test(src)) return false;
+
+  // Alternation overlap where both branches of `(a|b)*` accept identical
+  // prefixes. Canonical form uses a backreference; we catch the exact
+  // `(\w+|\1)` shape which is sufficient for common ReDoS catalogues.
+  if (/\((\w+)\|\1\)[+*]/.test(src)) return false;
+
+  // Runtime probe — short inputs only. JS RegExp is uninterruptible, so
+  // long probes are a self-footgun. 20 chars is small enough that even
+  // 2^20 ≈ 10^6 NFA steps completes under ~100ms on Irregexp, bounding
+  // the guard's cost even on patterns that slip past the syntactic check.
+  const inputs = [
+    'a'.repeat(20),
+    '1'.repeat(20),
+    'ab'.repeat(10),
+    ('a' + '-').repeat(10),
+  ];
+  for (const input of inputs) {
+    // Fresh clone — `g`-flagged `test()` advances `lastIndex`, which
+    // could make back-to-back probes misbehave on sticky regexes.
+    const probe = new RegExp(src, re.flags);
+    const start = Date.now();
+    try {
+      probe.test(input);
+    } catch {
+      return false;
+    }
+    if (Date.now() - start > REDOS_PROBE_BUDGET_MS) return false;
+  }
+  return true;
 }
 
 function pickSidechainMode(
