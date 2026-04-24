@@ -4,6 +4,28 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Phone regex ReDoS hardening (2026-04-24)
+
+The strict-mode phone pattern used three optional separators inside an
+outer-optional prefix group — classic nested-optional structure whose
+worst-case backtracking was quasi-exponential on long digit-only input.
+The fix splits intent into two patterns:
+
+- **`phone_e164`** — `/\+\d{8,15}\b/g`. International format with required
+  `+` prefix, pure-digit bounded run. No backtracking at all.
+- **`phone`** — `/(?<!\w)(?:\+\d{1,3}[-.\s])?\(?\d{2,4}\)?[-.\s]\d{3,4}[-.\s]\d{3,4}\b/g`.
+  Middle separators now required (not `?`), removing the nested optional.
+  Leading `(?<!\w)` replaces `\b` so a leading `(` in `(415) 555-0123` is
+  still captured. Pure-digit domestic numbers without separators are
+  intentionally not matched — the false-positive risk on order numbers /
+  SKUs / IDs outweighed the extra recall.
+
+Fuzz tests in `tests/security-hardening.test.ts` verify that
+`'1'.repeat(1000) + 'x'` and `'1-'.repeat(500) + 'x'` both complete in
+<200 ms, and that common formats (`010-1234-5678`, `(415) 555-0123`,
+`+82 10-1234-5678`, `+14155550123`) still redact correctly. Test count:
+113 → 118.
+
 ### dist/*.js now committed (2026-04-24)
 
 `dist/*.js` is no longer gitignored, so `claude plugin marketplace add

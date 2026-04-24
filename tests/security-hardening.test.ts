@@ -453,3 +453,51 @@ describe('looksLikeSystemNoise — expanded prefix coverage', () => {
     expect(joined).not.toMatch(/^\$ /m);
   });
 });
+
+// ---------------------------------------------------------------------------
+// 7. Phone regex ReDoS hardening
+// ---------------------------------------------------------------------------
+
+describe('phone regex — ReDoS hardening', () => {
+  const r = defaultRedactor({ strict: true });
+
+  it('does not hang on long digit-only pathological input', () => {
+    // Old regex had nested optional separators (`[-.\s]?` ×3 + optional
+    // prefix group) → exponential backtracking on a long digit run with no
+    // word-boundary terminator that matches the full pattern.
+    const pathological = '1'.repeat(1000) + 'x';
+    const start = Date.now();
+    const out = r.apply(pathological);
+    const elapsed = Date.now() - start;
+    expect(elapsed).toBeLessThan(100); // typical <1ms; 100ms leaves CI slack
+    expect(out).toBe(pathological); // no phone should match this
+  });
+
+  it('does not hang on long digit-with-dash pathological input', () => {
+    // Another common ReDoS trigger: alternating digit/separator runs that
+    // almost match but fail at the word boundary.
+    const pathological = '1-'.repeat(500) + 'x';
+    const start = Date.now();
+    r.apply(pathological);
+    expect(Date.now() - start).toBeLessThan(200);
+  });
+
+  it('still redacts common separated phone formats', () => {
+    expect(r.apply('call 010-1234-5678 asap')).toBe('call [PHONE] asap');
+    expect(r.apply('US office (415) 555-0123')).toBe('US office [PHONE]');
+    expect(r.apply('intl: +82 10-1234-5678')).toBe('intl: [PHONE]');
+    expect(r.apply('dial +1-415-555-0123')).toBe('dial [PHONE]');
+  });
+
+  it('redacts E.164 pure-digit international numbers', () => {
+    expect(r.apply('hit +14155550123 now')).toBe('hit [PHONE] now');
+    expect(r.apply('kr: +821012345678')).toBe('kr: [PHONE]');
+  });
+
+  it('does not false-positive on long digit runs without separators', () => {
+    // Acceptable recall loss: separator-less domestic digits look identical
+    // to order / SKU / tracking numbers, so we skip rather than over-redact.
+    expect(r.apply('order 12345678901')).toBe('order 12345678901');
+    expect(r.apply('sku 0987654321')).toBe('sku 0987654321');
+  });
+});

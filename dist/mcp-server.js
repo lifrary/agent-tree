@@ -40288,9 +40288,29 @@ var STRICT_EXTRA = [
     replacement: "[RRN]"
   },
   {
-    // International E.164 or local 10-15 digit with separators
+    // International E.164 with required `+` prefix. Pure-digit bounded run,
+    // no nested optionals → ReDoS-safe.
+    name: "phone_e164",
+    regex: /\+\d{8,15}\b/g,
+    replacement: "[PHONE]"
+  },
+  {
+    // Local/domestic phone with ≥2 separators. Separators are REQUIRED — the
+    // old regex had `[-.\s]?` at three positions plus an outer-optional
+    // prefix group, yielding nested optionals whose backtracking was
+    // catastrophic on long digit-only input (classic ReDoS). Requiring both
+    // middle separators removes the ambiguity without losing common formats:
+    //   ✓ 010-1234-5678   ✓ (415) 555-0123   ✓ +82 10-1234-5678
+    // Pure-digit numbers like "01012345678" are intentionally not caught
+    // here — phone_e164 above catches the `+` variant, and for separator-less
+    // domestic strings the false-positive risk on long IDs (order numbers,
+    // SKUs) outweighs the extra recall.
     name: "phone",
-    regex: /\b(?:\+?\d{1,3}[-.\s]?)?\(?\d{2,4}\)?[-.\s]?\d{3,4}[-.\s]?\d{3,4}\b/g,
+    // (?<!\w) at the start — not \b — so that a leading `(` (not a word
+    // char, breaks \b) is still matched when the prior byte is whitespace.
+    // Without this, `US office (415) 555-0123` would match as
+    // `415) 555-0123` and leave the paren outside the redaction.
+    regex: /(?<!\w)(?:\+\d{1,3}[-.\s])?\(?\d{2,4}\)?[-.\s]\d{3,4}[-.\s]\d{3,4}\b/g,
     replacement: "[PHONE]"
   }
 ];
