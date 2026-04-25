@@ -13,6 +13,14 @@ post-publish smoke test, MCP plugin re-install).
 - Logged in to GitHub via `gh`: `gh auth status`
 - On `main` branch with no untracked / uncommitted changes
 - Working directory at repo root
+- **npm Granular Access Token with "Bypass 2FA when publishing"** enabled —
+  one-time setup at https://www.npmjs.com/settings/seungwoolee/tokens →
+  Generate New Token → Granular Access Token → check "Bypass two-factor
+  authentication when publishing", grant Read+Write on `@seungwoolee/agent-tree`,
+  then `npm config set //registry.npmjs.org/:_authToken=npm_XXXXX`. Without
+  this, subprocess publish fails: `--auth-type=web` silent-fails (no
+  stdin/browser orchestration in agent-driven shells), classic-OTP path
+  requires interactive stdin. Token expires per its TTL — re-issue then.
 
 ## Release sequence
 
@@ -86,13 +94,28 @@ gh release create vX.Y.Z --title "vX.Y.Z" \
 
 ### 6. npm publish
 
+With a Granular Access Token + 2FA-bypass configured (Prerequisites
+above), publish proceeds straight through:
+
 ```bash
 npm publish --access public
-# 2FA on? add: --otp=NNNNNN
+```
+
+Without bypass token, manual OTP fallback (interactive shell only):
+
+```bash
+npm publish --access public --otp=NNNNNN
 ```
 
 > `prepublishOnly` re-runs lint+typecheck+test+build automatically. If it
 > fails, the publish is aborted before any registry write.
+>
+> **Re-trying after an auth fix**: skip the second `prepublishOnly` with
+> `npm publish --access public --ignore-scripts` when lint+typecheck+test+build
+> already passed in the same shell session — esbuild bakes
+> `package.json#version` into `dist/cli.js` at build time, so once `dist/`
+> matches the bumped version, re-running scripts is wasted ceremony.
+> Validated v0.1.2 publish (2026-04-25).
 
 ### 7. Post-publish smoke test
 
@@ -174,7 +197,23 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
   at auth (silently-expired `.npmrc` token → `E401`), you're stuck with a
   live tag pointing to a version the registry doesn't have — fixing
   requires delete-tag-and-re-tag or a version bump. Defensive alternative
-  proven on v0.1.1: run `npm publish` **before** `git push origin vX.Y.Z`
-  (the release commit can still push to main first so CI sees it; only
-  the tag-push waits). Always `npm whoami` as a publish preflight — the
-  canonical token-failure mode only surfaces at publish time.
+  proven on v0.1.1 and re-validated on v0.1.2: run `npm publish` **before**
+  `git push origin vX.Y.Z` (the release commit can still push to main
+  first so CI sees it; only the tag-push waits). Always `npm whoami` as a
+  publish preflight — the canonical token-failure mode only surfaces at
+  publish time.
+- **Subprocess `npm publish --auth-type=web` silent-fails**: When run
+  inside an agent-driven shell (no interactive stdin / no automated
+  browser orchestration), `--auth-type=web` exits without performing the
+  auth handshake → publish falls back to anonymous → npm hides "permission
+  denied" behind `404 Not Found` on scoped packages (privacy feature, not
+  a missing-package signal). The fix is the bypass-token path in
+  Prerequisites. Discovered v0.1.2 (2026-04-25) when scheduled publish
+  hung on Day 1 (OTP) and silently 404'd on Day 2 (web auth in
+  subprocess). See `.claude-sessions/2026-04-24-23-09-v0.1.2-publish-pause.md`.
+- **Granular Access Token defaults to 2FA-required**: A freshly issued
+  granular token works for `npm whoami` and read operations immediately,
+  but publish still throws `EOTP` until you re-issue with the "Bypass
+  two-factor authentication when publishing" checkbox enabled. Easy to
+  miss during initial token setup; the checkbox is on the same form as
+  packages/scopes/permissions, not a separate page.
