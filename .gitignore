@@ -41,7 +41,15 @@ coverage/
 
 # ──────────────── Claude Code ecosystem (never committed) ────────────────
 CLAUDE.md
-.claude/
+# .claude/ holds Claude Code state (settings.local.json etc.) which is
+# per-machine and never committed. EXCEPTION: .claude/commands/ holds
+# project-scope slash commands that ship with the repo so external
+# contributors / CI / a fresh checkout can run /pre-publish-audit and
+# /mcp-smoke. Use `.claude/*` (not `.claude/`) so the negation can
+# re-include the subdirectory — git refuses to re-include paths whose
+# parent dir is excluded.
+.claude/*
+!.claude/commands/
 .claude-sessions/
 .mcp.json
 .claude.json
