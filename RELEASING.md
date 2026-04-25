@@ -217,3 +217,52 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
   two-factor authentication when publishing" checkbox enabled. Easy to
   miss during initial token setup; the checkbox is on the same form as
   packages/scopes/permissions, not a separate page.
+- **Folder-rename hazards (paired-mv discipline, exit-first ordering)**:
+  Renaming the working tree (`mv ~/Code/<old> ~/Code/<new>`) without a
+  paired `mv` of the matching Claude Code session storage
+  (`mv ~/.claude/projects/-Users-...-<old> -Users-...-<new>`) makes the
+  cwd→encoded-path lookup in `src/utils/session_path.ts` return zero —
+  the tool goes blind to its own JSONL history. Four asymmetries that
+  bite:
+    1. **inode/FD vs absolute-path resolution**: open file descriptors
+       follow the inode through `mv`, but Claude Code's hook payloads
+       (`transcript_path`, subprocess `cwd`, permission rules in
+       `settings.local.json`) hold absolute paths and re-resolve on every
+       use. Mid-session `mv` keeps the existing FD writing fine but breaks
+       every fresh path resolution → silent permission-prompt regressions
+       and stale-path subprocess respawns until restart.
+    2. **Paired `~/.claude/projects/` mv is mandatory**: encoded-cwd rule
+       is `/` → `-`, so `~/Code/agent-tree` resolves to directory
+       `-Users-seungwoolee-Code-agent-tree`. If only the working tree is
+       renamed, JSONL files become unreachable to both Claude Code (which
+       writes to a fresh dir under the new encoded name) and agent-tree
+       (which reads from the encoded-of-cwd dir).
+    3. **Encoded-path slash→hyphen rule**: a single `/` becomes a single
+       `-` with no escaping, so any literal `-` already in a folder name
+       can collide with a sibling whose `/` is at that position. Avoid
+       `-` in folder names if you anticipate future renames.
+    4. **Exit-first ordering**: do the `mv` post-`/exit` only, never
+       mid-session. Mid-session `mv` corrupts hook permission rules,
+       triggers MCP-server respawn at stale paths, and leaves the agent
+       in a broken state until full restart. The user-side ceremony is:
+       `/exit` → `mv` working tree → paired `mv` `~/.claude/projects/`
+       dir → `cd <new>` → `claude`. See
+       `.claude-sessions/2026-04-25-18-57-folder-rename-decision.md` for
+       the full incident log.
+- **Plugin MCP can spawn from source, not cache** (verified 2026-04-25):
+  `claude plugin install` builds a real copy under
+  `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`, but
+  `ps -ef | grep mcp-server.js` shows the running MCP server invoked
+  from the marketplace source directory (`node <source-cwd>//dist/...`,
+  note the doubled slash from `${CLAUDE_PLUGIN_ROOT}/` + `/dist/...`),
+  not the cache. Implication: in-session MCP behavior reflects *current*
+  source, not the cached snapshot — editing `dist/mcp-server.js` in the
+  source tree mid-session affects the next Claude Code restart even
+  without a re-install. Cache file-count + CLI `--version` checks
+  (`/pre-publish-audit`) are necessary but **not sufficient** to prove
+  the in-session MCP runtime loads the published code; only a `/tmp`
+  clean-dir install of the *published tarball* (`/mcp-smoke`) exercises
+  the registry-served bundle end-to-end. A consequence: stale dev-path
+  MCP processes survive folder rename — `ps -ef` after a rename will
+  show entries pointing at the old (now-missing) directory until each
+  Claude Code session that spawned them is restarted.
