@@ -249,20 +249,30 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
        dir → `cd <new>` → `claude`. See
        `.claude-sessions/2026-04-25-18-57-folder-rename-decision.md` for
        the full incident log.
-- **Plugin MCP can spawn from source, not cache** (verified 2026-04-25):
-  `claude plugin install` builds a real copy under
-  `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`, but
-  `ps -ef | grep mcp-server.js` shows the running MCP server invoked
-  from the marketplace source directory (`node <source-cwd>//dist/...`,
-  note the doubled slash from `${CLAUDE_PLUGIN_ROOT}/` + `/dist/...`),
-  not the cache. Implication: in-session MCP behavior reflects *current*
-  source, not the cached snapshot — editing `dist/mcp-server.js` in the
-  source tree mid-session affects the next Claude Code restart even
-  without a re-install. Cache file-count + CLI `--version` checks
+- **Plugin MCP spawns from marketplace source, not cache** (verified
+  2026-04-25 with three independent signals):
+    1. **`ps -ef`**: argv shows
+       `node <source-cwd>//dist/mcp-server.js` — note the doubled slash
+       from `${CLAUDE_PLUGIN_ROOT}/` + `/dist/...`.
+    2. **`lsof -p <pid>`**: process `cwd DIR` resolves to the source
+       tree (`/Users/seungwoolee/Code/agent-tree`) — not
+       `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`.
+    3. **Cache vs source byte-identity at install time**: `diff -q`
+       on `dist/mcp-server.js` shows identical content with matching
+       mtime immediately after `claude plugin install`, but cache
+       stays put when source is rebuilt. Combined with signal 1+2,
+       this means the runtime resolves to source — and the cache
+       only matters as an artifact of `claude plugin install`'s
+       bookkeeping, not as the loaded bundle.
+  Implication: in-session MCP behavior reflects *current* source, not
+  the cached snapshot — editing `dist/mcp-server.js` in the source tree
+  mid-session affects the next Claude Code restart even without a
+  re-install. Cache file-count + CLI `--version` checks
   (`/pre-publish-audit`) are necessary but **not sufficient** to prove
   the in-session MCP runtime loads the published code; only a `/tmp`
-  clean-dir install of the *published tarball* (`/mcp-smoke`) exercises
-  the registry-served bundle end-to-end. A consequence: stale dev-path
-  MCP processes survive folder rename — `ps -ef` after a rename will
-  show entries pointing at the old (now-missing) directory until each
-  Claude Code session that spawned them is restarted.
+  clean-dir install of the published tarball (`/mcp-smoke`) exercises
+  the registry-served bundle end-to-end. Stale dev-path MCP processes
+  also survive folder rename — `ps -ef` after a rename shows entries
+  pointing at the old (now-missing) directory until each spawning
+  Claude Code session is restarted (paired-mv discipline above does not
+  help here; only restart does).
