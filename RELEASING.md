@@ -276,3 +276,25 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
   pointing at the old (now-missing) directory until each spawning
   Claude Code session is restarted (paired-mv discipline above does not
   help here; only restart does).
+
+  **Marketplace type controls the spawn path.** Verified by inspecting
+  `~/.claude/settings.json#extraKnownMarketplaces` and cross-referencing
+  with `ps -ef` for multiple installed plugins:
+  - **`directory` source** (this repo's setup; `claude plugin
+    marketplace add "$PWD"` writes `{"source":"directory","path":"<abs
+    cwd>"}`) → `${CLAUDE_PLUGIN_ROOT}` resolves to that registered
+    path, so MCP spawns from source. Cache exists but is not consumed
+    at runtime.
+  - **`github` source** (e.g., `oh-my-claudecode@omc` registered via
+    `claude plugin marketplace add github:...`) → `${CLAUDE_PLUGIN_ROOT}`
+    resolves to the cache path
+    (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`),
+    so MCP spawns from cache. Source path doesn't exist locally for
+    this case.
+  - Practical consequence: this repo's `directory` registration means
+    a folder rename or `mv` of the source tree breaks the plugin
+    immediately for the next Claude Code session, because the
+    `extraKnownMarketplaces.<name>.source.path` is an absolute string
+    and does not auto-update. Either re-run `claude plugin marketplace
+    add "$NEW_PWD"` after rename, or hand-edit
+    `~/.claude/settings.json#extraKnownMarketplaces.agent-tree.source.path`.
