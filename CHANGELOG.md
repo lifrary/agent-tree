@@ -4,6 +4,37 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Docs: README rewrite + agent-friendly surface (2026-04-26)
+
+Rewrote `README.md` for v0.1.2 accuracy and added a top-level
+"For agents (LLMs handed this URL)" section. Modern agentic workflows
+often hand a repo URL to an LLM with no other context; the new section
+provides:
+
+- Identity block (package / repo / version / runtime / data source)
+- One-shot self-test sequence (`npx --version` / `--help` / `--list`)
+- MCP tool schemas — zod-derived JSON, copy-paste-ready
+- Common task recipes ("user says X → call Y")
+- Constraints + failure modes (no `~/.claude/projects/` data, in-progress
+  sessions, ambiguous prefix, LLM cost, redaction, MCP path resolution
+  per marketplace type)
+- Pointer table to `CHANGELOG` / `SKILL.md` / `src/mcp/server.ts` /
+  `src/cli/options.ts` / `RELEASING.md` / `CONTRIBUTING.md`
+
+Also refreshed stale references across the doc set:
+
+- README test count `113 / 12 → 134 / 12` and pattern count
+  `10 default → 14 default` (`5 strict`)
+- README plugin-cache verification path `0.1.0` → version-agnostic glob
+  `*` so future bumps don't immediately re-stale the troubleshooting steps
+- README MCP smoke example now points to the bundled `/mcp-smoke` slash
+  command instead of an inline `tools/list` echo (which lacked the
+  spec-required `initialize` handshake under SDK 1.29)
+- `CONTRIBUTING.md` test count `113 / 12 → 134 / 12`
+- `skills/agent-tree/SKILL.md` `npx oh-my-agent-tree …` →
+  `npx -y @seungwoolee/agent-tree …` (the legacy package name predates
+  the rebrand chain `oh-my-claude-map → claude-map → claude-tree → agent-tree`)
+
 ## [v0.1.2] — 2026-04-24
 
 ### Security: token-class boundary audit (2026-04-24)

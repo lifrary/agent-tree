@@ -8,7 +8,7 @@ Thanks for the interest. agent-tree is small and opinionated; the bar for accept
 git clone https://github.com/lifrary/agent-tree
 cd agent-tree
 npm install
-npm test         # 113 / 12 files at last green — must stay green
+npm test         # 134 / 12 files at last green — must stay green
 ```
 
 Requirements:

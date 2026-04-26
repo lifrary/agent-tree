@@ -132,7 +132,7 @@ After the fence, tell the user:
 - **Ambiguous prefix** → CLI lists matches; ask the user to pick the right
   full UUID.
 - **`agent-tree: command not found`** → tell the user to run
-  `npm i -g @seungwoolee/agent-tree` (or `npx oh-my-agent-tree …` for one-shot).
+  `npm i -g @seungwoolee/agent-tree` (or `npx -y @seungwoolee/agent-tree …` for one-shot).
 
 ## Privacy
 
