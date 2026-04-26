@@ -142,8 +142,16 @@ The v0.1.0 bug was `"mcpServers": "./.mcp.json"` (string ref → plugin-root-rel
 > **Fix from Loop 1 review**: previous version looped over `args[]` inside
 > a `jq | while read` pipeline subshell, so `exit 1` on a missing path
 > could not propagate to the parent — silent false-pass. The version
-> below uses `mapfile` to land paths in the parent shell first, then
-> loops there.
+> below captures jq output into a parent-shell variable first
+> (preserving jq-error propagation under `set -e`), then splits into
+> an array via a portable while-read.
+>
+> **Portability fix (2026-04-26 macOS dogfood)**: previous version used
+> `mapfile -t`, a bash 4+ builtin. Claude Code's Bash tool routes
+> scripts through `/bin/zsh` on macOS by default — zsh has no
+> `mapfile`, so the call aborted with `(eval):N: command not found:
+> mapfile`. Capture-then-`while IFS= read -r ... <<<` is bash 3.2+ /
+> zsh 5+ compatible and preserves the same parent-shell array semantics.
 
 ```bash
 set -euo pipefail
@@ -152,8 +160,21 @@ jq -e '.mcpServers | type == "object"' .claude-plugin/plugin.json >/dev/null \
   || { echo "FAIL: plugin.json#mcpServers must be an inline object, not a string ref"; exit 1; }
 echo "  OK : plugin.json#mcpServers is an object"
 
-mapfile -t MCP_ARGS < <(jq -r '.mcpServers | to_entries[] | .value.args[]?' .claude-plugin/plugin.json) \
+# Two-phase split: capture jq output first so a parse failure surfaces
+# under `set -e` (process substitution + while-read would mask jq's
+# exit code — the FIFO would just close empty), then split into
+# MCP_ARGS via a portable while-read. `mapfile -t` would be one line
+# shorter but is bash-only — `/bin/zsh` (the macOS Bash tool default)
+# has no equivalent.
+MCP_ARGS_RAW=$(jq -r '.mcpServers | to_entries[] | .value.args[]?' .claude-plugin/plugin.json) \
   || { echo "FAIL: jq parse plugin.json mcpServers"; exit 1; }
+
+MCP_ARGS=()
+if [ -n "$MCP_ARGS_RAW" ]; then
+  while IFS= read -r line; do
+    MCP_ARGS+=("$line")
+  done <<< "$MCP_ARGS_RAW"
+fi
 [ ${#MCP_ARGS[@]} -gt 0 ] || { echo "FAIL: no args[] under .mcpServers"; exit 1; }
 
 for p in "${MCP_ARGS[@]}"; do
