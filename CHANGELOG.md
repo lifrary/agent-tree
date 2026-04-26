@@ -12,7 +12,9 @@ often hand a repo URL to an LLM with no other context; the new section
 provides:
 
 - Identity block (package / repo / version / runtime / data source)
-- One-shot self-test sequence (`npx --version` / `--help` / `--list`)
+- One-shot self-test sequence (isolated `/tmp` install + `--version` /
+  `--help` / `--list`); see "self-test npx form" note below for why
+  bare `npx` is unreliable here
 - MCP tool schemas — zod-derived JSON, copy-paste-ready
 - Common task recipes ("user says X → call Y")
 - Constraints + failure modes (no `~/.claude/projects/` data, in-progress
@@ -24,7 +26,19 @@ provides:
 Also refreshed stale references across the doc set:
 
 - README test count `113 / 12 → 134 / 12` and pattern count
-  `10 default → 14 default` (`5 strict`)
+  `10 default → 16 default` (5 strict). Original "10 default" was a much
+  earlier number; the v0.1.2 audit added several token classes (slack,
+  github_pat_finegrained, openai_project_key, stripe, huggingface, npm,
+  gcp_oauth, aws_temp). The v0.1.2 CHANGELOG line "all 14 DEFAULT_PATTERNS"
+  was itself stale — direct count of `name:` entries between
+  `DEFAULT_PATTERNS` and `STRICT_EXTRA` in `src/utils/redact.ts` is 16
+- README self-test npx form. Earlier draft used
+  `npx -y @seungwoolee/agent-tree --version` which silently fell back
+  to npx's own `--version` (returning the npm version `10.9.4`, not the
+  package). Multi-bin packages (`agent-tree` + `atree`) need the
+  explicit bin name: `npx -y @seungwoolee/agent-tree agent-tree --version`.
+  Confirmed by running all three self-test steps in `/tmp` against the
+  published 0.1.2 tarball
 - README plugin-cache verification path `0.1.0` → version-agnostic glob
   `*` so future bumps don't immediately re-stale the troubleshooting steps
 - README MCP smoke example now points to the bundled `/mcp-smoke` slash

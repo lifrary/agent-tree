@@ -220,23 +220,32 @@ The encoded-cwd rule: a session's JSONL lives at `~/.claude/projects/<cwd-with-s
 
 ### One-shot self-test
 
-If you have shell access, run this sequence first to confirm install + spot-check capability:
+If you have shell access, run this sequence to confirm install + spot-check capability. Uses an isolated `/tmp` dir (no global pollution) — the same pattern the bundled `/mcp-smoke` slash command uses, so this path is regression-tested every release:
 
 ```bash
-# 1) Verify the package is reachable and report its version.
-npx -y @seungwoolee/agent-tree --version
+mkdir -p /tmp/atree-probe && cd /tmp/atree-probe
+npm init -y >/dev/null && npm install @seungwoolee/agent-tree
+
+# 1) Identity — package version.
+./node_modules/.bin/agent-tree --version
 # → 0.1.2 (or newer)
 
-# 2) Verify the bin runs (no JSONL data needed for --help).
-npx -y @seungwoolee/agent-tree --help | head -20
-# → commander-style help: Usage / Options / commands
+# 2) Bin runs (no JSONL data required).
+./node_modules/.bin/agent-tree --help | head -20
+# → Usage / Options / commands (commander-style)
 
-# 3) Probe data: does the cwd's project have any sessions?
-npx -y @seungwoolee/agent-tree --list 2>&1 | head -5
-# → either a tree header, or a friendly "No agent-tree session JSONL files found..."
+# 3) Data probe — does any session JSONL exist on this machine?
+./node_modules/.bin/agent-tree --list 2>&1 | head -5
+# → tree header, or "(no session in this project — falling back to globally
+#   latest: <uuid>...)" if the cwd lacks data, or "No agent-tree session JSONL
+#   files found..." on a totally fresh machine.
 ```
 
-If step 3 reports the friendly fallthrough, the tool works but the cwd has no associated `~/.claude/projects/` data — common on a fresh machine. Hand a known-good cwd via the MCP `cwd` field (or `cd` first if running the CLI).
+#### Why not bare `npx`?
+
+`npx -y @seungwoolee/agent-tree --version` does **not** work as you'd expect: the package ships two bins (`agent-tree` and `atree`) so npx 10+ can't auto-resolve from the unscoped package name alone, and `--version` falls through to npx's own version output (returning the npm version `10.9.4`, not `0.1.2`). The form `npx -y @seungwoolee/agent-tree agent-tree --version` works for `--version` and `--help` (because commander short-circuits on those flags before parsing positionals), but breaks `--list` because npx passes the bin name through as an arg and commander reads it as the `[session-id]` positional. The isolated-install form above sidesteps all of that.
+
+For users who insist on a one-shot global install: `npm install -g @seungwoolee/agent-tree && agent-tree --version` is the simple form.
 
 ### Capability surfaces
 
@@ -356,7 +365,7 @@ After `agent_tree_list`, **show the tree verbatim** in a fenced code block — w
 - **In-progress sessions are lossy.** The tool needs a finalized JSONL. Don't run it against a session that's still being written — the parse will be incomplete or fail.
 - **Ambiguous session prefix → error.** If `sessionId: "fd"` matches multiple sessions, the tool returns an error asking for a longer prefix. Use ≥8 chars for stability.
 - **LLM labeling costs money.** Default skill mode is `--no-llm` (heuristic labels). Don't enable `--llm` without warning the user about cost (~$0.10–0.20 per typical 200-turn session with Sonnet).
-- **Snapshots contain redacted but verbatim user text.** 14 default redaction patterns strip secrets; `--redact-strict` adds 5 PII patterns (email/phone/card/SSN/RRN). Always show a share warning if the snapshot is going somewhere external.
+- **Snapshots contain redacted but verbatim user text.** 16 default redaction patterns strip secrets; `--redact-strict` adds 5 PII patterns (email/phone/card/SSN/RRN). Always show a share warning if the snapshot is going somewhere external.
 - **MCP path resolution.** When this plugin is installed via `claude plugin marketplace add github:...`, `${CLAUDE_PLUGIN_ROOT}` resolves to the cache path under `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`. When installed from a directory marketplace (`claude plugin marketplace add "$PWD"`), it resolves to the absolute source path frozen at registration time. A folder rename does not auto-update the directory marketplace registration — re-run `claude plugin marketplace add` after a rename or hand-edit `~/.claude/settings.json`.
 
 ### Where to look next
@@ -380,13 +389,13 @@ The heuristic phase labels (taken verbatim from user prompts) are usable on thei
 
 ## Privacy
 
-Snapshot markdown contains the redacted session context, including the verbatim last user-turn of the chosen segment. Defaults strip 14 patterns:
+Snapshot markdown contains the redacted session context, including the verbatim last user-turn of the chosen segment. Defaults strip 16 patterns:
 
-- Anthropic / OpenAI / GitHub (incl. `github_pat_*`) / AWS / GCP / HuggingFace / Stripe / npm API tokens (length-gated, class-boundary-anchored)
+- Anthropic / OpenAI (incl. project keys) / GitHub PAT (classic + fine-grained) / Slack / AWS (access key + temp key) / GCP (API key + OAuth token) / HuggingFace / Stripe / npm API tokens (length-gated, class-boundary-anchored via negative lookahead so trailing `-` / `_` doesn't slip the seam)
 - Bearer tokens, JWTs (3-part dot-separated, base64url-aware)
 - PEM private key blocks
 
-`--redact-strict` adds 5 PII patterns: email, phone (E.164 + free-form with required separators), card (Luhn-validated), SSN, and Korean RRN. `--redact-dryrun` prints hit count per pattern to stderr so you can verify what would be stripped without running for real.
+`--redact-strict` adds 5 PII patterns: email, phone (E.164 + free-form with required separators — split into two regexes to dodge ReDoS), card (Luhn-validated), SSN, and Korean RRN. `--redact-dryrun` prints hit count per pattern to stderr so you can verify what would be stripped without running for real.
 
 Redaction is applied **before truncation** — earlier sessions had a regression where 60-char truncation sliced an API key below the 20-char regex floor. Tests in `tests/security-hardening.test.ts` enforce zero-leak across the pipeline (39 tests including ReDoS fuzz guards and class-boundary anchoring per pattern).
 
