@@ -36,9 +36,19 @@ Also refreshed stale references across the doc set:
   `npx -y @seungwoolee/agent-tree --version` which silently fell back
   to npx's own `--version` (returning the npm version `10.9.4`, not the
   package). Multi-bin packages (`agent-tree` + `atree`) need the
-  explicit bin name: `npx -y @seungwoolee/agent-tree agent-tree --version`.
-  Confirmed by running all three self-test steps in `/tmp` against the
-  published 0.1.2 tarball
+  explicit bin name: `npx -y @seungwoolee/agent-tree agent-tree --version`
+  works for `--version`/`--help` (commander short-circuits), but breaks
+  `--list` because npx passes the bin name through as an arg →
+  commander reads it as `[session-id]`. Final form is an isolated
+  `/tmp/atree-probe` install (same pattern `/mcp-smoke` uses, so it's
+  regression-tested every release).
+- `skills/agent-tree/SKILL.md` install fallback. The same multi-bin
+  npx trap bit this file's `command not found` recovery line —
+  `npx -y @seungwoolee/agent-tree …` was offered as a one-shot
+  alternative to `npm i -g`. Removed the npx option; `npm i -g` is
+  the only suggestion now, with an inline note pointing Claude Code
+  at the README "Why not bare npx?" explanation so the reflex
+  doesn't reintroduce it.
 - README plugin-cache verification path `0.1.0` → version-agnostic glob
   `*` so future bumps don't immediately re-stale the troubleshooting steps
 - README MCP smoke example now points to the bundled `/mcp-smoke` slash
