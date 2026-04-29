@@ -77,7 +77,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       'input token budget ceiling across segments',
       '50000',
     )
-    .option('--redact-strict', 'enable PII patterns (email/phone/SSN/RRN/card)')
+    .option('--redact-strict', 'add PII patterns (email/phone/SSN/RRN); card check is always on')
     .option('--redact-dryrun', 'print redaction hit counts to stderr')
     .option('--include-sidechains', 'keep sidechain segments as a branch (default)')
     .option('--flatten-sidechains', 'merge sidechains into main tree')

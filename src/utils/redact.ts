@@ -12,8 +12,11 @@
  *
  * Regexes are kept broad but conservative: better to over-redact than leak.
  *
- * - Default ON via `defaultRedactor()`.
- * - `--redact-strict` adds PII patterns (email, phone, card, SSN/RRN).
+ * - Default ON via `defaultRedactor()`. Includes 16 named token patterns
+ *   plus an always-on Luhn-validated credit-card check (runs even without
+ *   `--redact-strict` because card numbers are PII regardless of policy).
+ * - `--redact-strict` adds 4 more PII patterns: email, phone (E.164 +
+ *   free-form), SSN, Korean RRN.
  * - `--redact-dryrun` prints a preview of redactions to stderr.
  */
 

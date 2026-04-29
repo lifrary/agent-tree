@@ -6,7 +6,7 @@
 [![MIT License](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 [![Node ≥20](https://img.shields.io/badge/node-%E2%89%A520-brightgreen.svg)](https://nodejs.org/)
 
-A finished Claude Code session can run thousands of turns across hours of work. Linear `/wrap` summaries flatten that into prose and lose the branches, dead-ends, and good-but-discarded ideas. **`agent-tree`** parses the session JSONL into a `tree`-style hierarchy you read directly in your terminal: each user-prompt is a phase, each segment underneath is a sub-action, and any node you've previously resumed from is marked with ⭐. Pick a number, and the resume markdown lands on your clipboard ready to paste into a fresh `claude` session.
+A finished Claude Code session can run thousands of turns across hours of work. Linear end-of-session summaries flatten that into prose and lose the branches, dead-ends, and good-but-discarded ideas. **`agent-tree`** parses the session JSONL into a `tree`-style hierarchy you read directly in your terminal: each user-prompt is a phase, each segment underneath is a sub-action, and any node you've previously resumed from is marked with ⭐. Pick a number, and the resume markdown lands on your clipboard ready to paste into a fresh `claude` session.
 
 > Built for Claude Code today. Designed to extend to Codex / Gemini sessions tomorrow — hence the agent-neutral name.
 
@@ -34,13 +34,15 @@ Phase headers are cyan on TTY, ⭐ marks are yellow, `T+1h 8m` / `events 0–40`
 
 ## Install
 
-### One-shot (npx)
+### Try without installing globally
 
 ```bash
-npx -y @seungwoolee/agent-tree --list
+mkdir -p /tmp/atree && cd /tmp/atree
+npm init -y >/dev/null && npm install @seungwoolee/agent-tree
+./node_modules/.bin/agent-tree --list
 ```
 
-Useful for a quick check without committing to a global install. The first run fetches the package; subsequent runs use the npm cache.
+A bare `npx -y @seungwoolee/agent-tree …` form does **not** work — the package ships two bins (`agent-tree`, `atree`) so npx 10+ can't auto-resolve from the package name alone. The isolated-install pattern above is what the bundled `/mcp-smoke` slash command uses, so it's regression-tested every release. See [Why not bare `npx`?](#why-not-bare-npx) below for the full trap.
 
 ### As a global CLI
 
@@ -64,7 +66,7 @@ claude plugin install agent-tree@agent-tree
 # Option B — from a local clone (contributors / live dev)
 git clone https://github.com/lifrary/agent-tree
 cd agent-tree
-npm install && npm run build     # dist/*.js ships in git too — optional for Option A
+npm install && npm run build     # optional — dist/ is committed; rebuild only after editing src/
 claude plugin marketplace add "$PWD"
 claude plugin install agent-tree@agent-tree
 ```
@@ -164,11 +166,11 @@ The pick is recorded either way; ⭐ is GitHub-style binary (no per-mode bookkee
 | `--no-color`                                                        | colored on TTY       | force-disable ANSI                                          |
 | `--picks`                                                           | —                    | list every pick across every session                        |
 | `--unstar <id>`                                                     | —                    | remove ⭐ from a previously picked node                     |
-| `--diff <a> <b>`                                                    | —                    | summarise event range / files / tools between two nodes     |
+| `--diff <from> <to>`                                                | —                    | summarise event range / files / tools between two nodes     |
 | `--no-llm`                                                          | LLM on if key set    | skip Anthropic call, heuristic labels only                  |
 | `--model <name>`                                                    | `claude-sonnet-4-6`  | Anthropic model for LLM labeling                            |
 | `--max-llm-tokens <n>`                                              | `50000`              | input token budget ceiling                                  |
-| `--redact-strict`                                                   | off                  | add PII patterns (email/phone/card/SSN/RRN)                 |
+| `--redact-strict`                                                   | off                  | add PII patterns (email/phone/SSN/RRN); card check always on |
 | `--redact-dryrun`                                                   | off                  | print redaction hit counts to stderr                        |
 | `--include-sidechains` / `--flatten-sidechains` / `--drop-sidechains` | include            | subagent (Task-tool) handling                               |
 | `--dry-run`                                                         | off                  | run pipeline, emit no output                                |
@@ -208,7 +210,7 @@ This section is for LLM agents who've been pointed at this repo with little othe
 ```
 package    @seungwoolee/agent-tree
 repo       https://github.com/lifrary/agent-tree
-version    0.1.2 (as of 2026-04)
+version    0.1.2 (npm badge above shows latest)
 bins       agent-tree, atree
 runtime    Node.js ≥ 20
 mode       terminal-only — no browser, no HTML, all output is text/markdown
@@ -365,7 +367,7 @@ After `agent_tree_list`, **show the tree verbatim** in a fenced code block — w
 - **In-progress sessions are lossy.** The tool needs a finalized JSONL. Don't run it against a session that's still being written — the parse will be incomplete or fail.
 - **Ambiguous session prefix → error.** If `sessionId: "fd"` matches multiple sessions, the tool returns an error asking for a longer prefix. Use ≥8 chars for stability.
 - **LLM labeling costs money.** Default skill mode is `--no-llm` (heuristic labels). Don't enable `--llm` without warning the user about cost (~$0.10–0.20 per typical 200-turn session with Sonnet).
-- **Snapshots contain redacted but verbatim user text.** 16 default redaction patterns strip secrets; `--redact-strict` adds 5 PII patterns (email/phone/card/SSN/RRN). Always show a share warning if the snapshot is going somewhere external.
+- **Snapshots contain redacted but verbatim user text.** 16 default secret patterns plus an always-on Luhn-validated card check strip data; `--redact-strict` adds 4 more PII patterns (email/phone/SSN/RRN). Always show a share warning if the snapshot is going somewhere external.
 - **MCP path resolution.** When this plugin is installed via `claude plugin marketplace add github:...`, `${CLAUDE_PLUGIN_ROOT}` resolves to the cache path under `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`. When installed from a directory marketplace (`claude plugin marketplace add "$PWD"`), it resolves to the absolute source path frozen at registration time. A folder rename does not auto-update the directory marketplace registration — re-run `claude plugin marketplace add` after a rename or hand-edit `~/.claude/settings.json`.
 
 ### Where to look next
@@ -389,13 +391,14 @@ The heuristic phase labels (taken verbatim from user prompts) are usable on thei
 
 ## Privacy
 
-Snapshot markdown contains the redacted session context, including the verbatim last user-turn of the chosen segment. Defaults strip 16 patterns:
+Snapshot markdown contains the redacted session context, including the verbatim last user-turn of the chosen segment. The default redactor strips 16 named secret patterns plus a Luhn-validated credit-card check that runs at every level (surgical enough to skip order numbers / SKUs):
 
 - Anthropic / OpenAI (incl. project keys) / GitHub PAT (classic + fine-grained) / Slack / AWS (access key + temp key) / GCP (API key + OAuth token) / HuggingFace / Stripe / npm API tokens (length-gated, class-boundary-anchored via negative lookahead so trailing `-` / `_` doesn't slip the seam)
 - Bearer tokens, JWTs (3-part dot-separated, base64url-aware)
 - PEM private key blocks
+- Credit card numbers (Luhn-validated; runs even without `--redact-strict`)
 
-`--redact-strict` adds 5 PII patterns: email, phone (E.164 + free-form with required separators — split into two regexes to dodge ReDoS), card (Luhn-validated), SSN, and Korean RRN. `--redact-dryrun` prints hit count per pattern to stderr so you can verify what would be stripped without running for real.
+`--redact-strict` adds 4 PII patterns: email, phone (E.164 + free-form with required separators — split into two regexes to dodge ReDoS), SSN, and Korean RRN. `--redact-dryrun` prints hit count per pattern to stderr so you can verify what would be stripped without running for real.
 
 Redaction is applied **before truncation** — earlier sessions had a regression where 60-char truncation sliced an API key below the 20-char regex floor. Tests in `tests/security-hardening.test.ts` enforce zero-leak across the pipeline (39 tests including ReDoS fuzz guards and class-boundary anchoring per pattern).
 

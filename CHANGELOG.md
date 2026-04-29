@@ -4,6 +4,49 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Docs: README jargon + redact-strict accuracy pass (2026-04-29)
+
+Follow-up audit on the README rewrite that landed three days ago. Three
+load-bearing claims were either reader-hostile or factually wrong:
+
+- **`/wrap` reference removed.** The opening tagline framed agent-tree
+  against "linear `/wrap` summaries", but `/wrap` is a third-party plugin
+  command (`session-wrap:wrap`) — readers without that plugin installed
+  see a comparison they can't parse. Rephrased to "linear end-of-session
+  summaries". `skills/agent-tree/SKILL.md` had the same trap in two
+  places (`like /wrap or /ooo`, `Generating a /wrap summary`); both
+  rewritten in tool-agnostic language.
+- **One-shot `npx` install command was broken.** README's "Install"
+  section opened with `npx -y @seungwoolee/agent-tree --list`, which the
+  same README's "Why not bare npx?" section explicitly says doesn't
+  work — the package ships two bins (`agent-tree`, `atree`) so npx 10+
+  can't auto-resolve, and `--list` gets eaten as a positional. Replaced
+  with the isolated `/tmp/atree` install pattern that `/mcp-smoke`
+  already uses (regression-tested every release).
+- **`--redact-strict` "adds card" was a documentation-vs-code split.**
+  The README, the CLI `--help`, the `redact.ts` header comment, and the
+  SKILL.md privacy section all claimed `--redact-strict` adds 5 PII
+  patterns including `card`. In reality `redactCreditCards()` is called
+  unconditionally inside `apply()` (default-on for everyone), and
+  `STRICT_EXTRA` defines 5 regex entries covering 4 PII categories —
+  email, ssn_us, rrn_ko, plus phone split into two regexes
+  (`phone_e164` + `phone`) for ReDoS safety. Fixed to "16 named secret
+  patterns + always-on Luhn-validated card check; `--redact-strict` adds
+  4 more PII patterns (email/phone/SSN/RRN)" everywhere. Behavior
+  unchanged — this was purely a doc/help-text drift.
+
+Also tightened a few smaller items: `--diff <a> <b>` table notation →
+`<from> <to>` (more readable than commander's variadic `<ids...>`),
+`version 0.1.2 (as of 2026-04)` in the For-agents identity block →
+`(npm badge above shows latest)` so the README doesn't go stale on
+release day, and `dist/*.js ships in git too — optional for Option A`
+comment placement clarified to apply to both install options
+(`dist/` is committed, so `npm run build` is only needed after editing
+`src/`).
+
+`dist/` rebuilt to ship the new `--help` text in the next release. Tests
+still 134 / 12 (no behavioral changes).
+
 ### Docs: README rewrite + agent-friendly surface (2026-04-26)
 
 Rewrote `README.md` for v0.1.2 accuracy and added a top-level

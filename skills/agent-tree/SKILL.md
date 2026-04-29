@@ -11,7 +11,7 @@ numbered text tree directly in chat, the user picks a number, and you paste
 the resume context so they can drop it into a fresh `claude` session.
 
 This is a terminal-only tool — everything happens inside the current Claude
-Code conversation (no browser, no HTML), like `/wrap` or `/ooo`.
+Code conversation (no browser, no HTML).
 
 ## When to invoke
 
@@ -22,7 +22,7 @@ Use this skill when the user says any of:
 - "I want to go back to where we did X" (when X refers to an earlier session)
 
 Do **not** use this skill for:
-- Generating a `/wrap` summary (use `/wrap` instead — different tool)
+- Summarizing a session as flat prose (agent-tree maps structure, not summaries)
 - Creating a new session from scratch (this is for resuming existing ones)
 - Visualizing the *current* session (agent-tree needs a completed `.jsonl`;
   the current session is still being written)
@@ -139,9 +139,10 @@ After the fence, tell the user:
 ## Privacy
 
 The snapshot you show in chat contains the (redacted) session context. By
-default, secrets matching the standard regex set (Anthropic / OpenAI / GitHub
-/ AWS / GCP keys, JWTs, Bearer tokens, PEM private keys) are stripped. To
-also strip emails / phones / cards / SSNs, append `--redact-strict`:
+default, 16 secret patterns plus Luhn-validated credit cards are stripped
+(Anthropic / OpenAI / GitHub / Slack / AWS / GCP / HuggingFace / Stripe / npm
+tokens, JWTs, Bearer tokens, PEM private keys, card numbers). To additionally
+strip PII (emails / phones / SSN / Korean RRN), append `--redact-strict`:
 
 ```bash
 agent-tree <session> --no-llm --redact-strict --snapshot <id> --mode continue

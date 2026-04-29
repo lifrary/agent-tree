@@ -5719,7 +5719,7 @@ function parseCliArgs(argv) {
     "--max-llm-tokens <n>",
     "input token budget ceiling across segments",
     "50000"
-  ).option("--redact-strict", "enable PII patterns (email/phone/SSN/RRN/card)").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").option(
+  ).option("--redact-strict", "add PII patterns (email/phone/SSN/RRN); card check is always on").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").option(
     "--mode <continue|fork>",
     "snapshot mode (used with --snapshot)",
     "continue"
