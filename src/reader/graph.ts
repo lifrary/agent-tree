@@ -6,15 +6,10 @@
  * Edge cases handled per §7.8:
  *   - `parentUuid` self-reference → skip edge + warn (cycle)
  *   - `parentUuid` points to unseen uuid → keep event as an orphan root (warn)
- *   - Duplicate uuid → last one wins in byUuid map, but childrenOf keeps order
+ *   - Duplicate uuid → last one wins in all indexes; events retain source order
  */
 
-import type {
-  RawEvent,
-  SessionGraph,
-  SessionGraphDump,
-  SessionMeta,
-} from '../types.js';
+import type { RawEvent, SessionGraph, SessionGraphDump, SessionMeta } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface BuildGraphOptions {
@@ -32,19 +27,21 @@ export function buildGraph(
   const byUuid = new Map<string, RawEvent>();
   const roots: string[] = [];
 
-  // First pass: collect all uuids so we can distinguish true orphans from
-  // forward references (child appears before parent in the jsonl).
-  const seenUuids = new Set<string>();
-  for (const e of events) seenUuids.add(e.uuid);
-
+  // Resolve duplicates before building edges. Earlier occurrences must not
+  // leave roots or edges inconsistent with the event selected by byUuid.
   for (const e of events) {
     if (byUuid.has(e.uuid)) {
       logger?.warn(`duplicate uuid in jsonl, later event overwrites earlier`, {
         uuid: e.uuid,
       });
+      byUuid.delete(e.uuid);
     }
     byUuid.set(e.uuid, e);
+  }
 
+  // Map order is the source order of the final occurrences. Keep the original
+  // event array untouched: segment indexes refer to its source positions.
+  for (const e of byUuid.values()) {
     if (e.parentUuid === null) {
       roots.push(e.uuid);
       continue;
@@ -58,7 +55,7 @@ export function buildGraph(
       continue;
     }
 
-    if (!seenUuids.has(e.parentUuid)) {
+    if (!byUuid.has(e.parentUuid)) {
       logger?.warn(`dangling parentUuid, treating as orphan root`, {
         uuid: e.uuid,
         parentUuid: e.parentUuid,
@@ -75,13 +72,8 @@ export function buildGraph(
     bucket.push(e.uuid);
   }
 
-  // Defense in depth — the build loop catches direct self-reference
-  // (A→A) but not indirect cycles (A→B→A). A duplicate-uuid jsonl entry
-  // with a conflicting parentUuid is enough to synthesize one. If a
-  // downstream consumer walks `childrenOf` without its own guard, a cycle
-  // sends it into an infinite loop. Break back-edges here so the returned
-  // DAG is guaranteed acyclic.
-  breakIndirectCycles(roots, childrenOf, logger);
+  // Pure cycles have no roots, so traversal must cover every indexed uuid.
+  breakIndirectCycles(roots, childrenOf, byUuid.keys(), logger);
 
   return { meta, events, childrenOf, roots, byUuid };
 }
@@ -89,21 +81,21 @@ export function buildGraph(
 /**
  * Iterative DFS over the built `childrenOf` map. When we revisit a node
  * that's still on the active traversal stack, that edge closes a cycle;
- * drop it from the parent's children array and warn. The iterative form
+ * drop it from the parent's children array, promote its child to a root and
+ * warn. Source parentUuid values stay intact for diagnostics. The iterative form
  * avoids blowing the call stack on deep linear-ish parent chains (a long
  * session can chain thousands of turns).
  */
 function breakIndirectCycles(
   roots: string[],
   childrenOf: Map<string, string[]>,
+  uuids: Iterable<string>,
   logger: Logger | undefined,
 ): void {
   const visited = new Set<string>();
-  for (const root of roots) {
+  for (const root of uuids) {
     if (visited.has(root)) continue;
-    const stack: Array<{ uuid: string; childIdx: number }> = [
-      { uuid: root, childIdx: 0 },
-    ];
+    const stack: Array<{ uuid: string; childIdx: number }> = [{ uuid: root, childIdx: 0 }];
     const inStack = new Set<string>([root]);
     visited.add(root);
     while (stack.length > 0) {
@@ -121,6 +113,8 @@ function breakIndirectCycles(
           to: child,
         });
         children.splice(top.childIdx, 1);
+        if (children.length === 0) childrenOf.delete(top.uuid);
+        roots.push(child);
         // Do not advance childIdx — splice shifted the next child down.
         continue;
       }
@@ -134,8 +128,9 @@ function breakIndirectCycles(
 }
 
 export function graphToDump(graph: SessionGraph): SessionGraphDump {
-  const childrenOf: Record<string, string[]> = {};
-  for (const [k, v] of graph.childrenOf) childrenOf[k] = v;
+  // Object.fromEntries creates own properties even for UUIDs such as
+  // "__proto__", which assignment to a plain object would silently lose.
+  const childrenOf: Record<string, string[]> = Object.fromEntries(graph.childrenOf);
 
   let sidechainCount = 0;
   for (const e of graph.events) if (e.isSidechain) sidechainCount += 1;

@@ -1,7 +1,7 @@
 {
   "name": "@seungwoolee/agent-tree",
-  "version": "0.1.2",
-  "description": "Navigate any Claude Code (and future Codex/Gemini) session as a numbered tree in your terminal and resume from any node.",
+  "version": "0.2.0",
+  "description": "Discover, navigate, export and resume Claude Code sessions from your terminal or MCP client.",
   "license": "MIT",
   "author": "Seungwoo Lee",
   "homepage": "https://github.com/lifrary/agent-tree",
@@ -27,7 +27,7 @@
     "LICENSE"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22.13.0"
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
@@ -35,31 +35,31 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.ts' 'tests/**/*.ts'",
+    "lint": "eslint . --max-warnings 0",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "cli": "tsx src/cli.ts",
     "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "commander": "^12.1.0",
-    "js-yaml": "^4.1.1",
-    "pino": "^9.5.0"
+    "@modelcontextprotocol/sdk": "^1.32.0",
+    "commander": "^15.0.0",
+    "js-yaml": "^5.4.2",
+    "pino": "^10.4.0",
+    "zod": "^4.6.5"
   },
   "optionalDependencies": {
-    "@anthropic-ai/sdk": "^0.90.0"
+    "@anthropic-ai/sdk": "^0.131.0"
   },
   "devDependencies": {
-    "@types/js-yaml": "^4.0.9",
-    "@types/node": "^22.7.0",
-    "@typescript-eslint/eslint-plugin": "^8.0.0",
-    "@typescript-eslint/parser": "^8.0.0",
-    "esbuild": "^0.24.0",
-    "eslint": "^8.57.0",
-    "prettier": "^3.3.0",
-    "tsx": "^4.19.0",
-    "typescript": "^5.6.0",
-    "vitest": "^2.1.0"
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.20.5",
+    "typescript-eslint": "^8.71.0",
+    "esbuild": "^0.28.2",
+    "eslint": "^10.12.0",
+    "prettier": "^3.9.9",
+    "tsx": "^4.23.15",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.3"
   },
   "keywords": [
     "claude",
@@ -68,5 +68,9 @@
     "session",
     "visualizer",
     "cli"
-  ]
+  ],
+  "allowScripts": {
+    "esbuild@0.28.2": true,
+    "fsevents@2.3.3": true
+  }
 }

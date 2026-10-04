@@ -14,7 +14,7 @@ All paths below are relative to repo root (cwd is already the repo). Each code b
 - `.claude-plugin/plugin.json#version`
 - `.claude-plugin/marketplace.json#metadata.version`
 - `.claude-plugin/marketplace.json#plugins[0].version`
-- `src/mcp/server.ts` — the `version: '...'` arg in the `McpServer({...})` constructor
+- `src/version.ts` — shared `VERSION` used by the CLI and MCP server
 - `skills/agent-tree/SKILL.md` — frontmatter `version: ...`
 
 ```bash
@@ -46,23 +46,16 @@ MARKETPLACE_META=$(jq -r '.metadata.version' .claude-plugin/marketplace.json) \
 MARKETPLACE_PLUGIN=$(jq -r '.plugins[0].version' .claude-plugin/marketplace.json) \
   || { echo "FAIL: jq parse marketplace.json (plugins[0])"; exit 1; }
 
-# src/mcp/server.ts: scope to lines that look like a McpServer constructor
-# version field — anchored, semver-only, must end with `',` so a comment or
-# test fixture can't false-match. Single-shot awk avoids the
-# `grep | head -1 | sed` pipeline that, under `set -o pipefail`, can abort
-# Check 1 silently when grep gets SIGPIPE from head's early close
-# (Loop 2 review). `\047` is the octal escape for a single quote inside
-# the awk regex.
-MCP_SERVER_VER=$(awk -F"'" '
-  /^[[:space:]]+version: \047[0-9]+\.[0-9]+\.[0-9]+\047,/ { print $2; exit }
-' src/mcp/server.ts)
+# Both entrypoints import this shared value; bundled builds inject package.json.
+MCP_SERVER_VER=$(node --import tsx --input-type=module -e \
+  'import { VERSION } from "./src/version.ts"; console.log(VERSION)')
 
 SKILL_VER=$(awk '/^version:/ { print $2; exit }' skills/agent-tree/SKILL.md)
 
 check ".claude-plugin/plugin.json#version"                "$PLUGIN_VER"
 check ".claude-plugin/marketplace.json#metadata.version"  "$MARKETPLACE_META"
 check ".claude-plugin/marketplace.json#plugins[0].version" "$MARKETPLACE_PLUGIN"
-check "src/mcp/server.ts#McpServer.version"               "$MCP_SERVER_VER"
+check "src/version.ts#VERSION"                          "$MCP_SERVER_VER"
 check "skills/agent-tree/SKILL.md#frontmatter.version"    "$SKILL_VER"
 
 [ ${#FAILS[@]} -eq 0 ] || { echo "Halt — version drift in: ${FAILS[*]}"; exit 1; }
@@ -91,7 +84,9 @@ EOF
 )
 EXPECTED_SORTED=$(printf '%s\n' "$EXPECTED" | sort)
 
-ACTUAL=$(npm pack --dry-run --json 2>/dev/null | jq -r '.[0].files[].path' | sort) \
+# npm <=11 prints an array of results; npm 12 prints an object keyed by package name.
+ACTUAL=$(npm pack --dry-run --json 2>/dev/null \
+  | jq -r '(if type == "array" then .[0] else .[] end) | .files[].path' | sort) \
   || { echo "FAIL: npm pack --dry-run / jq parse"; exit 1; }
 
 if [ "$ACTUAL" != "$EXPECTED_SORTED" ]; then
@@ -150,7 +145,7 @@ The v0.1.0 bug was `"mcpServers": "./.mcp.json"` (string ref → plugin-root-rel
 > `mapfile -t`, a bash 4+ builtin. Claude Code's Bash tool routes
 > scripts through `/bin/zsh` on macOS by default — zsh has no
 > `mapfile`, so the call aborted with `(eval):N: command not found:
-> mapfile`. Capture-then-`while IFS= read -r ... <<<` is bash 3.2+ /
+mapfile`. Capture-then-`while IFS= read -r ... <<<` is bash 3.2+ /
 > zsh 5+ compatible and preserves the same parent-shell array semantics.
 
 ```bash

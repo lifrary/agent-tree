@@ -3,12 +3,20 @@
 This is the v0.X.Y → v0.X.Y+1 (or v0.X+1.0) checklist. Captures the sequence
 that shipped v0.1.0 so the next release doesn't re-discover it.
 
+The next release is **0.2.0 (unreleased)**. Updating the repository does not
+publish to npm; registry and GitHub release steps below are a separate
+maintainer action after release approval.
+
 The OMC `release` skill (`/oh-my-claudecode:release`) handles the generic
 ordering — this doc is the agent-tree-specific overlay (project-aware steps,
 post-publish smoke test, MCP plugin re-install).
 
 ## Prerequisites
 
+- **Node.js ≥22.13.0**; CI must cover Node 22/24/26 on Linux and macOS.
+- ESLint 10 flat config, Vitest 5, and TypeScript 6.0.3. TypeScript is held
+  below 6.1 for typescript-eslint peer compatibility; the latest TypeScript 7
+  is not supported by this toolchain.
 - Logged in to npm as `seungwoolee`: `npm whoami`
 - Logged in to GitHub via `gh`: `gh auth status`
 - On `main` branch with no untracked / uncommitted changes
@@ -26,33 +34,42 @@ post-publish smoke test, MCP plugin re-install).
 
 ### 1. Bump version everywhere
 
-Five sources of truth (six fields) must move together:
+For 0.2.0, synchronize these editable version fields:
 
-- `package.json` → `"version": "0.X.Y"`
-- `.claude-plugin/plugin.json` → `"version": "0.X.Y"`
+- `package.json` → `"version": "0.2.0"`
+- `.claude-plugin/plugin.json` → `"version": "0.2.0"`
 - `.claude-plugin/marketplace.json` → **both** `metadata.version` AND
-  `plugins[0].version` → `"0.X.Y"`
-- `src/mcp/server.ts` → `version: '0.X.Y'` in the `McpServer({...})` block
-- `skills/agent-tree/SKILL.md` → frontmatter `version: 0.X.Y`
+  `plugins[0].version` → `"0.2.0"`
+- `skills/agent-tree/SKILL.md` → frontmatter `version: 0.2.0`
+- Refresh `package-lock.json` so its root package versions match.
+
+CLI and MCP both use `src/version.ts`, which reads `package.json` in source
+execution and uses `__PKG_VERSION__` in bundles. Do not add a separate
+hard-coded version to `src/mcp/server.ts`. Update current-facing README
+identity/runtime guidance and `.claude/commands/` audit expectations too.
 
 > **Why**: the plugin/skill/MCP/marketplace version surfaces in Claude
 > Code's plugin registry — drift causes confusion about which version is
-> loaded. esbuild bakes `package.json#version` into `dist/cli.js` via
-> `__PKG_VERSION__`, so `agent-tree --version` always matches
+> loaded. esbuild bakes `package.json#version` into both bundles via
+> `__PKG_VERSION__`, so CLI `--version` and MCP `initialize` must match
 > `package.json` after build.
 >
 > Quick sanity grep before committing:
+>
 > ```bash
 > grep -nE '"version": "0\.[0-9]+\.[0-9]+"' package.json .claude-plugin/*.json
-> grep -nE "version: '0\.[0-9]+\.[0-9]+'" src/mcp/server.ts
 > grep -nE '^version: 0\.[0-9]+\.[0-9]+' skills/agent-tree/SKILL.md
-> # All six occurrences must show the same 0.X.Y.
+> # All five editable fields above must show 0.2.0 for this release.
+> node -e 'const p=require("./package-lock.json"); console.log(p.version, p.packages[""].version)'
+> # Both lockfile root versions must also match.
 > ```
 
 ### 2. Update CHANGELOG.md
 
-- Move `## [Unreleased]` content → `## [v0.X.Y] — YYYY-MM-DD`
+- Move `## [Unreleased] — 0.2.0` content → `## [v0.2.0] — YYYY-MM-DD`
 - Add a fresh empty `## [Unreleased]` at the top
+- Keep already-published historical entries intact. Do not promote the
+  unreleased section merely because a preparation commit was pushed.
 
 ### 3. Run the full check chain
 
@@ -60,28 +77,49 @@ Five sources of truth (six fields) must move together:
 npm run lint && npm run typecheck && npm test && npm run build
 ```
 
+Review the release contract before publishing:
+
+- `--file` imports portable Claude Code JSONL; `--cwd` controls discovery and
+  project config; `CLAUDE_CONFIG_DIR` changes the Claude session root.
+- `--sessions --limit 20 --json` returns a redacted `{ "sessions": [...] }`
+  catalog across all projects unless `--cwd` restricts it.
+- `--file <fixture.jsonl> --no-llm --strict --json` emits only a complete
+  redacted mindmap on stdout. Malformed strict input must fail; incompatible
+  modes/selectors/JSON display filters must exit 2.
+- Phase-only views preserve canonical node numbers for snapshot lookup.
+  `--dry-run --no-llm --dump-json <dir> --verbose` must not write dumps or
+  caches; dry run alone does not disable paid labeling.
+- TUI selection matches `--snapshot` for git context, redaction, pick
+  recording, and clipboard behavior, and honors display filters.
+- All six MCP tools and schemas below match the README and skill.
+  MCP is heuristic-only; no smoke step should incur LLM charges.
+- Config security invariants, per-field validation, file/config cache
+  invalidation, and concurrent exact input-token reservations are covered by
+  tests. The LLM input limit is not a monetary spending cap.
+
 > Already enforced by `prepublishOnly`, but run manually first so you can
 > see test output without the publish progress bar fighting for the terminal.
 >
 > **dist/ is committed**: `dist/*.js` is tracked in git (source-maps are
-> ignored) so that `claude plugin marketplace add github:lifrary/agent-tree`
+> ignored) so that `claude plugin marketplace add lifrary/agent-tree`
 > → `install` works out of the box. `git add -A` in the next step will pick
 > up any regenerated bundle.
 
-### 4. Commit on dev → fast-forward main
+### 4. Commit the reviewed release changes on main
 
 ```bash
-git checkout dev
-git add -A   # safe here — package.json, CHANGELOG, manifests
+git switch main
+git diff --stat
+git diff
+git add -A   # only after confirming all changes belong to this release
 git commit -m "release: vX.Y.Z"
-git push origin dev
-
-git checkout main
-git merge --ff-only dev
 git tag -a vX.Y.Z -m "Release vX.Y.Z"
 git push origin main
 git push origin vX.Y.Z
 ```
+
+For preparation-only work, commit and push `main` without creating tags,
+GitHub releases, or publishing to npm. Keep the changelog marked unreleased.
 
 ### 5. GitHub Release notes
 
@@ -110,26 +148,104 @@ npm publish --access public --otp=NNNNNN
 > `prepublishOnly` re-runs lint+typecheck+test+build automatically. If it
 > fails, the publish is aborted before any registry write.
 >
-> **Re-trying after an auth fix**: skip the second `prepublishOnly` with
-> `npm publish --access public --ignore-scripts` when lint+typecheck+test+build
-> already passed in the same shell session — esbuild bakes
-> `package.json#version` into `dist/cli.js` at build time, so once `dist/`
-> matches the bumped version, re-running scripts is wasted ceremony.
-> Validated v0.1.2 publish (2026-04-25).
+> **Re-trying after an auth fix**: rerun `npm publish --access public`
+> without disabling `prepublishOnly`, so the artifacts being published are
+> checked and rebuilt from the current source.
 
 ### 7. Post-publish smoke test
 
 ```bash
-# In a clean tmp dir — no chance of resolving local node_modules
-cd /tmp && rm -rf agent-tree-smoke && mkdir agent-tree-smoke && cd agent-tree-smoke
+# Run only after this exact version has been published.
+VERSION=0.2.0
+export VERSION
+SMOKE_DIR=$(mktemp -d)
+cd "$SMOKE_DIR"
 npm init -y >/dev/null
-npm install @seungwoolee/agent-tree
-./node_modules/.bin/agent-tree --version   # must equal vX.Y.Z
-echo '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' \
-  | node ./node_modules/@seungwoolee/agent-tree/dist/mcp-server.js \
-  | grep -oE '"name":"agent_tree_[a-z]+"' | sort -u
-# Must list all 5 agent_tree_* tools
+npm install "@seungwoolee/agent-tree@$VERSION"
+test "$(./node_modules/.bin/agent-tree --version)" = "$VERSION"
+
+# Sequential initialize → initialized notification → tools/list.
+# stderr stays separate from newline-delimited JSON-RPC stdout.
+node --input-type=module <<'NODE'
+import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { createInterface } from 'node:readline';
+
+const child = spawn(process.execPath, [
+  './node_modules/@seungwoolee/agent-tree/dist/mcp-server.js',
+], { stdio: ['pipe', 'pipe', 'inherit'] });
+const lines = createInterface({ input: child.stdout });
+const pending = new Map();
+let nextId = 0;
+const timer = setTimeout(() => {
+  child.kill();
+  throw new Error('MCP smoke timed out');
+}, 30_000);
+const fail = (error) => {
+  for (const request of pending.values()) request.reject(error);
+  pending.clear();
+};
+child.on('error', fail);
+child.on('exit', (code) => fail(new Error(`MCP exited: ${code}`)));
+lines.on('line', (line) => {
+  try {
+    const response = JSON.parse(line);
+    const request = pending.get(response.id);
+    if (!request) return;
+    pending.delete(response.id);
+    if (response.error) request.reject(new Error(JSON.stringify(response.error)));
+    else request.resolve(response.result);
+  } catch (error) {
+    fail(error);
+  }
+});
+const send = (message) => child.stdin.write(JSON.stringify(message) + '\n');
+const rpc = (method, params) => new Promise((resolve, reject) => {
+  const id = ++nextId;
+  pending.set(id, { resolve, reject });
+  send({ jsonrpc: '2.0', id, method, params });
+});
+try {
+  const init = await rpc('initialize', {
+    protocolVersion: '2024-11-05', capabilities: {},
+    clientInfo: { name: 'agent-tree-smoke', version: '1.0' },
+  });
+  assert.equal(init.serverInfo.version, process.env.VERSION);
+  send({ jsonrpc: '2.0', method: 'notifications/initialized' });
+  const { tools } = await rpc('tools/list', {});
+  const expected = [
+    'agent_tree_sessions', 'agent_tree_list', 'agent_tree_snapshot',
+    'agent_tree_picks', 'agent_tree_diff', 'agent_tree_unstar',
+  ];
+  assert.deepEqual(tools.map((tool) => tool.name).sort(), expected.sort());
+  const schemas = Object.fromEntries(tools.map((tool) => [tool.name, tool.inputSchema]));
+  const catalog = schemas.agent_tree_sessions.properties;
+  assert.equal(catalog.limit.default, 20);
+  assert.equal(catalog.limit.minimum, 1);
+  assert.equal(catalog.limit.maximum, 1000);
+  assert.equal(catalog.cwd.type, 'string');
+  assert.deepEqual(schemas.agent_tree_picks.properties ?? {}, {});
+  for (const name of ['list', 'snapshot', 'diff', 'unstar']) {
+    const schema = schemas[`agent_tree_${name}`];
+    assert.equal(schema.properties.file.type, 'string');
+    assert.equal(schema.properties.sessionId.type, 'string');
+    assert.ok(schema.required.includes('cwd'));
+  }
+  assert.deepEqual(schemas.agent_tree_list.properties.format.enum, ['text', 'json']);
+  assert.equal(schemas.agent_tree_list.properties.format.default, 'text');
+  console.log('PASS: version and all 6 MCP tools/schemas match');
+} finally {
+  clearTimeout(timer);
+  lines.close();
+  child.kill();
+}
+NODE
 ```
+
+This checks the published tarball, not local source. Before publication,
+use a locally packed tarball in a separate temporary install instead of
+claiming a registry smoke succeeded. `/mcp-smoke` automates the published
+package check for maintainers.
 
 ### 8. Re-install the plugin so Claude Code picks up the new build
 
@@ -156,7 +272,7 @@ Then restart Claude Code.
 ```bash
 # If using the local repo clone as the marketplace source:
 cd <where-you-cloned>
-npm install && npm run build                  # dist/ is gitignored; must exist before install
+npm install && npm run build                  # dist/*.js is committed; rebuild after source edits
 claude plugin marketplace add "$PWD"
 claude plugin install agent-tree@agent-tree
 # → Restart Claude Code
@@ -165,7 +281,7 @@ claude plugin install agent-tree@agent-tree
 **External users — github-URL marketplace (from v0.1.1 onward)**:
 
 ```bash
-claude plugin marketplace add github:lifrary/agent-tree
+claude plugin marketplace add lifrary/agent-tree   # owner/repo; current Claude Code rejects a github: prefix
 claude plugin install agent-tree@agent-tree
 # → Restart Claude Code
 ```
@@ -175,9 +291,9 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
 
 ## Hotfix flow (vX.Y.Z+1)
 
-1. Branch from `main` (not `dev`) — patches must be linear over the released tag
+1. Branch from `main` — patches must be linear over the released tag
 2. Fix + test on the hotfix branch
-3. Merge into both `main` and `dev`
+3. Merge the reviewed fix into `main`
 4. Tag and publish from `main`
 
 ## Known gotchas
@@ -193,7 +309,7 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
 - macOS / Linux only for the smoke test in step 7. Windows users would
   need different shell syntax for the JSON-RPC pipe.
 - **Tag-push vs `npm publish` ordering**: the canonical sequence in Step
-  4–6 pushes `vX.Y.Z` tag *before* `npm publish`. If `npm publish` fails
+  4–6 pushes `vX.Y.Z` tag _before_ `npm publish`. If `npm publish` fails
   at auth (silently-expired `.npmrc` token → `E401`), you're stuck with a
   live tag pointing to a version the registry doesn't have — fixing
   requires delete-tag-and-re-tag or a version bump. Defensive alternative
@@ -218,75 +334,76 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
   miss during initial token setup; the checkbox is on the same form as
   packages/scopes/permissions, not a separate page.
 - **Folder-rename hazards (paired-mv discipline, exit-first ordering)**:
-  Renaming the working tree (`mv ~/Code/<old> ~/Code/<new>`) without a
-  paired `mv` of the matching Claude Code session storage
-  (`mv ~/.claude/projects/-Users-...-<old> -Users-...-<new>`) makes the
-  cwd→encoded-path lookup in `src/utils/session_path.ts` return zero —
-  the tool goes blind to its own JSONL history. Four asymmetries that
-  bite:
-    1. **inode/FD vs absolute-path resolution**: open file descriptors
-       follow the inode through `mv`, but Claude Code's hook payloads
-       (`transcript_path`, subprocess `cwd`, permission rules in
-       `settings.local.json`) hold absolute paths and re-resolve on every
-       use. Mid-session `mv` keeps the existing FD writing fine but breaks
-       every fresh path resolution → silent permission-prompt regressions
-       and stale-path subprocess respawns until restart.
-    2. **Paired `~/.claude/projects/` mv is mandatory**: encoded-cwd rule
-       is `/` → `-`, so `~/Code/agent-tree` resolves to directory
-       `-Users-seungwoolee-Code-agent-tree`. If only the working tree is
-       renamed, JSONL files become unreachable to both Claude Code (which
-       writes to a fresh dir under the new encoded name) and agent-tree
-       (which reads from the encoded-of-cwd dir).
-    3. **Encoded-path slash→hyphen rule**: a single `/` becomes a single
-       `-` with no escaping, so any literal `-` already in a folder name
-       can collide with a sibling whose `/` is at that position. Avoid
-       `-` in folder names if you anticipate future renames.
-    4. **Exit-first ordering**: do the `mv` post-`/exit` only, never
-       mid-session. Mid-session `mv` corrupts hook permission rules,
-       triggers MCP-server respawn at stale paths, and leaves the agent
-       in a broken state until full restart. The user-side ceremony is:
-       `/exit` → `mv` working tree → paired `mv` `~/.claude/projects/`
-       dir → `cd <new>` → `claude`. See
-       `.claude-sessions/2026-04-25-18-57-folder-rename-decision.md` for
-       the full incident log.
+  Renaming the working tree (`mv ~/Code/<old> ~/Code/<new>`) changes the
+  encoded directory used for project-scoped discovery. The v0.1.2 incident
+  was resolved with a paired history-directory move; 0.2.0 can also access
+  old history through the global catalog, UUID selection, or portable file
+  import. Four distinctions matter:
+  1. **inode/FD vs absolute-path resolution**: open file descriptors
+     follow the inode through `mv`, but Claude Code's hook payloads
+     (`transcript_path`, subprocess `cwd`, permission rules in
+     `settings.local.json`) hold absolute paths and re-resolve on every
+     use. Mid-session `mv` keeps the existing FD writing fine but breaks
+     every fresh path resolution → silent permission-prompt regressions
+     and stale-path subprocess respawns until restart.
+  2. **Stored sessions keep the old project encoding**: the rule
+     replaces every non-ASCII-alphanumeric character with `-`, so
+     `~/Code/agent-tree` resolves to directory
+     `-Users-seungwoolee-Code-agent-tree`. If only the working tree is
+     renamed, project-scoped discovery uses a new encoded directory.
+     In agent-tree, old files remain accessible through the all-project
+     catalog, UUID selection, or `--file`; moving history is not required
+     for portable imports. With `CLAUDE_CONFIG_DIR`, use its `projects/`
+     directory instead of `~/.claude/projects/`.
+  3. **Encoding is lossy**: `/`, `-`, `_`, punctuation, and non-ASCII
+     characters become `-`, so distinct paths can collide. The encoded
+     directory is a hint, not a reversible or unique project identity.
+  4. **Exit-first ordering**: do the `mv` post-`/exit` only, never
+     mid-session. Mid-session `mv` corrupts hook permission rules,
+     triggers MCP-server respawn at stale paths, and leaves the agent
+     in a broken state until full restart. The historical remediation was:
+     `/exit` → `mv` working tree → paired `mv` `~/.claude/projects/`
+     dir → `cd <new>` → `claude`. See
+     `.claude-sessions/2026-04-25-18-57-folder-rename-decision.md` for
+     the full incident log.
 - **Plugin MCP spawns from marketplace source, not cache** (verified
   2026-04-25 with three independent signals):
-    1. **`ps -ef`**: argv shows
-       `node <source-cwd>//dist/mcp-server.js` — note the doubled slash
-       from `${CLAUDE_PLUGIN_ROOT}/` + `/dist/...`.
-    2. **`lsof -p <pid>`**: process `cwd DIR` resolves to the source
-       tree (`/Users/seungwoolee/Code/agent-tree`) — not
-       `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`.
-    3. **Cache vs source byte-identity at install time**: `diff -q`
-       on `dist/mcp-server.js` shows identical content with matching
-       mtime immediately after `claude plugin install`, but cache
-       stays put when source is rebuilt. Combined with signal 1+2,
-       this means the runtime resolves to source — and the cache
-       only matters as an artifact of `claude plugin install`'s
-       bookkeeping, not as the loaded bundle.
-  Implication: in-session MCP behavior reflects *current* source, not
-  the cached snapshot — editing `dist/mcp-server.js` in the source tree
-  mid-session affects the next Claude Code restart even without a
-  re-install. Cache file-count + CLI `--version` checks
-  (`/pre-publish-audit`) are necessary but **not sufficient** to prove
-  the in-session MCP runtime loads the published code; only a `/tmp`
-  clean-dir install of the published tarball (`/mcp-smoke`) exercises
-  the registry-served bundle end-to-end. Stale dev-path MCP processes
-  also survive folder rename — `ps -ef` after a rename shows entries
-  pointing at the old (now-missing) directory until each spawning
-  Claude Code session is restarted (paired-mv discipline above does not
-  help here; only restart does).
+  1. **`ps -ef`**: argv shows
+     `node <source-cwd>//dist/mcp-server.js` — note the doubled slash
+     from `${CLAUDE_PLUGIN_ROOT}/` + `/dist/...`.
+  2. **`lsof -p <pid>`**: process `cwd DIR` resolves to the source
+     tree (`/Users/seungwoolee/Code/agent-tree`) — not
+     `~/.claude/plugins/cache/agent-tree/agent-tree/<version>/`.
+  3. **Cache vs source byte-identity at install time**: `diff -q`
+     on `dist/mcp-server.js` shows identical content with matching
+     mtime immediately after `claude plugin install`, but cache
+     stays put when source is rebuilt. Combined with signal 1+2,
+     this means the runtime resolves to source — and the cache
+     only matters as an artifact of `claude plugin install`'s
+     bookkeeping, not as the loaded bundle.
+     Implication: in-session MCP behavior reflects _current_ source, not
+     the cached snapshot — editing `dist/mcp-server.js` in the source tree
+     mid-session affects the next Claude Code restart even without a
+     re-install. Cache file-count + CLI `--version` checks
+     (`/pre-publish-audit`) are necessary but **not sufficient** to prove
+     the in-session MCP runtime loads the published code; only a `/tmp`
+     clean-dir install of the published tarball (`/mcp-smoke`) exercises
+     the registry-served bundle end-to-end. Stale dev-path MCP processes
+     also survive folder rename — `ps -ef` after a rename shows entries
+     pointing at the old (now-missing) directory until each spawning
+     Claude Code session is restarted (paired-mv discipline above does not
+     help here; only restart does).
 
   **Marketplace type controls the spawn path.** Verified by inspecting
   `~/.claude/settings.json#extraKnownMarketplaces` and cross-referencing
   with `ps -ef` for multiple installed plugins:
   - **`directory` source** (this repo's setup; `claude plugin
-    marketplace add "$PWD"` writes `{"source":"directory","path":"<abs
-    cwd>"}`) → `${CLAUDE_PLUGIN_ROOT}` resolves to that registered
+marketplace add "$PWD"` writes `{"source":"directory","path":"<abs
+cwd>"}`) → `${CLAUDE_PLUGIN_ROOT}` resolves to that registered
     path, so MCP spawns from source. Cache exists but is not consumed
     at runtime.
   - **`github` source** (e.g., `oh-my-claudecode@omc` registered via
-    `claude plugin marketplace add github:...`) → `${CLAUDE_PLUGIN_ROOT}`
+    `claude plugin marketplace add <owner>/<repo>`) → `${CLAUDE_PLUGIN_ROOT}`
     resolves to the cache path
     (`~/.claude/plugins/cache/<marketplace>/<plugin>/<version>/`),
     so MCP spawns from cache. Source path doesn't exist locally for
@@ -296,5 +413,5 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
     immediately for the next Claude Code session, because the
     `extraKnownMarketplaces.<name>.source.path` is an absolute string
     and does not auto-update. Either re-run `claude plugin marketplace
-    add "$NEW_PWD"` after rename, or hand-edit
+add "$NEW_PWD"` after rename, or hand-edit
     `~/.claude/settings.json#extraKnownMarketplaces.agent-tree.source.path`.

@@ -26,10 +26,7 @@ export interface SegmentOptions {
 }
 
 const DEFAULTS: Required<
-  Pick<
-    SegmentOptions,
-    'gapMs' | 'fileJaccardThreshold' | 'turnForceSplit' | 'sidechainHandling'
-  >
+  Pick<SegmentOptions, 'gapMs' | 'fileJaccardThreshold' | 'turnForceSplit' | 'sidechainHandling'>
 > = {
   gapMs: 5 * 60 * 1000,
   fileJaccardThreshold: 0.3,
@@ -51,27 +48,25 @@ interface WorkingSegment {
   boundary_reasons: BoundarySignal[];
 }
 
-export function detectSegments(
-  events: RawEvent[],
-  opts: SegmentOptions = {},
-): TopicSegment[] {
-  const {
-    gapMs,
-    fileJaccardThreshold,
-    turnForceSplit,
-    sidechainHandling,
-  } = { ...DEFAULTS, ...opts };
+export function detectSegments(events: RawEvent[], opts: SegmentOptions = {}): TopicSegment[] {
+  const { gapMs, fileJaccardThreshold, turnForceSplit, sidechainHandling } = {
+    ...DEFAULTS,
+    ...opts,
+  };
 
-  const filtered = filterBySidechainMode(events, sidechainHandling);
-  if (filtered.length === 0) return [];
+  if (events.length === 0) return [];
 
-  const signals = extractSignals(filtered);
+  // Extract before dropping events so every signal keeps its source index.
+  const signals = extractSignals(events);
   const segments: WorkingSegment[] = [];
   let current: WorkingSegment | null = null;
   let prevSignals: EventSignals | null = null;
 
-  for (let i = 0; i < filtered.length; i += 1) {
+  for (let i = 0; i < events.length; i += 1) {
     const sig = signals[i];
+    if (sidechainHandling === 'drop' && sig.isSidechain) continue;
+    // Flatten semantic grouping without changing source event provenance.
+    if (sidechainHandling === 'flatten') sig.isSidechain = false;
 
     const reasons = current
       ? detectBoundary(current, sig, prevSignals, {
@@ -81,12 +76,16 @@ export function detectSegments(
         })
       : [];
 
+    if (prevSignals && sig.index > prevSignals.index + 1) {
+      reasons.push('sidechain_transition');
+    }
+
     if (!current || reasons.length > 0) {
       if (current) segments.push(current);
       const gapBefore = computeGap(prevSignals, sig);
       current = startSegment(sig, reasons, gapBefore);
     }
-    extendSegment(current, sig, filtered[i]);
+    extendSegment(current, sig, events[i]);
     prevSignals = sig;
   }
 
@@ -101,11 +100,31 @@ export function detectSegments(
   return merged.map((w, idx) => finalize(w, idx));
 }
 
+/**
+ * Segment indexes bound the original event array; UUIDs identify membership
+ * within that interval. A range alone can include excluded events.
+ */
+export function eventsForSegment(events: RawEvent[], segment: TopicSegment): RawEvent[] {
+  const members = new Set(segment.event_uuids);
+  return events
+    .slice(segment.start_index, segment.end_index + 1)
+    .filter((event) => members.has(event.uuid));
+}
+
 function mergeMicroSegments(segments: WorkingSegment[]): WorkingSegment[] {
   if (segments.length <= 1) return segments;
   const out: WorkingSegment[] = [];
   let pending: WorkingSegment | null = null;
   for (const seg of segments) {
+    // Never bridge a dropped source interval, even for a one-event segment.
+    if (
+      pending &&
+      (pending.end_index + 1 !== seg.start_index ||
+        seg.boundary_reasons.includes('sidechain_transition'))
+    ) {
+      out.push(pending);
+      pending = null;
+    }
     if (pending) {
       // Merge pending micro into the start of this segment.
       seg.event_uuids = [...pending.event_uuids, ...seg.event_uuids];
@@ -123,8 +142,7 @@ function mergeMicroSegments(segments: WorkingSegment[]): WorkingSegment[] {
       pending = null;
     }
     const isMicro =
-      seg.event_uuids.length <= 1 &&
-      !seg.boundary_reasons.includes('sidechain_transition');
+      seg.event_uuids.length <= 1 && !seg.boundary_reasons.includes('sidechain_transition');
     if (isMicro) {
       pending = seg;
     } else {
@@ -133,20 +151,6 @@ function mergeMicroSegments(segments: WorkingSegment[]): WorkingSegment[] {
   }
   if (pending) out.push(pending); // tail micro: nothing to merge into
   return out;
-}
-
-function filterBySidechainMode(
-  events: RawEvent[],
-  mode: 'include' | 'flatten' | 'drop',
-): RawEvent[] {
-  switch (mode) {
-    case 'drop':
-      return events.filter((e) => !e.isSidechain);
-    case 'flatten':
-    case 'include':
-    default:
-      return events;
-  }
 }
 
 function detectBoundary(
@@ -221,16 +225,12 @@ function computeGap(prev: EventSignals | null, cur: EventSignals): number {
   return diff > 0 ? diff : 0;
 }
 
-function extendSegment(
-  seg: WorkingSegment,
-  sig: EventSignals,
-  ev: RawEvent,
-): void {
+function extendSegment(seg: WorkingSegment, sig: EventSignals, ev: RawEvent): void {
   seg.end_index = sig.index;
   seg.event_uuids.push(sig.uuid);
   for (const f of sig.files) seg.files.set(f, (seg.files.get(f) ?? 0) + 1);
   for (const t of sig.tools) seg.tools.set(t, (seg.tools.get(t) ?? 0) + 1);
-  if (!ev.isSidechain) seg.is_sidechain_only = false;
+  if (!sig.isSidechain) seg.is_sidechain_only = false;
   if (!seg.time_start) seg.time_start = ev.timestamp;
   if (ev.timestamp) seg.time_end = ev.timestamp;
   if (sig.isTurn) seg.turns += 1;

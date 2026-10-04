@@ -2,7 +2,80 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [Unreleased] — 0.2.0
+
+### Added
+
+- Portable Claude Code JSONL imports via CLI `--file` and MCP `file`, project
+  selection/configuration via `--cwd`, and parse-free session catalogs via
+  `--sessions [--limit N]` and the sixth MCP tool, `agent_tree_sessions`.
+- Complete redacted JSON mindmaps/catalogs (`--json`, MCP list
+  `format: "json"`) without stdout banners, and CLI `--strict` malformed-line
+  rejection. Incompatible selectors, modes, and flags fail with exit code 2.
+- `CLAUDE_CONFIG_DIR` discovery support; project paths encode every
+  non-ASCII-alphanumeric character as `-`. Exports without a valid session
+  UUID use a stable path-derived 32-hex identity for local pick history.
+
+### Changed
+
+- Config precedence is defaults < user < project < environment < explicit
+  CLI. Per-field validation warns without discarding valid sibling settings.
+  MCP analysis caches invalidate on caller config and file identity metadata.
+- LLM model, input/output limits, parallelism, prompt caching, and language
+  settings are honored. Exact `messages.countTokens` preflight reservations
+  precede paid calls; failed counts make no paid labeling call, and failed
+  requests do not refund reservations. The input budget is not a spending cap.
+- CLI and MCP share the package version source. ESLint 10 flat config,
+  Vitest 5, and TypeScript 6.0.3 modernize the toolchain; TypeScript stays
+  below 6.1 for typescript-eslint peer compatibility (TypeScript 7 unsupported).
+- Docs and skill schemas now describe six tools and Claude Code-only input;
+  Codex/Gemini native session adapters remain unimplemented.
+- README rewritten around a terminal demo (`docs/demo.svg`, rendered from
+  real CLI output), a quick start, what's new in 0.2, the Claude Code plugin
+  and a roadmap, with reference material in collapsible sections and verified
+  install paths for the development version and the plugin. The marketplace
+  command is `claude plugin marketplace add lifrary/agent-tree`; current
+  Claude Code rejects the previously documented `github:` prefix.
+
+### Fixed
+
+- Phase-only text rendering preserves canonical node numbers for subsequent
+  snapshot selection. Hidden children no longer renumber later phases.
+- Dropping sidechains preserves original source-event ranges and keeps
+  dropped events out of the selected tree's metadata and snapshots.
+- `--dry-run` skips dump/cache writes and pick changes while retaining
+  analysis; use `--no-llm` as well to avoid paid labeling.
+- TUI selection shares the `--snapshot` path for git context, redaction,
+  pick history, and clipboard behavior, and honors text display options.
+- `--redact-dryrun` reports per-pattern hit counts from parsed source
+  strings on stderr without exposing matched values.
+- UUIDless Claude Code metadata lines of any non-event type (`custom-title`,
+  `agent-name`, `mode`, `atis-latch`, `ai-title`, `file-history-delta`, …)
+  are skipped as metadata, and structured attachment `content` (hook context
+  lists, file and memory objects) is dropped without a malformed warning.
+  Previously a real 14.7 MB session printed 1,592 multi-line warnings and
+  `--strict` rejected all 150 recent real transcripts tested.
+- `/pre-publish-audit` reads `npm pack --json` from npm 12, which prints an
+  object keyed by package name instead of an array; its tarball check
+  previously failed with "Cannot index object with number".
+
+### Security
+
+- Discovery accepts only UUID-named regular session files, excluding
+  agent/subagent and symlink entries. JSON exports/catalogs and errors retain
+  redaction at output boundaries.
+- Security redaction cannot be disabled. Config accepts only the implemented
+  `anthropic` provider and `telemetry.enabled: false`.
+
+### Breaking
+
+- **Node.js ≥22.13.0 is required.** CI covers Node 22/24/26 on Linux and macOS.
+- Per-session MCP tools accept `sessionId` or `file`, never both;
+  `agent_tree_picks` takes `{}` only. JSON exports reject display filters.
+  Invalid config fields and unsupported settings now warn instead of being
+  silently accepted.
+
+The changes above are unreleased; no npm publication is implied.
 
 ### Docs: README jargon + redact-strict accuracy pass (2026-04-29)
 
@@ -206,7 +279,7 @@ undefined seam.
 ### Tests: 119 → 134 (+15)
 
 - `tests/security-hardening.test.ts`: +6 "token class-boundary audit"
-  + +6 "passesRedosFuzz" = +12 total.
+  - +6 "passesRedosFuzz" = +12 total.
 - `tests/graph.test.ts`: +3 (indirect cycle break, diamond preservation,
   empty-events safety).
 
@@ -249,7 +322,7 @@ spawn of `dist/mcp-server.js` always worked — the server was healthy;
 discovery was broken.
 
 **Why inline instead of moving `.mcp.json` to plugin root**: Claude Code
-*also* auto-discovers `.mcp.json` at any cwd as a **project-scope** MCP
+_also_ auto-discovers `.mcp.json` at any cwd as a **project-scope** MCP
 config. For a plugin whose developer runs `claude` inside the plugin's own
 source directory, that double-duty filename produces a duplicate registration
 where `${CLAUDE_PLUGIN_ROOT}` never gets substituted — one broken entry in
@@ -340,6 +413,7 @@ tests pass. No public CLI flag changed; npm package version bumped 0.0.1 → 0.1
 to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 
 #### Security
+
 - **HIGH** — `--dump-json <dir>` rewrote: now threads the redactor over every
   payload (`raw-events.json` was previously dumping the full pre-redaction
   JSONL stream), refuses well-known sensitive paths (`/etc`, `/var/log`,
@@ -361,14 +435,15 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 - **MEDIUM** — `picksFileFor` rejects `sessionId` not matching
   `/^[0-9a-f-]{4,40}$/i` so the picks store never composes a path from
   untrusted input. `removePicksForNode` now writes via `${file}.tmp-{pid}-{ts}`
-  + `rename` so concurrent `recordPick` writes between the read and rewrite
-  aren't silently lost. (`src/utils/picks.ts`)
+  - `rename` so concurrent `recordPick` writes between the read and rewrite
+    aren't silently lost. (`src/utils/picks.ts`)
 - **MEDIUM** — Added 5 missing redaction patterns: `gcp_oauth_token`
   (`ya29.…`), `github_pat_finegrained` (`github_pat_…` ≥82 chars),
   `openai_project_key` (`sk-(proj|svcacct|admin)-…`), `stripe_secret_key`
   (`sk_(live|test)_…`), `huggingface_token` (`hf_…`). (`src/utils/redact.ts`)
 
 #### UX
+
 - **MAJOR** — `looksLikeSystemNoise` expanded to catch `Stop hook …` /
   `Base directory for this skill: …` / shell-prompt prefixes (`❯ `, `> `,
   `$ `, `# `) — these were leaking into phase headers as full-text labels.
@@ -384,6 +459,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
   (`src/render/text.ts`)
 
 #### Packaging
+
 - **MAJOR** — `package.json` `files[]` was shipping only `dist/` + 2 docs;
   npm install gave you the CLI but no plugin manifest, no MCP wiring, no
   skill. Added `.claude-plugin/`, `skills/`, `CHANGELOG.md`. Dropped the
@@ -397,6 +473,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
   `{isError:true, content}` instead of a JSON-RPC fault.
 
 #### Code quality
+
 - **MINOR** — Dead config keys removed: `output.{dir,format,open_browser}`,
   `render.{collapse_depth,node_size_scale,default_branch_mode}`, `BranchMode`
   type. The HTML renderer was deleted in the post-M5 pivot; these survived as
@@ -418,6 +495,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
   `--html`).
 
 #### Tests
+
 - New `tests/security-hardening.test.ts` — 20 tests covering all of the above:
   new redact patterns × 6, picks validator + atomic delete × 4, dumpArtifacts
   redaction + protected paths + `flag:'wx'` + perms × 4, safeGitCwd × 5,
@@ -426,6 +504,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
   heading.
 
 ### Added — In-session plugin (MCP tools)
+
 - **`src/mcp/server.ts`** — MCP server using `@modelcontextprotocol/sdk` (stdio transport). Five tools registered:
   - `claude_map_list` — numbered ASCII tree as text
   - `claude_map_snapshot` — single-node resume markdown + git context, records pick
@@ -437,17 +516,20 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 - **esbuild** now builds two entries: `dist/cli.js` + `dist/mcp-server.js`.
 
 ### Added — Tier 1 UX improvements
+
 - **Smart default**: `claude-map` (no args) auto-picks the latest session for the current cwd's project; falls back to globally latest with a notice.
 - **`--phases-only`**: collapse sub-actions; show only user-prompt phase headers — 5×↑ navigation speed on long sessions.
 - **Phase metadata**: phase labels carry `(N actions · M files · T min)` so users gauge weight without expanding.
 - **Git context in snapshots**: snapshot markdown auto-appends branch / HEAD / recent commits / working-tree status (best-effort, soft-fail). New session pasted with the snapshot now knows the source code state.
 
 ### Added — Tier 2 navigation utilities
+
 - **`--picks`**: list every recorded pick across every session.
 - **`--unstar <id>`**: remove ⭐ from a previously picked node (cleans `picks.jsonl`).
 - **`--diff <a> <b>`**: summarise event range / files / tools between two nodes.
 
 ### Pivot — File-tree style hierarchy
+
 - Segments are now grouped into **phases**: each significant user prompt becomes a phase header (📌-style), and the assistant's subsequent file-edit / tool-call segments become sub-actions under it. Tree depth = 2 (root → phases → actions). Read like a `tree` command.
 - ⭐ marks previously picked nodes (GitHub starring semantics — single emoji regardless of mode).
 - All emoji-as-icon noise removed from labels; format itself differentiates: `"..."` = user prompt phase, `file.ts (Tool)` = sub-action.
@@ -456,14 +538,17 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 - Micro-segments (≤1 event) are merged into their successor.
 
 ### Intentionally NOT pursued
+
 - **LLM phase labeling** (`Tier 3 J`): user-turn-based phases already convey intent. LLM-generated narratives would add cost ($0.10–0.20/session) and external-API dependency without material UX gain.
 - **Cross-session vector search** (`Tier 3 K`): `grep -r ~/.claude/projects/` covers the same need without an embedding store; product complexity not justified.
 
 ### Removed (BREAKING)
+
 - **HTML / browser mode dropped entirely.** `--html`, `--no-open`, `--collapse-depth`, `--branch-mode`, `--out`, `--lang`, `--force` flags removed. The `markmap-view` and `d3` runtime dependencies are gone (42 transitive packages dropped). The `src/render/markmap.ts`, `src/render/template.html`, `src/utils/browser_open.ts` modules and their tests are deleted. Per user request, `agent-tree (was oh-my-claude-map)` is now strictly a terminal-only tool: every output mode prints to stdout/stderr (text tree, snapshot markdown, TUI). HTML cache (`writeHtmlCache` / `readHtmlCache` / `copyHtmlFromCache`) and the `mindmap.html` artifact are gone — the per-input cache directory still holds optional `segments.json` / `tree.json` / `graph.json` for `--verbose` debugging.
 - **Snapshot factory now accepts `redactor`** so secret leaks in verbatim user-text quoting (previously caught by the deleted render-stage `redactDeep`) stay protected end-to-end.
 
 ### Added
+
 - **M1 — Ingestion & segmentation** (SPEC §7.1–7.2)
   - Streaming JSONL parser with graceful degrade on malformed lines.
   - DAG reconstruction via `parentUuid` chain, cycle + orphan detection.
@@ -493,6 +578,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
   - README with CLI flag catalog, privacy notes, architecture diagram.
 
 ### Post-M5 product pivot — in-session text mindmap (default)
+
 - **Default UX is now in-session**, not a browser pop-up. The CLI prints a numbered ASCII tree to stdout (or runs an interactive readline picker on a TTY) and returns the chosen node's resume markdown to stdout. The legacy HTML mindmap is preserved behind `--html`.
 - New CLI modes: `--list` (numbered tree, skill-friendly), `--snapshot <id> --mode continue|fork` (single snapshot to stdout), `--tui` (interactive). Default: TTY → tui, non-TTY → list.
 - New module split: `src/cli/options.ts`, `src/cli/pipeline.ts`, `src/cli/modes.ts`, `src/cli/tui.ts`. The old `cli.ts` shrank from 561 to ~196 lines.
@@ -501,6 +587,7 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 - **UX bug fix**: snapshots no longer leak internal milestone jargon (`(M3 narrative placeholder)`, `(M4 will paste...)`) when running with `--no-llm`. The `tree/context_snapshot.ts` factory now extracts the verbatim last-user turn from segment events (no LLM required) and gracefully omits LLM-only sections.
 
 ### Cleanup loops (maintenance)
+
 - **Loop 1**: cli.ts decomposed into `cli/{options,pipeline,modes,tui}.ts`. Long-function smell gone.
 - **Loop 2**: dropped unused `markmap-lib` dependency (we'd built our own tree). Removed 37 transitive packages.
 - **Loop 3**: `MindMapNode.segment_id` introduced. Labeler now does an exact-id O(1) lookup; the previous first-uuid identity was theoretically corruptible.
@@ -509,11 +596,13 @@ to align with the plugin manifest, MCP server, and skill (all already 0.1.0).
 - **Loop 6**: SPEC §18.3 — verbose mode mirrors `segments.json`, `tree.json`, `graph.json` to the per-input cache dir for inspection without re-running.
 
 ### Post-M5 hardening (architect review follow-ups)
+
 - **Offline-safe HTML**: d3 + markmap-view no longer loaded from jsDelivr CDN — both browser bundles are inlined at render time. Generated HTML works fully offline (SPEC §11 acceptance #7). Total size ~401 KB, still under the 500 KB budget.
 - **SDK compatibility guard**: `@anthropic-ai/sdk` bumped 0.32 → 0.90. A non-emitting type-only `__sdkCompatibilityGuard` in `src/llm/anthropic.ts` exercises the exact `messages.create` call shape we rely on, so future SDK drifts (e.g. `Usage.cache_creation_input_tokens` becoming `number | null`) fail CI before shipping.
 - **Redaction end-to-end integration test**: new `tests/integration.test.ts` runs the full pipeline on a secret-laden fixture and asserts zero leak for 10+ patterns. Found + fixed a real truncation-leak bug: first-user-msg was sliced below the API-key regex's 20-char minimum before the render-stage redactor ran, so partial fragments escaped. Redactor now applied at `tree/builder.ts` before truncation.
 
 ### Known gaps (intentional post-M5 scope)
+
 - `/wrap` Stop-hook auto-trigger (v1.1).
 - Obsidian Canvas export (v1.1).
 - Multi-session cross-analysis (v2).

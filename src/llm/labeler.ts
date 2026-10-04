@@ -10,37 +10,40 @@
  * run proceeds.
  */
 
-import type {
-  MindMap,
-  MindMapNode,
-  RawEvent,
-  SessionGraph,
-  TopicSegment,
-} from '../types.js';
+import type { MindMap, MindMapNode, RawEvent, SessionGraph, TopicSegment } from '../types.js';
 
 import {
   callSegmentLabel,
+  countSegmentInputTokens,
   type AnthropicLike,
+  type CallLabelInput,
   type CallLabelResult,
 } from './anthropic.js';
 import type { Redactor } from '../utils/redact.js';
+import { eventsForSegment } from '../analyzer/segments.js';
 
-import {
-  buildContinueSnapshot,
-  buildForkSnapshot,
-} from '../tree/context_snapshot.js';
+import { buildContinueSnapshot, buildForkSnapshot } from '../tree/context_snapshot.js';
 
-import {
-  SYSTEM_PROMPT,
-  buildSegmentUserMessage,
-} from './prompts.js';
+import { SYSTEM_PROMPT, buildSegmentUserMessage } from './prompts.js';
 
 export interface LabelerOptions {
   client: AnthropicLike;
   model: string; // e.g. 'claude-sonnet-4-6'
-  maxInputTokens?: number; // budget ceiling for summed input across segments
+  /**
+   * Ceiling for preflight input reservations, including cached input.
+   * Not a monetary spending cap: provider counts/billing may differ, output
+   * is billed separately, and failed attempts may be billed without usage.
+   * Each reserved segment gets one create attempt, with no retry or refund.
+   */
+  maxInputTokens?: number;
   parallel?: number; // concurrent LLM calls; default 3
-  logger?: { info?: (msg: string, extra?: unknown) => void; warn?: (msg: string, extra?: unknown) => void };
+  maxOutputTokens?: number;
+  cache?: boolean;
+  lang?: 'auto' | 'ko' | 'en';
+  logger?: {
+    info?: (msg: string, extra?: unknown) => void;
+    warn?: (msg: string, extra?: unknown) => void;
+  };
   redactor?: Redactor; // applied to userMessage before SDK call (SPEC §7.6)
   /**
    * Absolute path to the source JSONL — written into snapshot markdown so the
@@ -50,9 +53,12 @@ export interface LabelerOptions {
 }
 
 export interface LabelerStats {
-  segments_attempted: number;
+  segments_attempted: number; // count failures + paid attempts; budget skips excluded
   segments_labeled: number;
   segments_failed: number;
+  reserved_input_tokens: number; // exact preflight counts, retained on failure
+  // Provider-reported usage, including invalid/empty responses. Usage from
+  // failed requests with no response is unknown, not assumed to be free.
   total_input_tokens: number;
   total_output_tokens: number;
   cache_read_tokens: number;
@@ -76,11 +82,16 @@ export async function labelMindMap(
     segments_attempted: 0,
     segments_labeled: 0,
     segments_failed: 0,
+    reserved_input_tokens: 0,
     total_input_tokens: 0,
     total_output_tokens: 0,
     cache_read_tokens: 0,
     cache_creation_tokens: 0,
   };
+  if (!Number.isSafeInteger(maxInput) || maxInput < 0) {
+    opts.logger?.warn?.('invalid input token budget, keeping heuristic labels');
+    return { mindmap, stats };
+  }
 
   // Flatten all topic segment nodes across the tree. The root + 🔀 Sidechains
   // bucket are containers — they keep their heuristic labels. Only segment
@@ -100,26 +111,28 @@ export async function labelMindMap(
     if (node.type === 'topic' && node.segment_id) {
       const match = segmentById.get(node.segment_id);
       if (match) {
-        const events = graph.events.slice(match.start_index, match.end_index + 1);
+        const events = eventsForSegment(graph.events, match);
         nodesToLabel.push({ node, segment: match, events });
-        return;
       }
     }
     for (const c of node.children) collectNodes(c);
   };
   collectNodes(mindmap.root);
 
-  // Throttled parallel execution
+  // Each worker counts and then reserves before create. There is no await
+  // between the budget check and increment, so reservations are atomic even
+  // when concurrent counts finish together. Never release failed reservations:
+  // the provider may have accepted/billed a request whose response was lost.
   let cursor = 0;
   const workers: Promise<void>[] = [];
-  for (let w = 0; w < parallel; w += 1) {
+  for (let w = 0; w < Math.min(parallel, nodesToLabel.length); w += 1) {
     workers.push(
       (async () => {
         for (;;) {
           const idx = cursor;
           cursor += 1;
           if (idx >= nodesToLabel.length) return;
-          if (stats.total_input_tokens > maxInput) {
+          if (stats.reserved_input_tokens >= maxInput) {
             opts.logger?.warn?.(
               'token budget exhausted, remaining segments keep heuristic labels',
               { limit: maxInput },
@@ -127,8 +140,26 @@ export async function labelMindMap(
             return;
           }
           const entry = nodesToLabel[idx];
+          const input = prepareLabelInput(entry, opts);
+          const count = await countSegmentInputTokens(input);
+          if (!count.ok) {
+            stats.segments_attempted += 1;
+            applyResult(entry, count, graph, opts.jsonlPath, opts.redactor, stats, opts.logger);
+            continue;
+          }
+          if (
+            stats.reserved_input_tokens >= maxInput ||
+            count.inputTokens > maxInput - stats.reserved_input_tokens
+          ) {
+            opts.logger?.warn?.(
+              `input token budget cannot fit ${entry.segment.id}, keeping heuristic label`,
+              { limit: maxInput, inputTokens: count.inputTokens },
+            );
+            continue;
+          }
+          stats.reserved_input_tokens += count.inputTokens;
           stats.segments_attempted += 1;
-          const res = await labelOne(entry, opts);
+          const res = await callSegmentLabel(input);
           applyResult(entry, res, graph, opts.jsonlPath, opts.redactor, stats, opts.logger);
         }
       })(),
@@ -139,21 +170,31 @@ export async function labelMindMap(
   return { mindmap, stats };
 }
 
-async function labelOne(
+function prepareLabelInput(
   entry: { node: MindMapNode; segment: TopicSegment; events: RawEvent[] },
   opts: LabelerOptions,
-): Promise<CallLabelResult> {
+): CallLabelInput {
   const rawMessage = buildSegmentUserMessage({
     segment: entry.segment,
     events: entry.events,
   });
   const userMessage = opts.redactor ? opts.redactor.apply(rawMessage) : rawMessage;
-  return callSegmentLabel({
+  const language = opts.lang === 'ko' ? 'Korean' : opts.lang === 'en' ? 'English' : null;
+  const systemPrompt = language
+    ? SYSTEM_PROMPT.replace(
+        /^- Language:.*$/m,
+        `- Language: Write label, summary, and next_steps in ${language}, regardless of the user turns' language. Keep JSON keys and enum values unchanged.`,
+      )
+    : SYSTEM_PROMPT;
+  return {
     client: opts.client,
-    systemPrompt: SYSTEM_PROMPT,
+    systemPrompt,
     userMessage,
     model: opts.model,
-  });
+    maxOutputTokens: opts.maxOutputTokens,
+    cache: opts.cache,
+    maxRetries: 0,
+  };
 }
 
 function applyResult(
@@ -165,6 +206,12 @@ function applyResult(
   stats: LabelerStats,
   logger?: LabelerOptions['logger'],
 ): void {
+  if (res.usage) {
+    stats.total_input_tokens += res.usage.inputTokens;
+    stats.total_output_tokens += res.usage.outputTokens;
+    stats.cache_read_tokens += res.usage.cacheReadTokens;
+    stats.cache_creation_tokens += res.usage.cacheCreationTokens;
+  }
   if (!res.ok) {
     stats.segments_failed += 1;
     logger?.warn?.(`LLM label failed for ${entry.segment.id}`, {
@@ -173,10 +220,6 @@ function applyResult(
     return;
   }
   stats.segments_labeled += 1;
-  stats.total_input_tokens += res.usage.inputTokens;
-  stats.total_output_tokens += res.usage.outputTokens;
-  stats.cache_read_tokens += res.usage.cacheReadTokens;
-  stats.cache_creation_tokens += res.usage.cacheCreationTokens;
 
   const { label } = res;
   // Defense-in-depth: the LLM was given a redacted userMessage so it

@@ -102,7 +102,8 @@ export function displayWidth(s: string): number {
     else if (cp === 0x200d) w += 0;
     else if (cp >= 0xfe00 && cp <= 0xfe0f) w += 0;
     else if (cp >= 0xe0100 && cp <= 0xe01ef) w += 0;
-    else if (cp >= 0x10000) w += 2; // emoji + most astral chars
+    else if (cp >= 0x10000)
+      w += 2; // emoji + most astral chars
     else w += 1;
   }
   return w;
@@ -143,10 +144,7 @@ interface Row {
   pickedFork: boolean;
 }
 
-export function renderTextTree(
-  mindmap: MindMap,
-  opts: TextRenderOptions = {},
-): TextRenderResult {
+export function renderTextTree(mindmap: MindMap, opts: TextRenderOptions = {}): TextRenderResult {
   const maxWidth = opts.maxWidth ?? detectTerminalWidth();
   const showRange = opts.showRange !== false;
   const filterKw = opts.filter?.toLowerCase().trim();
@@ -205,8 +203,7 @@ export function renderTextTree(
     `${stats.total_nodes} nodes`,
   ];
   if (stats.duration_minutes > 0) headerParts.push(`${stats.duration_minutes} min`);
-  if (stats.sidechain_count > 0)
-    headerParts.push(`${stats.sidechain_count} sidechain`);
+  if (stats.sidechain_count > 0) headerParts.push(`${stats.sidechain_count} sidechain`);
   lines.push(wrap(color, ANSI.dim, headerParts.join(' · ')));
   if (filterKw) {
     lines.push(
@@ -220,11 +217,7 @@ export function renderTextTree(
   lines.push('');
 
   for (const row of visibleRows) {
-    const numStr = wrap(
-      color,
-      ANSI.brightBlack,
-      String(row.number).padStart(padWidth, ' '),
-    );
+    const numStr = wrap(color, ANSI.brightBlack, String(row.number).padStart(padWidth, ' '));
     const prefix = wrap(color, ANSI.brightBlack, row.prefix);
     const pickMark = pickMarker(row);
     const labelColored = colorizeLabel(row, color);
@@ -232,8 +225,7 @@ export function renderTextTree(
     // sequences which take 0 cells; we have to compute padding from the
     // un-colored text width.
     const rawWidth = displayWidth(pickMark + row.label);
-    const padding =
-      rawWidth < targetCol ? ' '.repeat(targetCol - rawWidth) : ' ';
+    const padding = rawWidth < targetCol ? ' '.repeat(targetCol - rawWidth) : ' ';
     const time = wrap(color, ANSI.brightBlack, row.time);
     const range = wrap(color, ANSI.brightBlack, row.range);
     const trailing = [time, range].filter((s) => s.length > 0).join('  ');
@@ -253,10 +245,16 @@ export function renderTextTree(
     ancestorLastFlags: boolean[],
     isLast: boolean,
   ): void {
-    if (typeof opts.maxDepth === 'number' && depth > opts.maxDepth) return;
-
     const number = numbered.length + 1;
     numbered.push({ number, id: node.id, depth });
+    // Visibility must not change canonical numbers: a phase-only list is
+    // followed by an unfiltered --snapshot lookup in another invocation.
+    if (typeof opts.maxDepth === 'number' && depth > opts.maxDepth) {
+      node.children.forEach((child, index) => {
+        walk(child, depth + 1, [], index === node.children.length - 1);
+      });
+      return;
+    }
 
     let prefix = '';
     for (const ancestorLast of ancestorLastFlags) {
@@ -267,17 +265,11 @@ export function renderTextTree(
     // Compose label: optional sidechain marker + raw label + optional phase
     // metadata. Keep emoji-free per the file-tree style; differentiation comes
     // from the label format itself ("..." = user phase, file (Tool) = action).
-    const sidechainTag =
-      node.is_sidechain && node.type !== 'root' ? '[sidechain] ' : '';
+    const sidechainTag = node.is_sidechain && node.type !== 'root' ? '[sidechain] ' : '';
     const meta = node.phase_meta ? `  (${node.phase_meta})` : '';
     const label = `${sidechainTag}${node.label}${meta}`;
-    const time =
-      typeof node.time_offset_ms === 'number'
-        ? formatRelative(node.time_offset_ms)
-        : '';
-    const range = showRange
-      ? `events ${node.index_range[0]}–${node.index_range[1]}`
-      : '';
+    const time = typeof node.time_offset_ms === 'number' ? formatRelative(node.time_offset_ms) : '';
+    const range = showRange ? `events ${node.index_range[0]}–${node.index_range[1]}` : '';
 
     const isUserText = label.startsWith('"');
     const fileToolKey = isUserText ? null : extractFileKey(label);
@@ -328,10 +320,7 @@ function collapseRuns(rows: Row[]): Row[] {
       const collapsed: Row = {
         ...head,
         label: `${head.fileToolKey} ×${runLen}`,
-        time:
-          head.time && last.time
-            ? `${head.time} → ${last.time}`
-            : head.time || last.time,
+        time: head.time && last.time ? `${head.time} → ${last.time}` : head.time || last.time,
         range:
           head.range && last.range
             ? `events ${head.range.replace(/^events\s/, '').split('–')[0]}–${last.range.replace(/^events\s/, '').split('–')[1]} (#${head.number}-#${last.number})`

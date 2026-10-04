@@ -7,5 +7,6 @@ export default defineConfig({
     environment: 'node',
     reporters: 'default',
     testTimeout: 10_000,
+    maxWorkers: 2,
   },
 });

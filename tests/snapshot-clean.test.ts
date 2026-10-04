@@ -55,10 +55,7 @@ describe('heuristic snapshot UX (no LLM)', () => {
     const { mindmap } = await buildFixtureMindmap();
     walkMarkdown(mindmap.root, (md, mode, nodeId) => {
       for (const phrase of FORBIDDEN_PHRASES) {
-        expect(
-          md,
-          `node ${nodeId} (${mode}) leaked "${phrase}"`,
-        ).not.toContain(phrase);
+        expect(md, `node ${nodeId} (${mode}) leaked "${phrase}"`).not.toContain(phrase);
       }
     });
   });
@@ -99,6 +96,7 @@ describe('LLM-enriched snapshot', () => {
 
     const client = {
       messages: {
+        countTokens: vi.fn(async () => ({ input_tokens: 100 })),
         create: vi.fn(async () => ({
           content: [
             {

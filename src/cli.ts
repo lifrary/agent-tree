@@ -13,9 +13,10 @@
  */
 
 import { resolve } from 'node:path';
+import { stat } from 'node:fs/promises';
 
 import { parseCliArgs, resolveMode } from './cli/options.js';
-import { runPipeline } from './cli/pipeline.js';
+import { buildRedactor, runPipeline } from './cli/pipeline.js';
 import {
   dumpArtifacts,
   runDiffMode,
@@ -28,10 +29,13 @@ import {
 import { loadConfig } from './config/loader.js';
 import { createLoggerSync, type LogLevel } from './utils/logger.js';
 import { pickSession } from './utils/picker.js';
+import { defaultRedactor, redactDeep } from './utils/redact.js';
 import {
   findLatestSession,
   findLatestSessionInProject,
   locateSession,
+  listSessions,
+  sessionFromFile,
   type SessionMatch,
 } from './utils/session_path.js';
 
@@ -39,20 +43,52 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   const parsed = parseCliArgs(argv);
   if (!parsed.ok) return parsed.exitCode;
   const { opts, sessionArg } = parsed;
+  if (opts.tui && !process.stdin.isTTY) {
+    console.error('error: --tui requires interactive input; use --list or --json instead');
+    return 2;
+  }
 
+  const projectCwd = opts.cwd ? resolve(opts.cwd) : undefined;
+  const cwd = projectCwd ?? process.cwd();
+  opts.cwd = cwd;
+  if (!(await stat(cwd)).isDirectory()) {
+    console.error('error: --cwd must name a directory');
+    return 2;
+  }
   const level: LogLevel = opts.trace ? 'trace' : opts.verbose ? 'debug' : 'info';
-  const logger = createLoggerSync(level);
-  const { config } = await loadConfig({ logger });
+  let logger = createLoggerSync(level);
+  const { config } = await loadConfig({ logger, projectCwd: cwd });
+  if (!opts.trace && !opts.verbose) logger = createLoggerSync(config.log.level);
+
+  if (opts.sessions) {
+    const entries = await listSessions({
+      projectCwd,
+      limit: opts.limit ?? 20,
+    });
+    const redactor = buildRedactor(opts, config, logger);
+    const safeEntries = redactDeep(entries, redactor);
+    process.stdout.write(
+      opts.json
+        ? JSON.stringify({ sessions: safeEntries }, null, 2) + '\n'
+        : safeEntries
+            .map(
+              (entry) =>
+                `${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`,
+            )
+            .join('\n') + '\n',
+    );
+    return 0;
+  }
 
   // --picks is session-independent (lists picks across every session); handle
   // before the session-resolution step.
   if (opts.picks) {
-    return runPicksMode();
+    return runPicksMode(buildRedactor(opts, config, logger));
   }
 
   // No explicit selector → smart default: latest session in current project,
   // falling back to globally latest if this project has no sessions yet.
-  const resolved = await resolveSession(sessionArg, opts, logger);
+  const resolved = await resolveSession(sessionArg, opts, logger, cwd);
   if (!resolved.ok) {
     // 130 = SIGINT-style "user cancelled" (conventional for interactive pick
     // aborts). 2 = POSIX "misuse / not found". Discriminated union makes
@@ -68,7 +104,7 @@ export async function main(argv: string[] = process.argv): Promise<number> {
     jsonl: match.jsonlPath,
   });
 
-  const mode = resolveMode(opts, !!process.stdout.isTTY);
+  const mode = resolveMode(opts, !!process.stdout.isTTY && !!process.stdin.isTTY);
 
   // Quiet the [N/5] progress lines for skill-friendly + interactive modes.
   // Only the explicit `--verbose` / `--trace` flags reveal them. Otherwise the
@@ -76,12 +112,14 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   const quiet = (mode.list || mode.snapshot || mode.tui) && !opts.verbose && !opts.trace;
 
   const result = await runPipeline({ match, opts, config, logger, quiet });
-  if (result.isEmpty) {
+  // Exported files need not be named after the embedded session UUID.
+  if (result.graph.meta.sessionId) match.sessionId = result.graph.meta.sessionId;
+  if (result.isEmpty && !opts.json) {
     console.error('No turns found — empty session. Exiting.');
     return 0;
   }
 
-  if (opts.dumpJson) {
+  if (opts.dumpJson && !opts.dryRun) {
     await dumpArtifacts(
       opts.dumpJson,
       result.graph,
@@ -134,15 +172,22 @@ export async function main(argv: string[] = process.argv): Promise<number> {
  *   - `{ ok: false, reason: 'not_found' }` — no matching session (exit 2)
  */
 type SessionResolution =
-  | { ok: true; match: SessionMatch }
-  | { ok: false; reason: 'cancelled' | 'not_found' };
+  { ok: true; match: SessionMatch } | { ok: false; reason: 'cancelled' | 'not_found' };
 
 async function resolveSession(
   sessionArg: string | undefined,
-  opts: { pick?: boolean; latest?: boolean },
+  opts: { pick?: boolean; latest?: boolean; file?: string },
   logger: { info(msg: string, extra?: unknown): void; debug(msg: string, extra?: unknown): void },
+  cwd: string,
 ): Promise<SessionResolution> {
+  if (opts.file) {
+    return { ok: true, match: await sessionFromFile(opts.file) };
+  }
   if (opts.pick) {
+    if (!process.stdin.isTTY) {
+      console.error('error: --pick requires an interactive terminal; use --sessions instead');
+      return { ok: false, reason: 'not_found' };
+    }
     const picked = await pickSession();
     if (!picked) {
       console.error('Selection cancelled.');
@@ -153,16 +198,16 @@ async function resolveSession(
   if (opts.latest) {
     const latest = await findLatestSession();
     if (!latest) {
-      console.error('error: no sessions found under ~/.claude/projects/.');
+      console.error('error: no sessions found; use --file to open an exported JSONL');
       return { ok: false, reason: 'not_found' };
     }
     return { ok: true, match: latest };
   }
   if (!sessionArg) {
     // Smart default — try this project's latest first
-    const inProject = await findLatestSessionInProject(process.cwd());
+    const inProject = await findLatestSessionInProject(cwd);
     if (inProject) {
-      logger.debug('smart default → this project\'s latest session', {
+      logger.debug("smart default → this project's latest session", {
         sessionId: inProject.sessionId,
       });
       return { ok: true, match: inProject };
@@ -175,13 +220,13 @@ async function resolveSession(
       );
       return { ok: true, match: global };
     }
-    console.error('error: no sessions found under ~/.claude/projects/.');
+    console.error('error: no sessions found; use --file to open an exported JSONL');
     return { ok: false, reason: 'not_found' };
   }
   const matches = await locateSession(sessionArg);
   if (matches.length === 0) {
     console.error(
-      `error: no session matched "${sessionArg}" under ~/.claude/projects/.`,
+      `error: no session matched "${sessionArg}"; use --sessions to list available sessions`,
     );
     return { ok: false, reason: 'not_found' };
   }
@@ -202,16 +247,16 @@ async function resolveSession(
 const invokedDirectly =
   typeof process !== 'undefined' &&
   process.argv[1] &&
-  /(^|\/)(cli\.(m?js|ts)|agent-tree|atree)$/.test(
-    process.argv[1],
-  );
+  /(^|\/)(cli\.(m?js|ts)|agent-tree|atree)$/.test(process.argv[1]);
 
 if (invokedDirectly) {
   main().then(
     (code) => process.exit(code),
     (err) => {
-      // eslint-disable-next-line no-console
-      console.error('fatal:', err);
+      console.error(
+        'error:',
+        defaultRedactor().apply(err instanceof Error ? err.message : String(err)),
+      );
       process.exit(1);
     },
   );

@@ -25,10 +25,8 @@ import type {
 } from '../types.js';
 import type { Redactor } from '../utils/redact.js';
 
-import {
-  buildContinueSnapshot,
-  buildForkSnapshot,
-} from './context_snapshot.js';
+import { eventsForSegment } from '../analyzer/segments.js';
+import { buildContinueSnapshot, buildForkSnapshot } from './context_snapshot.js';
 
 export interface BuildMindMapOptions {
   jsonlPath: string;
@@ -51,6 +49,15 @@ export function buildMindMap(
 ): MindMap {
   const generatedAt = opts.generatedAt ?? new Date().toISOString();
   const sessionId = graph.meta.sessionId;
+  // Select by source occurrence, not just UUID: duplicate UUIDs elsewhere in
+  // the graph must not restore events excluded from the selected segments.
+  const selected = new Set<RawEvent>();
+  for (const segment of segments) {
+    for (const event of eventsForSegment(graph.events, segment)) {
+      selected.add(event);
+    }
+  }
+  const selectedEvents = graph.events.filter((event) => selected.has(event));
 
   // Split segments into main + sidechain-only
   const main: TopicSegment[] = [];
@@ -60,7 +67,7 @@ export function buildMindMap(
   }
 
   const sessionStartMs = (() => {
-    for (const e of graph.events) {
+    for (const e of selectedEvents) {
       const ts = Date.parse(e.timestamp);
       if (Number.isFinite(ts)) return ts;
     }
@@ -75,17 +82,12 @@ export function buildMindMap(
 
   const idAllocator = new IdAllocator();
   const rootId = idAllocator.next();
-  const rootLabel = deriveSessionTitle(
-    graph.events,
-    sessionId,
-    opts.sessionTitle,
-    opts.redactor,
-  );
+  const rootLabel = deriveSessionTitle(selectedEvents, sessionId, opts.sessionTitle, opts.redactor);
 
   // For the root node, the meaningful "instruction" is the FIRST user turn
   // (the original ask), not the last. We anchor it as a single-element array
   // so the snapshot factory's last-user-text walker finds exactly that one.
-  const firstUserEvent = graph.events.find((e) => e.type === 'user');
+  const firstUserEvent = selectedEvents.find((e) => e.type === 'user');
   const rootInstructionEvents = firstUserEvent ? [firstUserEvent] : [];
 
   const rootSnapInput = {
@@ -103,9 +105,9 @@ export function buildMindMap(
     id: rootId,
     type: 'root',
     label: rootLabel,
-    summary: `Session ${shortId(sessionId)} — ${graph.events.length} events, ${segments.length} segments`,
-    index_range: [0, Math.max(0, graph.events.length - 1)],
-    event_uuids: graph.events.map((e) => e.uuid),
+    summary: `Session ${shortId(sessionId)} — ${selectedEvents.length} events, ${segments.length} segments`,
+    index_range: coverageRange(segments),
+    event_uuids: selectedEvents.map((e) => e.uuid),
     files_touched: uniq(segments.flatMap((s) => s.dominant_files)),
     tools_used: uniq(segments.flatMap((s) => s.dominant_tools)),
     is_sidechain: false,
@@ -131,10 +133,7 @@ export function buildMindMap(
   // ---------------------------------------------------------------------
   const phases = groupSegmentsIntoPhases(main, graph.events);
   for (const phase of phases) {
-    const phaseEvents = graph.events.slice(
-      phase.headSegment.start_index,
-      phase.headSegment.end_index + 1,
-    );
+    const phaseEvents = eventsForSegment(graph.events, phase.headSegment);
     const phaseNode = buildSegmentNode(phase.headSegment, {
       idAllocator,
       sessionId,
@@ -154,7 +153,7 @@ export function buildMindMap(
           jsonlPath: opts.jsonlPath,
           generatedAt,
           parentIsSidechain: false,
-          events: graph.events.slice(childSeg.start_index, childSeg.end_index + 1),
+          events: eventsForSegment(graph.events, childSeg),
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(childSeg.time_range[0]),
         }),
@@ -208,7 +207,7 @@ export function buildMindMap(
           jsonlPath: opts.jsonlPath,
           generatedAt,
           parentIsSidechain: true,
-          events: graph.events.slice(seg.start_index, seg.end_index + 1),
+          events: eventsForSegment(graph.events, seg),
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(seg.time_range[0]),
         }),
@@ -217,26 +216,25 @@ export function buildMindMap(
     rootNode.children.push(bucketNode);
   }
 
-  const durationMinutes = computeDurationMinutes(graph.events);
-  const sidechainCount = graph.events.filter((e) => e.isSidechain).length;
-  const totalToolCalls = countToolCalls(graph.events);
-  const totalTurns = graph.events.filter(
+  const durationMinutes = computeDurationMinutes(selectedEvents);
+  const sidechainCount = selectedEvents.filter((e) => e.isSidechain).length;
+  const totalToolCalls = countToolCalls(selectedEvents);
+  const totalTurns = selectedEvents.filter(
     (e) => e.type === 'user' || e.type === 'assistant',
   ).length;
 
   return {
     session_id: sessionId,
-    project_path: graph.events[0]?.cwd ?? '',
+    project_path: selectedEvents[0]?.cwd ?? '',
     generated_at: generatedAt,
     spec_version: opts.specVersion,
     root: rootNode,
     stats: {
-      total_events: graph.events.length,
+      total_events: selectedEvents.length,
       total_turns: totalTurns,
       total_nodes: countNodes(rootNode),
       total_tool_calls: totalToolCalls,
-      total_files_touched: uniq(segments.flatMap((s) => s.dominant_files))
-        .length,
+      total_files_touched: uniq(segments.flatMap((s) => s.dominant_files)).length,
       duration_minutes: durationMinutes,
       sidechain_count: sidechainCount,
     },
@@ -249,7 +247,7 @@ interface SegmentNodeCtx {
   jsonlPath: string;
   generatedAt: string;
   parentIsSidechain: boolean;
-  events: RawEvent[]; // slice belonging to this segment, for verbatim user-text extraction
+  events: RawEvent[]; // exact segment membership, for verbatim user-text extraction
   redactor?: Redactor;
   timeOffsetMs?: number;
   /** When true, render this node with the 📌 phase icon instead of 🧩. */
@@ -268,10 +266,7 @@ interface SegmentPhase {
   children: TopicSegment[];
 }
 
-function groupSegmentsIntoPhases(
-  segments: TopicSegment[],
-  events: RawEvent[],
-): SegmentPhase[] {
+function groupSegmentsIntoPhases(segments: TopicSegment[], events: RawEvent[]): SegmentPhase[] {
   if (segments.length === 0) return [];
   const phases: SegmentPhase[] = [];
   let current: SegmentPhase | null = null;
@@ -282,7 +277,7 @@ function groupSegmentsIntoPhases(
   // hook output / shell paste / skill bootstrap text).
   let pending: TopicSegment[] = [];
   for (const seg of segments) {
-    const segEvents = events.slice(seg.start_index, seg.end_index + 1);
+    const segEvents = eventsForSegment(events, seg);
     const userText = firstUserMessageText(segEvents);
     const isSignificant =
       !!userText && !looksLikeSystemNoise(userText) && userText.trim().length >= 10;
@@ -358,9 +353,7 @@ function buildSegmentNode(seg: TopicSegment, ctx: SegmentNodeCtx): MindMapNode {
     tools_used: seg.dominant_tools,
     is_sidechain: seg.is_sidechain_only || ctx.parentIsSidechain,
     children: [],
-    context_snapshot_continue: buildContinueSnapshot(
-      snapshotInput,
-    ) as ContextSnapshot,
+    context_snapshot_continue: buildContinueSnapshot(snapshotInput) as ContextSnapshot,
     context_snapshot_fork: buildForkSnapshot(snapshotInput) as ContextSnapshot,
     color: seg.is_sidechain_only ? 'yellow' : 'green',
     shape: 'rect',
@@ -386,11 +379,7 @@ function buildSegmentNode(seg: TopicSegment, ctx: SegmentNodeCtx): MindMapNode {
  * The seg_id is intentionally NOT included — it's available in `summary` and
  * via `--snapshot <id>`, and would crowd out the actual signal.
  */
-function deriveSegmentLabel(
-  seg: TopicSegment,
-  events: RawEvent[],
-  redactor?: Redactor,
-): string {
+function deriveSegmentLabel(seg: TopicSegment, events: RawEvent[], redactor?: Redactor): string {
   const userText = firstUserMessageText(events);
   // System-generated user turns (`<task-notification>...`, hook stdout, etc.)
   // are not meaningful intent labels — fall through to file/tool heuristics.
@@ -436,13 +425,10 @@ function looksLikeSystemNoise(text: string): boolean {
  * — leaves relative paths and short paths untouched.
  */
 function shortenPaths(text: string): string {
-  return text.replace(
-    /(\/(?:Users|home|root|tmp|var)\/[^\s,;:`'"]*)/g,
-    (full) => {
-      const last = full.lastIndexOf('/');
-      return last >= 0 && last < full.length - 1 ? full.slice(last + 1) : full;
-    },
-  );
+  return text.replace(/(\/(?:Users|home|root|tmp|var)\/[^\s,;:`'"]*)/g, (full) => {
+    const last = full.lastIndexOf('/');
+    return last >= 0 && last < full.length - 1 ? full.slice(last + 1) : full;
+  });
 }
 
 function deriveSegmentSummary(seg: TopicSegment): string {
@@ -509,11 +495,7 @@ function firstUserMessageText(events: RawEvent[]): string | null {
     if (typeof content === 'string' && content.trim().length > 0) return content;
     if (!Array.isArray(content)) continue;
     for (const block of content) {
-      if (
-        block &&
-        typeof block === 'object' &&
-        (block as { type?: string }).type === 'text'
-      ) {
+      if (block && typeof block === 'object' && (block as { type?: string }).type === 'text') {
         const text = (block as { text?: unknown }).text;
         if (typeof text === 'string' && text.trim().length > 0) return text;
       }

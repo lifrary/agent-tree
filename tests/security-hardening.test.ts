@@ -32,11 +32,7 @@ import { buildGraph } from '../src/reader/graph.js';
 import { readJsonl } from '../src/reader/jsonl.js';
 import { buildMindMap } from '../src/tree/builder.js';
 import { defaultRedactor } from '../src/utils/redact.js';
-import {
-  readPicks,
-  recordPick,
-  removePicksForNode,
-} from '../src/utils/picks.js';
+import { readPicks, recordPick, removePicksForNode } from '../src/utils/picks.js';
 import { safeGitCwd } from '../src/utils/safe_path.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -102,8 +98,7 @@ describe('redactor — new patterns added in audit pass', () => {
   });
 
   it('does NOT mangle `sk-ant-…` keys via the openai pattern (regression)', () => {
-    const fakeAnthropic =
-      'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789';
+    const fakeAnthropic = 'sk-ant-api03-abcdefghijklmnopqrstuvwxyz0123456789';
     const text = `key=${fakeAnthropic}`;
     const out = r.apply(text);
     // Anthropic-specific replacement wins; no leftover sk-ant- substring.
@@ -151,10 +146,7 @@ describe('token class-boundary audit — trailing `-`/`_` hardening', () => {
     // base64url signature can end with `-`. With multiple trailing `-`s the
     // old regex could not back off within `{10,}` to land on a word char
     // (would undershoot the minimum) — the entire JWT would leak.
-    const jwt =
-      'eyJhbGciOiJIUzI1NiJ9.' +
-      'eyJzdWIiOiIxMjM0NSJ9.' +
-      'abcdefghij--';
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.' + 'eyJzdWIiOiIxMjM0NSJ9.' + 'abcdefghij--';
     const text = `auth: ${jwt} next`;
     const out = r.apply(text);
     expect(out).not.toContain('abcdefghij--');
@@ -163,10 +155,7 @@ describe('token class-boundary audit — trailing `-`/`_` hardening', () => {
 
   it('redacts JWT at end-of-input (no trailing char at all)', () => {
     // Lookahead `(?![class])` is satisfied at EOF (no next char).
-    const jwt =
-      'eyJhbGciOiJIUzI1NiJ9.' +
-      'eyJzdWIiOiIxMjM0NSJ9.' +
-      'SlGGjaSU_SigFin';
+    const jwt = 'eyJhbGciOiJIUzI1NiJ9.' + 'eyJzdWIiOiIxMjM0NSJ9.' + 'SlGGjaSU_SigFin';
     expect(r.apply(jwt)).toBe('eyJ***REDACTED.JWT***');
   });
 
@@ -201,16 +190,14 @@ describe('picks — sessionId validator + atomic delete', () => {
   });
 
   it('rejects path-traversal sessionId before composing a path', async () => {
-    await expect(
-      recordPick('../../etc/passwd', 'n_001', 'continue', { root }),
-    ).rejects.toThrow(/invalid sessionId/);
+    await expect(recordPick('../../etc/passwd', 'n_001', 'continue', { root })).rejects.toThrow(
+      /invalid sessionId/,
+    );
   });
 
   it('rejects empty / whitespace sessionId', async () => {
     await expect(recordPick('', 'n_001', 'continue', { root })).rejects.toThrow();
-    await expect(
-      recordPick('   ', 'n_001', 'continue', { root }),
-    ).rejects.toThrow();
+    await expect(recordPick('   ', 'n_001', 'continue', { root })).rejects.toThrow();
   });
 
   it('accepts a valid UUID-shape sessionId', async () => {
@@ -275,9 +262,9 @@ describe('dumpArtifacts — security hardening', () => {
       '/bin/atree-test',
       '/System/atree-test',
     ]) {
-      await expect(
-        dumpArtifacts(banned, graph, segments, mindmap, redactor),
-      ).rejects.toThrow(/refusing to dump/i);
+      await expect(dumpArtifacts(banned, graph, segments, mindmap, redactor)).rejects.toThrow(
+        /refusing to dump/i,
+      );
     }
   });
 
@@ -287,8 +274,7 @@ describe('dumpArtifacts — security hardening', () => {
     const SECRET = 'sk-ant-api03-CANARY0CANARY0CANARY0CANARY0CANARY';
     if (graph.events.length > 0) {
       // mutate in-place — buildFixtureBundle returned us the graph by ref
-      (graph.events[0] as { cwd?: string }).cwd =
-        `/Users/dev/path-with-${SECRET}`;
+      (graph.events[0] as { cwd?: string }).cwd = `/Users/dev/path-with-${SECRET}`;
     }
     const dir = join(outRoot, 'subdir');
     await dumpArtifacts(dir, graph, segments, mindmap, redactor);
@@ -301,9 +287,7 @@ describe('dumpArtifacts — security hardening', () => {
     const { graph, segments, mindmap, redactor } = await buildFixtureBundle();
     const dir = join(outRoot, 'twice');
     await dumpArtifacts(dir, graph, segments, mindmap, redactor);
-    await expect(
-      dumpArtifacts(dir, graph, segments, mindmap, redactor),
-    ).rejects.toThrow(); // EEXIST from O_EXCL
+    await expect(dumpArtifacts(dir, graph, segments, mindmap, redactor)).rejects.toThrow(); // EEXIST from O_EXCL
   });
 
   it('writes files with mode 0o600 (owner-only read/write)', async () => {
@@ -356,9 +340,7 @@ describe('safeGitCwd — git-spawn cwd hardening', () => {
   });
 
   it('returns null when no candidate is trustworthy', async () => {
-    expect(
-      await safeGitCwd('/a/b/c/does/not/exist', '/x/y/z/also/missing'),
-    ).toBeNull();
+    expect(await safeGitCwd('/a/b/c/does/not/exist', '/x/y/z/also/missing')).toBeNull();
   });
 });
 
@@ -384,6 +366,7 @@ describe('labeler — re-redacts LLM output before assignment', () => {
 
     const client = {
       messages: {
+        countTokens: vi.fn(async () => ({ input_tokens: 100 })),
         create: vi.fn(async () => ({
           content: [
             {
@@ -483,9 +466,7 @@ describe('looksLikeSystemNoise — expanded prefix coverage', () => {
           uuid: asstUuid,
           parentUuid: userUuid,
           sessionId,
-          timestamp: new Date(
-            Date.UTC(2026, 0, 1, i, 0, 30),
-          ).toISOString(),
+          timestamp: new Date(Date.UTC(2026, 0, 1, i, 0, 30)).toISOString(),
           cwd: '/tmp/x',
           message: {
             role: 'assistant',

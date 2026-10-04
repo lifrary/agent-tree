@@ -31,10 +31,8 @@ function consoleLogger(level: LogLevel): Logger {
     if (LEVEL_RANK[lvl] < LEVEL_RANK[level]) return;
     const prefix = `[${lvl}]`;
     if (extra !== undefined) {
-      // eslint-disable-next-line no-console
       console.error(prefix, msg, extra);
     } else {
-      // eslint-disable-next-line no-console
       console.error(prefix, msg);
     }
   };

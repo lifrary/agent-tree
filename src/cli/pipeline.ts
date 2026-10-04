@@ -9,6 +9,7 @@
  */
 
 import { detectSegments } from '../analyzer/segments.js';
+import { createHash } from 'node:crypto';
 import { computeInputHash, writeJsonCache } from '../cache/disk.js';
 import { graphToDump } from '../reader/graph.js';
 import { createAnthropicClient } from '../llm/anthropic.js';
@@ -18,10 +19,12 @@ import { readJsonl } from '../reader/jsonl.js';
 import { buildMindMap } from '../tree/builder.js';
 import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
-import { defaultRedactor, redactDeep, type Redactor } from '../utils/redact.js';
+import { countRedactions, defaultRedactor, redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
+import { isFullUuid } from '../utils/session_path.js';
 
 import type { ClaudeMapConfig } from '../config/schema.js';
+import { expandPath } from '../config/loader.js';
 
 import type { CliOptions } from './options.js';
 
@@ -60,6 +63,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   const cacheHash = await computeInputHash({
     jsonlPath: match.jsonlPath,
     configJson: JSON.stringify({
+      config,
       llm: opts.llm !== false,
       model: opts.model,
       maxTok: opts.maxLlmTokens,
@@ -71,14 +75,23 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
 
   // [1/5] Parsing JSONL
   progress('[1/5] Parsing JSONL...       ');
-  const { meta, events, malformedCount, skippedMetaCount } = await readJsonl(
-    match.jsonlPath,
-    { logger },
-  );
+  const { meta, events, malformedCount, skippedMetaCount } = await readJsonl(match.jsonlPath, {
+    logger,
+    strict: opts.strict,
+  });
+  // Portable exports may omit the session UUID. Use a stable path identity
+  // for pick history rather than trusting a filename or unsafe envelope id.
+  if (!isFullUuid(meta.sessionId)) {
+    meta.sessionId = createHash('sha256').update(match.jsonlPath).digest('hex').slice(0, 32);
+  }
   progress(`✔ ${events.length} events`);
   if (malformedCount > 0) progress(`  (${malformedCount} malformed)`);
   if (skippedMetaCount > 0) progress(`  (${skippedMetaCount} meta lines)`);
   progress('\n');
+  if (opts.redactDryrun) {
+    const hits = countRedactions({ meta, events }, redactor);
+    process.stderr.write(`Redaction preview (parsed string values): ${JSON.stringify(hits)}\n`);
+  }
 
   if (events.length === 0) {
     // Caller decides how to surface "empty session" — just return a stub.
@@ -124,15 +137,16 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   // [2/5] Building graph
   progress('[2/5] Building graph...      ');
   const graph = buildGraph(meta, events, { logger });
-  const sidechainCount = graph.events.reduce(
-    (acc, e) => (e.isSidechain ? acc + 1 : acc),
-    0,
-  );
+  const sidechainCount = graph.events.reduce((acc, e) => (e.isSidechain ? acc + 1 : acc), 0);
   progress(`✔ ${pl(graph.roots.length, 'root')}, ${pl(sidechainCount, 'sidechain')}\n`);
 
   // [3/5] Segments
   progress('[3/5] Detecting segments...  ');
-  const segments = detectSegments(graph.events, { sidechainHandling });
+  const segments = detectSegments(graph.events, {
+    sidechainHandling,
+    gapMs: config.analyzer.topic_gap_minutes * 60_000,
+    fileJaccardThreshold: config.analyzer.file_jaccard_threshold,
+  });
   progress(`✔ ${pl(segments.length, 'segment')}\n`);
 
   // [4/5] Mindmap (heuristic)
@@ -142,9 +156,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     specVersion: SPEC_VERSION,
     redactor,
   });
-  progress(
-    `✔ ${pl(mindmap.stats.total_nodes, 'node')} across depth ${treeDepth(mindmap)}\n`,
-  );
+  progress(`✔ ${pl(mindmap.stats.total_nodes, 'node')} across depth ${treeDepth(mindmap)}\n`);
 
   // LLM labeling (optional)
   const llmEnabled = opts.llm !== false && config.llm.enabled;
@@ -158,15 +170,16 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
       );
     } else {
       progress('[LLM ] Labeling segments...  ');
-      const maxTok =
-        parseInt(opts.maxLlmTokens ?? String(config.llm.max_input_tokens), 10) ||
-        config.llm.max_input_tokens;
+      const maxTok = opts.maxLlmTokens ?? config.llm.max_input_tokens;
       const model = opts.model ?? config.llm.model;
       const { stats } = await labelMindMap(mindmap, graph, segments, {
         client,
         model,
         maxInputTokens: maxTok,
-        parallel: 3,
+        parallel: config.llm.parallel,
+        maxOutputTokens: config.llm.max_output_tokens,
+        cache: config.llm.cache,
+        lang: config.render.lang,
         logger,
         redactor,
         jsonlPath: match.jsonlPath,
@@ -187,40 +200,50 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
 
   // SPEC §18.3 — verbose mode mirrors intermediate artifacts to the per-input
   // cache dir so users can poke at them without re-running the pipeline.
-  if (opts.verbose || opts.trace) {
+  if (!opts.dryRun && config.cache.enabled && (opts.verbose || opts.trace)) {
+    const cacheOptions = { root: expandPath(config.cache.dir, opts.cwd ?? process.cwd()) };
     // mindmap is already redacted (buildMindMap consumed `redactor`); raw
     // graph + segments are not, so redact them at write-time so verbose-mode
     // disk artifacts honor the SPEC §7.6 sink contract.
     await Promise.all([
-      writeJsonCache(cacheHash, 'segments.json', {
-        session_id: graph.meta.sessionId,
-        count: segments.length,
-        segments: redactDeep(segments, redactor),
-      }).catch((err) =>
-        logger.warn('aux cache write failed (segments)', { error: String(err) }),
+      writeJsonCache(
+        cacheHash,
+        'segments.json',
+        {
+          session_id: graph.meta.sessionId,
+          count: segments.length,
+          segments: redactDeep(segments, redactor),
+        },
+        cacheOptions,
+      ).catch((err) => logger.warn('aux cache write failed (segments)', { error: String(err) })),
+      writeJsonCache(cacheHash, 'tree.json', redactDeep(mindmap, redactor), cacheOptions).catch(
+        (err) => logger.warn('aux cache write failed (tree)', { error: String(err) }),
       ),
-      writeJsonCache(cacheHash, 'tree.json', mindmap).catch((err) =>
-        logger.warn('aux cache write failed (tree)', { error: String(err) }),
-      ),
-      writeJsonCache(cacheHash, 'graph.json', redactDeep(graphToDump(graph), redactor)).catch((err) =>
-        logger.warn('aux cache write failed (graph)', { error: String(err) }),
-      ),
+      writeJsonCache(
+        cacheHash,
+        'graph.json',
+        redactDeep(graphToDump(graph), redactor),
+        cacheOptions,
+      ).catch((err) => logger.warn('aux cache write failed (graph)', { error: String(err) })),
     ]);
     logger.debug('mirrored intermediate artifacts to cache', { cacheHash });
   }
 
-  return { graph, segments, mindmap, redactor, cacheHash, isEmpty: false };
+  return {
+    graph,
+    segments,
+    mindmap,
+    redactor,
+    cacheHash,
+    isEmpty: mindmap.stats.total_events === 0,
+  };
 }
 
 // ---------------------------------------------------------------------------
 // helpers
 // ---------------------------------------------------------------------------
 
-function buildRedactor(
-  opts: CliOptions,
-  config: ResolvedConfig,
-  logger: Logger,
-): Redactor {
+export function buildRedactor(opts: CliOptions, config: ResolvedConfig, logger: Logger): Redactor {
   return defaultRedactor({
     strict: Boolean(opts.redactStrict) || config.redaction.strict,
     extraPatterns: (config.redaction.extra_patterns ?? [])
@@ -228,10 +251,9 @@ function buildRedactor(
         try {
           const regex = new RegExp(pattern, 'g');
           if (!passesRedosFuzz(regex)) {
-            logger.warn(
-              'redaction.extra_patterns entry failed ReDoS fuzz guard — dropping',
-              { pattern },
-            );
+            logger.warn('redaction.extra_patterns entry failed ReDoS fuzz guard — dropping', {
+              pattern,
+            });
             return null;
           }
           return {
@@ -292,12 +314,7 @@ export function passesRedosFuzz(re: RegExp): boolean {
   // long probes are a self-footgun. 20 chars is small enough that even
   // 2^20 ≈ 10^6 NFA steps completes under ~100ms on Irregexp, bounding
   // the guard's cost even on patterns that slip past the syntactic check.
-  const inputs = [
-    'a'.repeat(20),
-    '1'.repeat(20),
-    'ab'.repeat(10),
-    ('a' + '-').repeat(10),
-  ];
+  const inputs = ['a'.repeat(20), '1'.repeat(20), 'ab'.repeat(10), ('a' + '-').repeat(10)];
   for (const input of inputs) {
     // Fresh clone — `g`-flagged `test()` advances `lastIndex`, which
     // could make back-to-back probes misbehave on sticky regexes.

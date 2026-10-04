@@ -1,16 +1,14 @@
 /**
  * Interactive session picker — SPEC §17.2 `--pick`
  *
- * Lists the N most-recently-modified sessions across every project under
- * ~/.claude/projects/ and prompts the user for a number. Returns the chosen
- * SessionMatch or null on abort (Ctrl-C / empty input / invalid selection).
+ * Lists the N most-recently-modified sessions under the configured projects
+ * root and prompts the user for a number. Returns the chosen SessionMatch or
+ * null on abort (Ctrl-C / EOF / empty input / invalid selection).
  */
 
-import { readdir, stat } from 'node:fs/promises';
 import { createInterface } from 'node:readline/promises';
-import { join } from 'node:path';
 
-import { CLAUDE_PROJECTS_ROOT, type SessionMatch } from './session_path.js';
+import { listSessions, type SessionMatch } from './session_path.js';
 
 export interface PickOptions {
   limit?: number; // default 10
@@ -19,14 +17,11 @@ export interface PickOptions {
   output?: NodeJS.WritableStream;
 }
 
-export async function pickSession(
-  opts: PickOptions = {},
-): Promise<SessionMatch | null> {
-  const limit = opts.limit ?? 10;
-  const candidates = await listRecentSessions(
-    opts.projectsRoot ?? CLAUDE_PROJECTS_ROOT,
-    limit,
-  );
+export async function pickSession(opts: PickOptions = {}): Promise<SessionMatch | null> {
+  const candidates = await listSessions({
+    projectsRoot: opts.projectsRoot,
+    limit: opts.limit ?? 10,
+  });
   if (candidates.length === 0) return null;
 
   const out = opts.output ?? process.stderr;
@@ -42,57 +37,36 @@ export async function pickSession(
     input: opts.input ?? process.stdin,
     output: opts.output ?? process.stderr,
   });
-  const answer = (await rl.question('Pick a number (blank to cancel): ')).trim();
-  rl.close();
-  if (answer.length === 0) return null;
-  const idx = parseInt(answer, 10);
-  if (Number.isNaN(idx) || idx < 1 || idx > candidates.length) return null;
-  const picked = candidates[idx - 1];
-  return {
-    sessionId: picked.sessionId,
-    projectDir: picked.projectDir,
-    jsonlPath: picked.jsonlPath,
-  };
-}
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  rl.once('SIGINT', abort);
+  rl.once('close', abort);
 
-interface Candidate extends SessionMatch {
-  mtimeMs: number;
-}
-
-async function listRecentSessions(
-  root: string,
-  limit: number,
-): Promise<Candidate[]> {
-  const projectDirs = await safeReaddir(root);
-  const out: Candidate[] = [];
-  for (const projectDir of projectDirs) {
-    const projectPath = join(root, projectDir);
-    const files = await safeReaddir(projectPath);
-    for (const fname of files) {
-      if (!fname.endsWith('.jsonl')) continue;
-      const jsonlPath = join(projectPath, fname);
-      let mtimeMs = 0;
-      try {
-        mtimeMs = (await stat(jsonlPath)).mtimeMs;
-      } catch {
-        continue;
-      }
-      out.push({
-        sessionId: fname.slice(0, -'.jsonl'.length),
-        projectDir,
-        jsonlPath,
-        mtimeMs,
-      });
-    }
-  }
-  out.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return out.slice(0, limit);
-}
-
-async function safeReaddir(p: string): Promise<string[]> {
   try {
-    return await readdir(p);
-  } catch {
-    return [];
+    const answer = (
+      await rl.question('Pick a number (blank to cancel): ', {
+        signal: controller.signal,
+      })
+    ).trim();
+    if (!/^\d+$/.test(answer)) return null;
+    const idx = Number(answer);
+    if (!Number.isSafeInteger(idx) || idx < 1 || idx > candidates.length) {
+      return null;
+    }
+    const picked = candidates[idx - 1];
+    return {
+      sessionId: picked.sessionId,
+      projectDir: picked.projectDir,
+      jsonlPath: picked.jsonlPath,
+    };
+  } catch (error) {
+    if (controller.signal.aborted && error instanceof Error && error.name === 'AbortError') {
+      return null;
+    }
+    throw error;
+  } finally {
+    rl.off('SIGINT', abort);
+    rl.off('close', abort);
+    rl.close();
   }
 }

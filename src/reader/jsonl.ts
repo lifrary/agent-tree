@@ -7,19 +7,27 @@
  * Observed in real Claude Code 2.1.114 JSONL (SPEC Appendix D.4 M1 task):
  *   - Enumerated: attachment, user, assistant (spec §6)
  *   - UUID-carrying but not enumerated: system  → mapped to `type: 'system'`
- *   - UUIDless metadata: last-prompt, file-history-snapshot, queue-operation,
- *     mid-session permission-mode → counted as `skipped_meta`, not malformed
+ *   - UUIDless lines of any non-event type (last-prompt, custom-title, mode,
+ *     mid-session permission-mode, …) → counted as `skipped_meta`, not malformed
  *   - Unknown types with uuid  → `type: 'other'` (raw payload retained)
  *
- * Failure modes follow §7.8: truly malformed lines are skipped with a warning;
- * missing envelope fields fall back to sane defaults.
+ * Invalid lines are warned about once; recoverable payloads are sanitized.
+ * Missing optional envelope fields fall back to sane defaults.
  */
 
 import { createReadStream } from 'node:fs';
 import { createInterface } from 'node:readline';
 
-import { UUIDLESS_META_TYPES } from '../types.js';
-import type { RawEvent, SessionMeta } from '../types.js';
+import { UUID_EVENT_TYPES } from '../types.js';
+import type {
+  AttachmentPayload,
+  MessageContentBlock,
+  MessagePayload,
+  RawEvent,
+  SessionMeta,
+  ToolResultPayload,
+  ToolUsePayload,
+} from '../types.js';
 import type { Logger } from '../utils/logger.js';
 
 export interface ReadJsonlResult {
@@ -31,7 +39,7 @@ export interface ReadJsonlResult {
 
 export interface ReadJsonlOptions {
   logger?: Logger;
-  /** If true, throw on the first malformed line instead of skipping. Default false. */
+  /** Reject malformed JSON, envelopes and payloads instead of recovering. Default false. */
   strict?: boolean;
 }
 
@@ -59,12 +67,11 @@ export async function readJsonl(
       let parsed: unknown;
       try {
         parsed = JSON.parse(line);
-      } catch (err) {
+      } catch {
         malformedCount += 1;
         if (strict) {
-          throw new Error(
-            `jsonl parse error at ${path}:${lineNo} — ${(err as Error).message}`,
-          );
+          // JSON.parse diagnostics can contain the source text, including secrets.
+          throw new Error(`jsonl error at ${path}:${lineNo} — invalid JSON`);
         }
         logger?.warn(`skipped malformed jsonl line`, { path, lineNo });
         continue;
@@ -72,35 +79,58 @@ export async function readJsonl(
 
       if (!isRecord(parsed)) {
         malformedCount += 1;
+        if (strict) {
+          throw new Error(`jsonl error at ${path}:${lineNo} — expected an object`);
+        }
         logger?.warn(`skipped non-object jsonl line`, { path, lineNo });
         continue;
       }
 
+      const issues = new Set<string>();
+      const invalid = (reason: string): void => {
+        if (strict) {
+          throw new Error(`jsonl error at ${path}:${lineNo} — ${reason}`);
+        }
+        issues.add(reason);
+      };
       const type = typeof parsed.type === 'string' ? parsed.type : undefined;
+      const uuidless = parsed.uuid === undefined || parsed.uuid === null;
 
-      // First permission-mode line establishes the session meta.
-      if (meta === null && type === 'permission-mode') {
-        meta = {
-          sessionId: String(parsed.sessionId ?? ''),
-          permissionMode: String(parsed.permissionMode ?? 'default'),
+      // First permission-mode line establishes the session meta; subsequent
+      // changes are metadata too, but still validate their known fields.
+      if (type === 'permission-mode' && uuidless) {
+        const permissionMeta = {
+          sessionId: stringField(parsed, 'sessionId', invalid),
+          permissionMode: stringField(parsed, 'permissionMode', invalid, 'default'),
         };
-        continue;
-      }
-
-      // UUIDless metadata types are valid but don't participate in the DAG.
-      if (type && UUIDLESS_META_TYPES.has(type)) {
+        if (meta === null) {
+          meta = permissionMeta;
+        } else {
+          skippedMetaCount += 1;
+          logger?.trace(`skipped uuidless meta line`, { lineNo, type });
+        }
+      } else if (type?.trim() && !UUID_EVENT_TYPES.has(type) && uuidless) {
+        // UUID-carrying records still participate in the DAG, even when their
+        // type is commonly used for metadata.
         skippedMetaCount += 1;
         logger?.trace(`skipped uuidless meta line`, { lineNo, type });
-        continue;
+      } else {
+        const ev = coerceRawEvent(parsed, invalid);
+        if (ev) events.push(ev);
       }
 
-      const ev = coerceRawEvent(parsed, lineNo, logger);
-      if (ev) events.push(ev);
-      else malformedCount += 1;
+      if (issues.size > 0) {
+        malformedCount += 1;
+        logger?.warn(`malformed jsonl line; recovered valid fields where possible`, {
+          path,
+          lineNo,
+          reasons: [...issues],
+        });
+      }
     }
   } finally {
     rl.close();
-    stream.close();
+    stream.destroy();
   }
 
   if (!meta) {
@@ -119,39 +149,157 @@ function isRecord(v: unknown): v is Record<string, unknown> {
   return typeof v === 'object' && v !== null && !Array.isArray(v);
 }
 
-function coerceRawEvent(
+type Invalid = (reason: string) => void;
+
+function stringField(
   obj: Record<string, unknown>,
-  lineNo: number,
-  logger?: Logger,
-): RawEvent | null {
+  key: string,
+  invalid: Invalid,
+  fallback = '',
+  required = false,
+): string {
+  const value = obj[key];
+  if (typeof value === 'string') return value;
+  if (value !== undefined || required) invalid(`${key} must be a string`);
+  return fallback;
+}
+
+function recordField(
+  obj: Record<string, unknown>,
+  key: string,
+  invalid: Invalid,
+): Record<string, unknown> {
+  if (isRecord(obj[key])) return obj[key];
+  invalid(`${key} must be an object`);
+  return {};
+}
+
+function toolUse(obj: Record<string, unknown>, invalid: Invalid): ToolUsePayload {
+  return {
+    ...obj,
+    id: stringField(obj, 'id', invalid, '', true),
+    name: stringField(obj, 'name', invalid, '', true),
+    input: obj.input ?? null,
+  };
+}
+
+function toolResult(obj: Record<string, unknown>, invalid: Invalid): ToolResultPayload {
+  return {
+    ...obj,
+    tool_use_id: stringField(obj, 'tool_use_id', invalid, '', true),
+    content: obj.content === undefined ? '' : obj.content,
+  };
+}
+
+function messageContent(value: unknown, invalid: Invalid): MessagePayload['content'] {
+  if (typeof value === 'string') return value;
+  if (!Array.isArray(value)) {
+    invalid('message.content must be a string or an array');
+    return [];
+  }
+  const blocks: MessageContentBlock[] = [];
+  for (const block of value) {
+    if (!isRecord(block) || typeof block.type !== 'string' || !block.type) {
+      invalid('message.content blocks must be objects with a nonempty string type');
+      continue;
+    }
+    switch (block.type) {
+      case 'text':
+        blocks.push({
+          ...block,
+          type: 'text',
+          text: stringField(block, 'text', invalid, '', true),
+        });
+        break;
+      case 'tool_use':
+        blocks.push({ ...toolUse(block, invalid), type: 'tool_use' });
+        break;
+      case 'tool_result':
+        blocks.push({ ...toolResult(block, invalid), type: 'tool_result' });
+        break;
+      case 'thinking':
+        if (block.thinking !== undefined && typeof block.thinking !== 'string') {
+          invalid('thinking must be a string');
+          const sanitized: Record<string, unknown> & { type: string } = {
+            ...block,
+            type: 'thinking',
+          };
+          delete sanitized.thinking;
+          blocks.push(sanitized);
+        } else {
+          blocks.push({ ...block, type: 'thinking' });
+        }
+        break;
+      default:
+        // New content types (images, documents, server tools, redacted thinking,
+        // etc.) are opaque, not malformed. Preserve their complete payload.
+        blocks.push({ ...block, type: block.type });
+    }
+  }
+  return blocks;
+}
+
+function attachment(obj: Record<string, unknown>, invalid: Invalid): AttachmentPayload {
+  const payload: AttachmentPayload = {
+    ...obj,
+    type: stringField(obj, 'type', invalid, 'unknown', true),
+  };
+  for (const key of [
+    'hookName',
+    'hookEvent',
+    'content',
+    'stdout',
+    'stderr',
+    'command',
+    'toolUseID',
+  ] as const) {
+    if (payload[key] !== undefined && typeof payload[key] !== 'string') {
+      // Claude Code writes list/object `content` for some attachment types
+      // (hook_additional_context, file, nested_memory). That is valid input,
+      // but nothing reads non-string content, so it is dropped unflagged.
+      if (key !== 'content') invalid(`attachment.${key} must be a string`);
+      delete payload[key];
+    }
+  }
+  for (const key of ['exitCode', 'durationMs'] as const) {
+    if (payload[key] !== undefined && !Number.isFinite(payload[key])) {
+      invalid(`attachment.${key} must be a finite number`);
+      delete payload[key];
+    }
+  }
+  return payload;
+}
+
+function coerceRawEvent(obj: Record<string, unknown>, invalid: Invalid): RawEvent | null {
   const uuid = typeof obj.uuid === 'string' ? obj.uuid : undefined;
-  if (!uuid) {
-    logger?.debug(`event missing uuid, skipping`, {
-      lineNo,
-      type: obj.type,
-    });
+  if (!uuid?.trim()) {
+    invalid('event requires a nonempty string uuid');
     return null;
   }
   const type = typeof obj.type === 'string' ? obj.type : undefined;
-  if (!type) {
-    logger?.debug(`event missing type, skipping`, { lineNo, uuid });
+  if (!type?.trim()) {
+    invalid('event requires a nonempty string type');
     return null;
   }
 
+  if (obj.parentUuid != null && typeof obj.parentUuid !== 'string') {
+    invalid('parentUuid must be a string or null');
+  }
+  if (obj.isSidechain !== undefined && typeof obj.isSidechain !== 'boolean') {
+    invalid('isSidechain must be a boolean');
+  }
   const envelope = {
+    ...obj,
     uuid,
-    parentUuid:
-      typeof obj.parentUuid === 'string' || obj.parentUuid === null
-        ? (obj.parentUuid as string | null)
-        : null,
-    isSidechain: Boolean(obj.isSidechain),
-    timestamp: typeof obj.timestamp === 'string' ? obj.timestamp : '',
-    sessionId: typeof obj.sessionId === 'string' ? obj.sessionId : '',
-    cwd: typeof obj.cwd === 'string' ? obj.cwd : '',
-    gitBranch: typeof obj.gitBranch === 'string' ? obj.gitBranch : '',
-    version: typeof obj.version === 'string' ? obj.version : '',
-    entrypoint: typeof obj.entrypoint === 'string' ? obj.entrypoint : '',
-    userType: typeof obj.userType === 'string' ? obj.userType : '',
+    parentUuid: typeof obj.parentUuid === 'string' ? obj.parentUuid : null,
+    isSidechain: obj.isSidechain === true,
+    timestamp: stringField(obj, 'timestamp', invalid),
+    sessionId: stringField(obj, 'sessionId', invalid),
+    cwd: stringField(obj, 'cwd', invalid),
+    gitBranch: stringField(obj, 'gitBranch', invalid),
+    version: stringField(obj, 'version', invalid),
+    entrypoint: stringField(obj, 'entrypoint', invalid),
+    userType: stringField(obj, 'userType', invalid),
   };
 
   switch (type) {
@@ -159,54 +307,36 @@ function coerceRawEvent(
       return {
         ...envelope,
         type: 'attachment',
-        attachment: (isRecord(obj.attachment)
-          ? obj.attachment
-          : { type: 'unknown' }) as RawEvent extends {
-          type: 'attachment';
-          attachment: infer A;
-        }
-          ? A
-          : never,
+        attachment: attachment(recordField(obj, 'attachment', invalid), invalid),
       };
     case 'user':
-    case 'assistant':
+    case 'assistant': {
+      const message = recordField(obj, 'message', invalid);
+      const role = message.role;
+      if (role !== undefined && role !== 'user' && role !== 'assistant') {
+        invalid('message.role must be user or assistant');
+      }
       return {
         ...envelope,
         type,
-        message: (isRecord(obj.message)
-          ? obj.message
-          : { role: type, content: [] }) as RawEvent extends {
-          type: 'user' | 'assistant';
-          message: infer M;
-        }
-          ? M
-          : never,
+        message: {
+          ...message,
+          role: role === 'user' || role === 'assistant' ? role : type,
+          content: messageContent(message.content, invalid),
+        },
       };
+    }
     case 'tool_use':
       return {
         ...envelope,
         type: 'tool_use',
-        tool_use: (isRecord(obj.tool_use)
-          ? obj.tool_use
-          : { id: '', name: '', input: null }) as RawEvent extends {
-          type: 'tool_use';
-          tool_use: infer T;
-        }
-          ? T
-          : never,
+        tool_use: toolUse(recordField(obj, 'tool_use', invalid), invalid),
       };
     case 'tool_result':
       return {
         ...envelope,
         type: 'tool_result',
-        tool_result: (isRecord(obj.tool_result)
-          ? obj.tool_result
-          : { tool_use_id: '', content: '' }) as RawEvent extends {
-          type: 'tool_result';
-          tool_result: infer T;
-        }
-          ? T
-          : never,
+        tool_result: toolResult(recordField(obj, 'tool_result', invalid), invalid),
       };
     case 'system':
       return {

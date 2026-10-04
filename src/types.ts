@@ -34,16 +34,21 @@ export type RawEventType =
   | 'other';
 
 /**
- * Known JSONL `type` values that carry no `uuid` and are not part of the event
- * DAG — they're session-wide metadata lines we skip at ingest time. Discovered
- * empirically (SPEC Appendix D.4 M1 task): counting them as "malformed" would
- * be misleading.
+ * JSONL `type` values that are event-DAG records and therefore must carry a
+ * `uuid`. Any other UUIDless line is session-wide metadata (permission-mode,
+ * last-prompt, file-history-snapshot, queue-operation, custom-title,
+ * agent-name, mode, atis-latch, ai-title, file-history-delta, …) that we skip
+ * at ingest time. Claude Code keeps adding metadata types, so they are not
+ * enumerated: counting an unlisted one as "malformed" warned on every real
+ * session and made `--strict` reject valid transcripts.
  */
-export const UUIDLESS_META_TYPES = new Set<string>([
-  'permission-mode', // line 1 + subsequent permission-mode changes
-  'last-prompt',
-  'file-history-snapshot',
-  'queue-operation',
+export const UUID_EVENT_TYPES = new Set<string>([
+  'user',
+  'assistant',
+  'attachment',
+  'system',
+  'tool_use',
+  'tool_result',
 ]);
 
 export interface AttachmentPayload {

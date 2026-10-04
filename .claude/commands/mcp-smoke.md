@@ -1,13 +1,14 @@
 ---
-description: Post-publish MCP smoke test — installs the published tarball in /tmp, performs MCP `initialize` + `tools/list` JSON-RPC handshake, asserts all 5 agent_tree_* tools surface. Automates RELEASING.md Step 7.
+description: Post-publish MCP smoke test — installs the published tarball in /tmp, performs MCP `initialize` + `tools/list` JSON-RPC handshake, asserts all 6 agent_tree_* tools surface. Automates RELEASING.md Step 7.
 allowed-tools: Bash, Read
 ---
 
-You are running the agent-tree post-publish MCP smoke test. The goal: prove that the **published** tarball boots an MCP server that surfaces all 5 `agent_tree_*` tools via a spec-compliant JSON-RPC handshake. This automates `RELEASING.md` Step 7.
+You are running the agent-tree post-publish MCP smoke test. The goal: prove that the **published** tarball boots an MCP server that surfaces all 6 `agent_tree_*` tools via a spec-compliant JSON-RPC handshake. This automates `RELEASING.md` Step 7.
 
 Run this **after `npm publish`** has succeeded. It installs from the registry, not from local source.
 
 > **Fixes from Loop 1 + Loop 2 + Loop 3 reviews**:
+>
 > - **Spec-compliant MCP handshake** (Loop 1): the previous version sent
 >   a bare `tools/list` request without the `initialize` →
 >   `notifications/initialized` handshake. SDK 1.29 enforces the
@@ -158,30 +159,30 @@ echo "Tools surfaced:"
 printf '%s\n' "$TOOL_NAMES" | sed 's/^/  /'
 
 echo
-echo "--- Step 5/5 : Assert exactly the 5 expected tools ---"
+echo "--- Step 5/5 : Assert exactly the 6 expected tools ---"
 # wc -l is unconditional (no exit-1-on-zero like grep -c). Already guarded by
 # the [ -z "$TOOL_NAMES" ] branch above, but kept defensive.
 COUNT=$(printf '%s\n' "$TOOL_NAMES" | wc -l | tr -d ' ')
-if [ "$COUNT" -ne 5 ]; then
-  echo "FAIL: expected exactly 5 agent_tree_* tools, got $COUNT"
+if [ "$COUNT" -ne 6 ]; then
+  echo "FAIL: expected exactly 6 agent_tree_* tools, got $COUNT"
   exit 1
 fi
 
 # Whole-line match (`-Fxq`) per name — robust against partial-match false-pass.
-for expected in agent_tree_list agent_tree_snapshot agent_tree_picks agent_tree_diff agent_tree_unstar; do
+for expected in agent_tree_sessions agent_tree_list agent_tree_snapshot agent_tree_picks agent_tree_diff agent_tree_unstar; do
   if ! printf '%s\n' "$TOOL_NAMES" | grep -Fxq "$expected"; then
     echo "FAIL: missing tool $expected"
     exit 1
   fi
 done
-echo "  OK : all 5 expected tools present"
+echo "  OK : all 6 expected tools present"
 
 echo
 echo "============================================="
 echo "MCP SMOKE — PASS  (agent-tree v$VERSION)"
 echo "  install  : @seungwoolee/agent-tree@$VERSION from npm"
 echo "  cli      : --version handshake matches"
-echo "  mcp      : initialize + tools/list handshake, 5/5 expected tools"
+echo "  mcp      : initialize + tools/list handshake, 6/6 expected tools"
 echo "============================================="
 ```
 
@@ -189,7 +190,7 @@ The `trap ... EXIT` will purge `$SMOKE_DIR` and `$STDERR_FILE` regardless of exi
 
 ## What this proves
 
-If you reach the PASS summary, the published tarball is wired correctly: a fresh `npm install` + plain `node` spawn + spec-compliant MCP handshake produces a server that surfaces exactly the 5 `agent_tree_*` tools, and the JSON-RPC response stream is clean of stderr noise. By transitivity, plugin marketplace install (`claude plugin install agent-tree@agent-tree`) will register the same MCP server with the same 5 tools — assuming `RELEASING.md` Step 8's uninstall-first ceremony is followed to refresh the cache.
+If you reach the PASS summary, the published tarball is wired correctly: a fresh `npm install` + plain `node` spawn + spec-compliant MCP handshake produces a server that surfaces exactly the 6 `agent_tree_*` tools, and the JSON-RPC response stream is clean of stderr noise. Plugin marketplace installation will register the same MCP server and tools after the cache is refreshed as described in `RELEASING.md` Step 8.
 
 ## What this does NOT prove
 

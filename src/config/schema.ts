@@ -1,53 +1,70 @@
 /**
  * Config schema — SPEC §17 / Appendix F
  *
- * All fields optional; missing keys inherit from DEFAULT_CONFIG. The loader
- * merges CLI > env > ~/.config/agent-tree/config.yaml > <project>/.agent-tree.yaml
- * > DEFAULT_CONFIG and validates the result against this schema before use.
+ * Config layers may omit any field. Precedence is defaults < user YAML
+ * < project YAML < environment; callers apply explicit CLI overrides last.
+ * Invalid fields are ignored independently so valid siblings still apply.
  */
 
-export type SidechainHandling = 'include' | 'flatten' | 'drop';
-export type LangMode = 'auto' | 'ko' | 'en';
-export type LogLevel = 'error' | 'warn' | 'info' | 'debug' | 'trace';
+import { z } from 'zod';
 
 // NOTE: the historical `output.*` and `render.{collapse_depth,node_size_scale,
 // default_branch_mode}` keys were removed when the HTML renderer was deleted.
-// `render.lang` survives for LLM prompt locale selection.
+// `render.lang` controls LLM label, summary and next-step language.
 
-export interface ClaudeMapConfig {
-  llm: {
-    enabled: boolean;
-    provider: string;
-    model: string;
-    max_input_tokens: number;
-    max_output_tokens: number;
-    cache: boolean;
-    parallel: number;
-  };
-  redaction: {
-    enabled: boolean;
-    strict: boolean;
-    extra_patterns: string[];
-  };
-  render: {
-    lang: LangMode;
-  };
-  analyzer: {
-    sidechain_handling: SidechainHandling;
-    topic_gap_minutes: number;
-    file_jaccard_threshold: number;
-  };
-  cache: {
-    dir: string;
-    enabled: boolean;
-  };
-  log: {
-    level: LogLevel;
-  };
-  telemetry: {
-    enabled: boolean;
-  };
-}
+const positiveInteger = z.number().int().positive().max(Number.MAX_SAFE_INTEGER);
+const nonblankString = z.string().refine((value) => value.trim().length > 0);
+
+export const CONFIG_SCHEMA = z.object({
+  llm: z.object({
+    enabled: z.boolean(),
+    provider: z.literal('anthropic'),
+    model: nonblankString,
+    max_input_tokens: positiveInteger,
+    max_output_tokens: positiveInteger,
+    cache: z.boolean(),
+    parallel: positiveInteger,
+  }),
+  redaction: z.object({
+    enabled: z.literal(true), // Security sinks must always redact.
+    strict: z.boolean(),
+    extra_patterns: z.array(z.string()),
+  }),
+  render: z.object({
+    lang: z.enum(['auto', 'ko', 'en']),
+  }),
+  analyzer: z.object({
+    sidechain_handling: z.enum(['include', 'flatten', 'drop']),
+    topic_gap_minutes: z.number().finite().nonnegative(),
+    file_jaccard_threshold: z.number().finite().min(0).max(1),
+  }),
+  cache: z.object({
+    dir: nonblankString,
+    enabled: z.boolean(),
+  }),
+  log: z.object({
+    level: z.enum(['error', 'warn', 'info', 'debug', 'trace']),
+  }),
+  telemetry: z.object({
+    enabled: z.literal(false), // Telemetry is not implemented.
+  }),
+});
+
+const overridesSchema = z.object({
+  llm: CONFIG_SCHEMA.shape.llm.partial().optional(),
+  redaction: CONFIG_SCHEMA.shape.redaction.partial().optional(),
+  render: CONFIG_SCHEMA.shape.render.partial().optional(),
+  analyzer: CONFIG_SCHEMA.shape.analyzer.partial().optional(),
+  cache: CONFIG_SCHEMA.shape.cache.partial().optional(),
+  log: CONFIG_SCHEMA.shape.log.partial().optional(),
+  telemetry: CONFIG_SCHEMA.shape.telemetry.partial().optional(),
+});
+
+export type ClaudeMapConfig = z.infer<typeof CONFIG_SCHEMA>;
+export type ConfigOverrides = z.infer<typeof overridesSchema>;
+export type SidechainHandling = ClaudeMapConfig['analyzer']['sidechain_handling'];
+export type LangMode = ClaudeMapConfig['render']['lang'];
+export type LogLevel = ClaudeMapConfig['log']['level'];
 
 export const DEFAULT_CONFIG: ClaudeMapConfig = {
   llm: {
@@ -85,30 +102,86 @@ export const DEFAULT_CONFIG: ClaudeMapConfig = {
 };
 
 /**
- * Deep-merge `source` into `target`. Objects are merged recursively; arrays
- * and primitives are replaced. Returns a fresh copy — neither argument is
- * mutated (honors project-wide immutability rule).
+ * Validate a partial layer one field at a time. Warnings contain only field
+ * paths, never rejected values or Zod messages (which can include input).
+ * Arrays are single values: an invalid entry rejects the entire override.
+ */
+export function parseConfigLayer(
+  source: unknown,
+  warn?: (message: string) => void,
+): ConfigOverrides | null {
+  if (!isRecord(source)) {
+    warn?.('ignored invalid config root: expected an object');
+    return null;
+  }
+
+  const out: Record<string, Record<string, unknown>> = {};
+  for (const [section, value] of Object.entries(source)) {
+    if (!Object.hasOwn(CONFIG_SCHEMA.shape, section)) {
+      warn?.(`ignored unknown config field ${formatPath([section])}`);
+      continue;
+    }
+    if (value === undefined) continue;
+    if (!isRecord(value)) {
+      warn?.(`ignored invalid config section ${section}: expected an object`);
+      continue;
+    }
+
+    const fields: Record<string, z.ZodType> =
+      CONFIG_SCHEMA.shape[section as keyof ClaudeMapConfig].shape;
+    const validFields: Record<string, unknown> = {};
+    for (const [field, input] of Object.entries(value)) {
+      if (!Object.hasOwn(fields, field)) {
+        warn?.(`ignored unknown config field ${formatPath([section, field])}`);
+        continue;
+      }
+      if (input === undefined) continue;
+      const result = fields[field].safeParse(input);
+      if (result.success) {
+        validFields[field] = result.data;
+      } else {
+        for (const issue of result.error.issues) {
+          warn?.(`ignored invalid config value at ${formatPath([section, field, ...issue.path])}`);
+        }
+      }
+    }
+    out[section] = validFields;
+  }
+  return overridesSchema.parse(out);
+}
+
+/**
+ * Merge validated partial sections; arrays and primitives are replaced.
+ * Every returned section and array is detached from both inputs, including
+ * when `source` is absent. Unknown and prototype keys are never copied.
  */
 export function mergeConfig(
   target: ClaudeMapConfig,
-  source: Partial<ClaudeMapConfig> | undefined | null,
+  source: ConfigOverrides | undefined | null,
 ): ClaudeMapConfig {
-  if (!source) return target;
-  const out: Record<string, unknown> = { ...(target as unknown as Record<string, unknown>) };
-  for (const [k, v] of Object.entries(source as Record<string, unknown>)) {
-    const tv = out[k];
-    if (isRecord(v) && isRecord(tv)) {
-      out[k] = mergeConfig(
-        tv as unknown as ClaudeMapConfig,
-        v as Partial<ClaudeMapConfig>,
-      );
-    } else if (v !== undefined) {
-      out[k] = v;
-    }
+  const out = CONFIG_SCHEMA.parse(target);
+  const overrides = source == null ? null : parseConfigLayer(source);
+  for (const [section, values] of Object.entries(overrides ?? {})) {
+    Object.assign(out[section as keyof ClaudeMapConfig], values);
   }
-  return out as unknown as ClaudeMapConfig;
+  return out;
 }
 
 function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return false;
+  const prototype = Object.getPrototypeOf(v);
+  return prototype === Object.prototype || prototype === null;
+}
+
+function formatPath(parts: PropertyKey[]): string {
+  return parts
+    .map((part, index) => {
+      if (typeof part === 'number') return `[${part}]`;
+      const key = String(part);
+      if (/^[a-z_]/i.test(key) && !/[^a-z0-9_]/i.test(key)) {
+        return `${index === 0 ? '' : '.'}${key}`;
+      }
+      return `[${JSON.stringify(key)}]`;
+    })
+    .join('');
 }

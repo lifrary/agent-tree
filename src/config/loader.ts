@@ -1,6 +1,7 @@
 /**
  * Config loader — SPEC §17.1 precedence chain:
- *   CLI flags > env vars > ~/.config/agent-tree/config.yaml > <project>/.agent-tree.yaml > defaults
+ *   defaults < ~/.config/agent-tree/config.yaml < <project>/.agent-tree.yaml
+ *   < env vars < explicit CLI flags (applied by the caller)
  *
  * Both YAML files are optional — if absent, their layer is skipped. Schema
  * mismatches log a warning but don't fail the run (graceful degrade §7.8).
@@ -12,8 +13,11 @@ import { join, resolve } from 'node:path';
 
 import {
   DEFAULT_CONFIG,
+  CONFIG_SCHEMA,
   mergeConfig,
+  parseConfigLayer,
   type ClaudeMapConfig,
+  type ConfigOverrides,
 } from './schema.js';
 
 export interface LoadConfigOptions {
@@ -23,77 +27,80 @@ export interface LoadConfigOptions {
   logger?: { warn?: (msg: string, extra?: unknown) => void };
 }
 
-const USER_CONFIG_DEFAULT = join(
-  homedir(),
-  '.config',
-  'agent-tree',
-  'config.yaml',
-);
+const USER_CONFIG_DEFAULT = join(homedir(), '.config', 'agent-tree', 'config.yaml');
 
 /**
  * Parse env vars that carry config (SPEC §17.2 catalog).
  * Returns a partial config matching the schema shape.
  */
-function envToPartial(env: NodeJS.ProcessEnv): Partial<ClaudeMapConfig> {
-  const out: Partial<ClaudeMapConfig> = {};
+function envToPartial(
+  env: NodeJS.ProcessEnv,
+  logger?: LoadConfigOptions['logger'],
+): ConfigOverrides {
+  const out: ConfigOverrides = {};
   const llm: Partial<ClaudeMapConfig['llm']> = {};
   if (env.AGENT_TREE_NO_LLM === '1' || env.AGENT_TREE_NO_LLM === 'true') {
     llm.enabled = false;
   }
-  if (env.AGENT_TREE_MODEL) llm.model = env.AGENT_TREE_MODEL;
-  if (env.AGENT_TREE_MAX_TOK) {
-    const n = parseInt(env.AGENT_TREE_MAX_TOK, 10);
-    if (!Number.isNaN(n)) llm.max_input_tokens = n;
+  if (env.AGENT_TREE_MODEL !== undefined) llm.model = env.AGENT_TREE_MODEL;
+  if (env.AGENT_TREE_MAX_TOK !== undefined) {
+    const raw = env.AGENT_TREE_MAX_TOK;
+    const n = Number(raw);
+    if (raw.length > 0 && !/[^0-9]/.test(raw) && Number.isSafeInteger(n) && n > 0) {
+      llm.max_input_tokens = n;
+    } else {
+      logger?.warn?.(
+        'ignored invalid environment variable AGENT_TREE_MAX_TOK: expected a positive safe integer',
+      );
+    }
   }
-  if (Object.keys(llm).length > 0) out.llm = llm as ClaudeMapConfig['llm'];
+  if (Object.keys(llm).length > 0) out.llm = llm;
 
   const redaction: Partial<ClaudeMapConfig['redaction']> = {};
-  if (
-    env.AGENT_TREE_REDACT_STRICT === '1' ||
-    env.AGENT_TREE_REDACT_STRICT === 'true'
-  ) {
+  if (env.AGENT_TREE_REDACT_STRICT === '1' || env.AGENT_TREE_REDACT_STRICT === 'true') {
     redaction.strict = true;
   }
   if (Object.keys(redaction).length > 0) {
-    out.redaction = redaction as ClaudeMapConfig['redaction'];
+    out.redaction = redaction;
   }
 
-  const render: Partial<ClaudeMapConfig['render']> = {};
-  if (env.AGENT_TREE_LANG === 'ko' || env.AGENT_TREE_LANG === 'en' || env.AGENT_TREE_LANG === 'auto') {
-    render.lang = env.AGENT_TREE_LANG;
-  }
-  if (Object.keys(render).length > 0) {
-    out.render = render as ClaudeMapConfig['render'];
+  if (env.AGENT_TREE_LANG !== undefined) {
+    const lang = CONFIG_SCHEMA.shape.render.shape.lang.safeParse(env.AGENT_TREE_LANG);
+    if (lang.success) {
+      out.render = { lang: lang.data };
+    } else {
+      logger?.warn?.('ignored invalid environment variable AGENT_TREE_LANG');
+    }
   }
 
   const log: Partial<ClaudeMapConfig['log']> = {};
-  if (
-    env.AGENT_TREE_VERBOSE === '1' ||
-    env.AGENT_TREE_VERBOSE === 'true'
-  ) {
+  if (env.AGENT_TREE_VERBOSE === '1' || env.AGENT_TREE_VERBOSE === 'true') {
     log.level = 'debug';
   }
-  if (Object.keys(log).length > 0) out.log = log as ClaudeMapConfig['log'];
+  if (Object.keys(log).length > 0) out.log = log;
 
-  return out;
+  return parseConfigLayer(out, (message) => logger?.warn?.(`environment config: ${message}`)) ?? {};
 }
 
 async function readYamlIfPresent(
   path: string,
+  layer: 'user' | 'project',
   logger?: LoadConfigOptions['logger'],
-): Promise<Partial<ClaudeMapConfig> | null> {
+): Promise<ConfigOverrides | null> {
   try {
     const raw = await readFile(path, 'utf8');
     const mod = await import('js-yaml');
-    const parsed = mod.load(raw);
-    if (!parsed || typeof parsed !== 'object') return null;
-    return parsed as Partial<ClaudeMapConfig>;
+    const documents = mod.loadAll(raw);
+    if (documents.length === 0) return null;
+    if (documents.length !== 1) throw new Error('expected one config document');
+    const [parsed] = documents;
+    return parseConfigLayer(parsed, (message) => logger?.warn?.(`${layer} config: ${message}`));
   } catch (err) {
-    const code = (err as NodeJS.ErrnoException)?.code;
-    if (code === 'ENOENT') return null;
-    logger?.warn?.(`failed to parse yaml at ${path}`, {
-      error: String(err),
-    });
+    if (err && typeof err === 'object' && 'code' in err && err.code === 'ENOENT') {
+      return null;
+    }
+    // YAML exception text includes source snippets; never log it.
+    logger?.warn?.(`failed to read or parse ${layer} config YAML`);
     return null;
   }
 }
@@ -102,15 +109,13 @@ async function readYamlIfPresent(
  * Load + merge config, returning both the final config and the per-layer
  * partials for debuggability.
  */
-export async function loadConfig(
-  opts: LoadConfigOptions = {},
-): Promise<{
+export async function loadConfig(opts: LoadConfigOptions = {}): Promise<{
   config: ClaudeMapConfig;
   layers: {
     defaults: ClaudeMapConfig;
-    user: Partial<ClaudeMapConfig> | null;
-    project: Partial<ClaudeMapConfig> | null;
-    env: Partial<ClaudeMapConfig>;
+    user: ConfigOverrides | null;
+    project: ConfigOverrides | null;
+    env: ConfigOverrides;
   };
 }> {
   const env = opts.env ?? process.env;
@@ -119,11 +124,11 @@ export async function loadConfig(
   const projectPath = resolve(projectCwd, '.agent-tree.yaml');
 
   const [userYaml, projectYaml] = await Promise.all([
-    readYamlIfPresent(userPath, opts.logger),
-    readYamlIfPresent(projectPath, opts.logger),
+    readYamlIfPresent(userPath, 'user', opts.logger),
+    readYamlIfPresent(projectPath, 'project', opts.logger),
   ]);
 
-  const envPartial = envToPartial(env);
+  const envPartial = envToPartial(env, opts.logger);
 
   let merged = DEFAULT_CONFIG;
   merged = mergeConfig(merged, userYaml);
@@ -133,7 +138,7 @@ export async function loadConfig(
   return {
     config: merged,
     layers: {
-      defaults: DEFAULT_CONFIG,
+      defaults: mergeConfig(DEFAULT_CONFIG, null),
       user: userYaml,
       project: projectYaml,
       env: envPartial,

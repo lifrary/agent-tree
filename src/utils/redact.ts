@@ -239,6 +239,23 @@ export function redactDeep<T>(value: T, redactor: Redactor): T {
   return value;
 }
 
+/** Count each parsed string value once, without retaining or logging secrets. */
+export function countRedactions(value: unknown, redactor: Redactor): Record<string, number> {
+  const counts: Record<string, number> = {};
+  const pending: unknown[] = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === 'string') {
+      for (const [name, hits] of Object.entries(redactor.applyWithStats(current).hits)) {
+        counts[name] = (counts[name] ?? 0) + hits;
+      }
+    } else if (current && typeof current === 'object') {
+      for (const child of Object.values(current)) pending.push(child);
+    }
+  }
+  return counts;
+}
+
 // ---------------------------------------------------------------------------
 // Luhn-gated credit-card redaction
 // ---------------------------------------------------------------------------

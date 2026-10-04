@@ -5,11 +5,7 @@ import { dirname, resolve } from 'node:path';
 import { detectSegments } from '../src/analyzer/segments.js';
 import { buildGraph } from '../src/reader/graph.js';
 import { readJsonl } from '../src/reader/jsonl.js';
-import {
-  lookupSnapshot,
-  parseSelection,
-  renderTextTree,
-} from '../src/render/text.js';
+import { lookupSnapshot, parseSelection, renderTextTree } from '../src/render/text.js';
 import { buildMindMap } from '../src/tree/builder.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
@@ -60,6 +56,26 @@ describe('renderTextTree', () => {
     const a = renderTextTree(mindmap).text;
     const b = renderTextTree(mindmap).text;
     expect(a).toBe(b);
+  });
+
+  it('keeps canonical snapshot numbers when sub-actions are hidden', async () => {
+    const mindmap = await fixtureMindmap();
+    const firstPhase = mindmap.root.children[0];
+    firstPhase.children.push({
+      ...structuredClone(firstPhase),
+      id: 'n_999',
+      label: 'Hidden action between phase headers',
+      children: [],
+    });
+    const full = renderTextTree(mindmap, { groupConsecutive: false });
+    const phases = renderTextTree(mindmap, { maxDepth: 1 });
+    expect(phases.text).not.toContain('Hidden action between phase headers');
+    for (const phase of mindmap.root.children) {
+      const number = phases.idToNumber.get(phase.id)!;
+      expect(number).toBe(full.idToNumber.get(phase.id));
+      expect(lookupSnapshot(mindmap, String(number), full)?.id).toBe(phase.id);
+      expect(phases.text).toContain(`${number}.`);
+    }
   });
 });
 

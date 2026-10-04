@@ -10,7 +10,7 @@ const pkg = JSON.parse(await readFile('package.json', 'utf8'));
 const sharedBuild = {
   bundle: true,
   platform: 'node',
-  target: 'node20',
+  target: 'node22',
   format: 'esm',
   banner: {
     js: [

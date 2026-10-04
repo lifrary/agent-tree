@@ -19,12 +19,7 @@ import { runTui } from './tui.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
 import { safeGitCwd } from '../utils/safe_path.js';
-import {
-  listAllPicks,
-  readPicks,
-  recordPick,
-  removePicksForNode,
-} from '../utils/picks.js';
+import { listAllPicks, readPicks, recordPick, removePicksForNode } from '../utils/picks.js';
 
 export interface ModeContext {
   match: SessionMatch;
@@ -43,6 +38,10 @@ export interface ModeContext {
 // ---------------------------------------------------------------------------
 
 export async function runListMode(ctx: ModeContext): Promise<number> {
+  if (ctx.opts.json) {
+    process.stdout.write(JSON.stringify(redactDeep(ctx.mindmap, ctx.redactor), null, 2) + '\n');
+    return 0;
+  }
   const picks = await readPicks(ctx.match.sessionId);
   const tree = renderTextTree(ctx.mindmap, {
     filter: ctx.opts.filter,
@@ -52,9 +51,14 @@ export async function runListMode(ctx: ModeContext): Promise<number> {
     maxDepth: ctx.opts.phasesOnly ? 1 : undefined,
   });
   process.stdout.write(tree.text + '\n\n');
+  const selector = ctx.opts.file
+    ? `--file '${ctx.match.jsonlPath.replace(/'/g, "'\\''")}'`
+    : ctx.match.sessionId.slice(0, 8);
   process.stdout.write(
-    `Pick a node by number. Re-run as:\n` +
-      `  agent-tree ${ctx.match.sessionId.slice(0, 8)} --snapshot <number> --mode continue|fork\n`,
+    ctx.redactor.apply(
+      `Pick a node by number. Re-run as:\n` +
+        `  agent-tree ${selector} --snapshot <number> --mode continue|fork\n`,
+    ),
   );
   if (picks.total > 0) {
     const starred = picks.modesByNode.size;
@@ -73,36 +77,32 @@ export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
   const tree = renderTextTree(ctx.mindmap);
   const node = lookupSnapshot(ctx.mindmap, ctx.opts.snapshot!, tree);
   if (!node) {
-    console.error(
-      `error: no node matches "${ctx.opts.snapshot}". Run --list to see numbers.`,
-    );
+    console.error(`error: no node matches "${ctx.opts.snapshot}". Run --list to see numbers.`);
     return 2;
   }
   const wantFork = (ctx.opts.mode ?? 'continue') === 'fork';
-  const baseSnap = wantFork
-    ? node.context_snapshot_fork
-    : node.context_snapshot_continue;
+  const baseSnap = wantFork ? node.context_snapshot_fork : node.context_snapshot_continue;
 
   // Probe git for the source cwd at snapshot time — it's cheap (~50ms) and
   // gives the new session a concrete code-state anchor to work against.
   // safeGitCwd rejects non-absolute / null-byte-laced / non-resolvable paths
   // so an attacker-authored JSONL can't point us at a poisoned .git/config
   // (CVE-2022-24765). Matches src/mcp/server.ts parity.
-  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, process.cwd());
+  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, ctx.opts.cwd ?? process.cwd());
   const gitCtx = sourceCwd
     ? await getGitContext(sourceCwd)
     : { available: false as const, cwd: '' };
   const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
-  const finalMarkdown = gitMd
-    ? appendGitSection(baseSnap.clipboard_markdown, gitMd)
-    : baseSnap.clipboard_markdown;
+  const finalMarkdown = ctx.redactor.apply(
+    gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown,
+  );
 
   process.stdout.write(finalMarkdown);
 
   // Record this pick so future --list / --tui can mark visited nodes.
   // Best-effort — swallow errors so a busted cache dir never blocks output.
-  await recordPick(ctx.match.sessionId, node.id, wantFork ? 'fork' : 'continue').catch(
-    (err) => ctx.logger.warn?.('pick history write failed', { error: String(err) }),
+  await recordPick(ctx.match.sessionId, node.id, wantFork ? 'fork' : 'continue').catch((err) =>
+    ctx.logger.warn?.('pick history write failed', { error: String(err) }),
   );
 
   // TTY-only: also push to system clipboard so the user can immediately paste
@@ -142,7 +142,7 @@ function appendGitSection(snapshotMd: string, gitMd: string): string {
 // --picks — list every pick across every session (no session arg needed)
 // ---------------------------------------------------------------------------
 
-export async function runPicksMode(): Promise<number> {
+export async function runPicksMode(redactor: Redactor): Promise<number> {
   const all = await listAllPicks();
   if (all.length === 0) {
     process.stderr.write('No picks recorded yet.\n');
@@ -151,7 +151,9 @@ export async function runPicksMode(): Promise<number> {
   const lines: string[] = [];
   let totalPicks = 0;
   for (const session of all) {
-    lines.push(`session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? '' : 's'})`);
+    lines.push(
+      `session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? '' : 's'})`,
+    );
     for (const p of session.picks) {
       const when = p.ts.replace('T', ' ').slice(0, 19);
       const mode = p.mode === 'fork' ? 'fork    ' : 'continue';
@@ -160,8 +162,10 @@ export async function runPicksMode(): Promise<number> {
     }
     lines.push('');
   }
-  lines.push(`(${totalPicks} total pick${totalPicks === 1 ? '' : 's'} across ${all.length} session${all.length === 1 ? '' : 's'})`);
-  process.stdout.write(lines.join('\n') + '\n');
+  lines.push(
+    `(${totalPicks} total pick${totalPicks === 1 ? '' : 's'} across ${all.length} session${all.length === 1 ? '' : 's'})`,
+  );
+  process.stdout.write(redactor.apply(lines.join('\n')) + '\n');
   return 0;
 }
 
@@ -173,9 +177,7 @@ export async function runUnstarMode(ctx: ModeContext): Promise<number> {
   const tree = renderTextTree(ctx.mindmap);
   const node = lookupSnapshot(ctx.mindmap, ctx.opts.unstar!, tree);
   if (!node) {
-    console.error(
-      `error: no node matches "${ctx.opts.unstar}". Run --list to see numbers.`,
-    );
+    console.error(`error: no node matches "${ctx.opts.unstar}". Run --list to see numbers.`);
     return 2;
   }
   const removed = await removePicksForNode(ctx.match.sessionId, node.id);
@@ -240,7 +242,7 @@ export function runDiffMode(ctx: ModeContext): number {
   if (toolSet.size > 0) {
     lines.push(`- tools used: ${Array.from(toolSet).sort().join(', ')}`);
   }
-  process.stdout.write(lines.join('\n') + '\n');
+  process.stdout.write(ctx.redactor.apply(lines.join('\n')) + '\n');
   return 0;
 }
 
@@ -249,8 +251,21 @@ export function runDiffMode(ctx: ModeContext): number {
 // ---------------------------------------------------------------------------
 
 export async function runTuiMode(ctx: ModeContext): Promise<number> {
-  const result = await runTui(ctx.mindmap);
-  return result.emitted ? 0 : 130;
+  const picks = await readPicks(ctx.match.sessionId);
+  const result = await runTui(ctx.mindmap, {
+    render: {
+      filter: ctx.opts.filter,
+      groupConsecutive: ctx.opts.group !== false,
+      color: ctx.opts.color !== false && !!process.stderr.isTTY,
+      picks: picks.modesByNode,
+      maxDepth: ctx.opts.phasesOnly ? 1 : undefined,
+    },
+  });
+  if (!result.selected) return 130;
+  return runSnapshotMode({
+    ...ctx,
+    opts: { ...ctx.opts, snapshot: result.nodeId, mode: result.mode },
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -285,11 +300,7 @@ export async function dumpArtifacts(
   redactor: Redactor,
 ): Promise<void> {
   const outDir = resolve(dir);
-  if (
-    PROTECTED_DUMP_PREFIXES.some(
-      (p) => outDir === p || outDir.startsWith(p + '/'),
-    )
-  ) {
+  if (PROTECTED_DUMP_PREFIXES.some((p) => outDir === p || outDir.startsWith(p + '/'))) {
     throw new Error(`refusing to dump into protected path: ${outDir}`);
   }
   await mkdir(outDir, { recursive: true, mode: 0o700 });
@@ -312,11 +323,7 @@ export async function dumpArtifacts(
       JSON.stringify({ meta: safeMeta, events: safeEvents }, null, 2),
       opts,
     ),
-    writeFile(
-      resolve(outDir, 'graph.json'),
-      JSON.stringify(safeGraph, null, 2),
-      opts,
-    ),
+    writeFile(resolve(outDir, 'graph.json'), JSON.stringify(safeGraph, null, 2), opts),
     writeFile(
       resolve(outDir, 'segments.json'),
       JSON.stringify(
@@ -326,10 +333,6 @@ export async function dumpArtifacts(
       ),
       opts,
     ),
-    writeFile(
-      resolve(outDir, 'tree.json'),
-      JSON.stringify(safeTree, null, 2),
-      opts,
-    ),
+    writeFile(resolve(outDir, 'tree.json'), JSON.stringify(safeTree, null, 2), opts),
   ]);
 }
