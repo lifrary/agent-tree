@@ -115,13 +115,16 @@ If `ANTHROPIC_API_KEY` is set, agent-tree also asks Claude for short step labels
 
 ## What's new in 0.2
 
-0.2 (October 2026) is on `main` and ships to npm with the next release; [install from source](#install) to use it today.
+0.2.1 (October 2026) is on `main` and ships to npm with the next release; [install from source](#install) to use it today.
 
 - **Browse sessions across projects.** `agent-tree --sessions` lists your recent sessions instantly, without opening them. Claude gets the same view through the new `agent_tree_sessions` tool.
 - **Open any session file.** `--file` reads a session log from anywhere, such as one a teammate exported, and `--cwd` points at another project without changing directory.
 - **JSON for your own tools.** `--json` prints the complete, redacted tree, and `--strict` stops at malformed input instead of skipping it.
 - **Layered configuration.** Defaults, then `~/.config/agent-tree/config.yaml`, a per-project `.agent-tree.yaml`, environment variables, and finally flags.
 - **Ready for current Claude Code logs.** Reads the newest transcript format cleanly, with CI on Linux and macOS for Node 22, 24 and 26.
+- **Native TypeScript 7 checks.** Development uses the native compiler while
+  retaining TypeScript 6 for the lint toolchain's compiler API. CI verifies
+  release versions, committed bundles, and a fresh tarball's CLI and MCP server.
 
 ```bash
 agent-tree --sessions --limit 10           # recent sessions, all projects
@@ -346,7 +349,7 @@ If you are an LLM agent who was handed this repository, the notes below give you
 
 ```text
 package    @seungwoolee/agent-tree          bins: agent-tree, atree
-versions   npm 0.1.2 · main 0.2.0 (this README describes main)
+versions   npm 0.1.2 | main 0.2.1 (this README describes main)
 runtime    Node.js ≥ 22.13 on main, ≥ 20 for 0.1.x
 input      <CLAUDE_CONFIG_DIR or ~/.claude>/projects/<encoded-cwd>/<uuid>.jsonl, or --file
 output     text tree, markdown resume prompts, JSON; MCP tools over stdio
@@ -427,7 +430,8 @@ Contributions are welcome.
 git clone https://github.com/lifrary/agent-tree
 cd agent-tree
 npm install
-npm test && npm run typecheck && npm run lint
+npm test && npm run typecheck && npm run typecheck:legacy && npm run lint
+npm run build && npm run check:release && npm run smoke:release
 npm run build       # rebuild dist/ after changing src/
 ```
 

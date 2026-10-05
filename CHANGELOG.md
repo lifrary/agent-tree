@@ -2,7 +2,19 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — 0.2.0
+## [Unreleased] — 0.2.1
+
+### Toolchain and release verification
+
+- TypeScript 7.0.2 is the default native type checker and watch compiler.
+  TypeScript 6.0.3 remains the JavaScript compiler API for typescript-eslint;
+  both compilers are invoked by explicit paths to avoid npm bin collisions.
+- `verbatimModuleSyntax` enforces explicit type-only imports in ESM code.
+- Release checks keep the package, lockfile, plugin, marketplace, skill,
+  and bundled versions aligned. CI rejects stale committed bundles and
+  exercises CLI and MCP from an independently installed local tarball.
+- Updated the MCP SDK's transitive Hono dependency to 4.13.13.
+- Package, plugin, marketplace, and skill versions advance to 0.2.1.
 
 ### Added
 
@@ -25,9 +37,9 @@ All notable changes to this project are documented here. The format follows [Kee
   settings are honored. Exact `messages.countTokens` preflight reservations
   precede paid calls; failed counts make no paid labeling call, and failed
   requests do not refund reservations. The input budget is not a spending cap.
-- CLI and MCP share the package version source. ESLint 10 flat config,
-  Vitest 5, and TypeScript 6.0.3 modernize the toolchain; TypeScript stays
-  below 6.1 for typescript-eslint peer compatibility (TypeScript 7 unsupported).
+- CLI and MCP share the package version source. ESLint 10 flat config and
+  Vitest 5 modernize the toolchain. TypeScript 7 performs type checks, while
+  TypeScript 6 supplies the compiler API for typescript-eslint.
 - Docs and skill schemas now describe six tools and Claude Code-only input;
   Codex/Gemini native session adapters remain unimplemented.
 - README rewritten around a terminal demo (`docs/demo.svg`, rendered from

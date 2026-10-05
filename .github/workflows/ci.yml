@@ -34,6 +34,9 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
+      - name: Verify TypeScript API compatibility
+        run: npm run typecheck:legacy
+
       - name: Lint
         run: npm run lint
 
@@ -42,6 +45,15 @@ jobs:
 
       - name: Build
         run: npm run build
+
+      - name: Verify release metadata and bundles
+        run: npm run check:release
+
+      - name: Verify committed bundles are current
+        run: git diff --exit-code -- dist/cli.js dist/mcp-server.js
+
+      - name: Verify packed installation
+        run: npm run smoke:release
 
       - name: Verify bundled CLI runs
         run: node dist/cli.js --help

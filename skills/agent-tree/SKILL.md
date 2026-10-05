@@ -1,7 +1,7 @@
 ---
 name: agent-tree
 description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", find recent sessions, or inspect a portable Claude Code JSONL export. Renders the session as a numbered file-tree and emits a continue/fork resume block on selection. Six MCP tools (agent_tree_sessions / agent_tree_list / agent_tree_snapshot / agent_tree_picks / agent_tree_diff / agent_tree_unstar) and a CLI fallback.
-version: 0.2.0
+version: 0.2.1
 ---
 
 # agent-tree skill
@@ -12,7 +12,7 @@ the resume context so they can drop it into a fresh `claude` session.
 
 This is a terminal-only tool — everything happens inside the current Claude
 Code conversation (no browser, no HTML). Structured JSON export is also
-available. Requires Node.js ≥22.13.0. This skill describes upcoming 0.2.0;
+available. Requires Node.js ≥22.13.0. This skill describes upcoming 0.2.1;
 the npm registry may still serve an earlier release. Only Claude Code JSONL
 is supported, not Codex or Gemini native session formats.
 

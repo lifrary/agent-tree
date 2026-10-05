@@ -1,6 +1,6 @@
 {
   "name": "@seungwoolee/agent-tree",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Discover, navigate, export and resume Claude Code sessions from your terminal or MCP client.",
   "license": "MIT",
   "author": "Seungwoo Lee",
@@ -31,14 +31,17 @@
   },
   "scripts": {
     "build": "node esbuild.config.mjs",
-    "dev": "tsc --noEmit --watch",
-    "typecheck": "tsc --noEmit",
+    "dev": "node node_modules/typescript-native/bin/tsc --noEmit --watch",
+    "typecheck": "node node_modules/typescript-native/bin/tsc --noEmit",
+    "typecheck:legacy": "node node_modules/typescript/bin/tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
     "lint": "eslint . --max-warnings 0",
     "format": "prettier --write 'src/**/*.ts' 'tests/**/*.ts'",
     "cli": "tsx src/cli.ts",
-    "prepublishOnly": "npm run lint && npm run typecheck && npm test && npm run build"
+    "check:release": "node scripts/check-release.mjs",
+    "smoke:release": "node scripts/smoke-release.mjs",
+    "prepublishOnly": "npm run lint && npm run typecheck && npm run typecheck:legacy && npm test && npm run build && npm run check:release"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.0",
@@ -59,6 +62,7 @@
     "prettier": "^3.9.9",
     "tsx": "^4.23.15",
     "typescript": "~6.0.3",
+    "typescript-native": "npm:typescript@^7.0.2",
     "vitest": "^5.0.3"
   },
   "keywords": [

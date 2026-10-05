@@ -188,11 +188,13 @@ This is what `npm publish` runs anyway. Doing it manually first means you see te
 
 ```bash
 set -euo pipefail
-npm run lint && npm run typecheck && npm test && npm run build \
+npm run prepublishOnly && npm run smoke:release \
   || { echo "FAIL: prepublishOnly chain"; exit 1; }
 ```
 
-Expected: lint clean, tsc clean, vitest 134 tests passing, esbuild produces fresh `dist/cli.js` + `dist/mcp-server.js`.
+Expected: lint and both TypeScript compilers pass, Vitest reports no failures,
+esbuild produces fresh `dist/cli.js` and `dist/mcp-server.js`, release metadata
+matches, and the installed tarball passes CLI and MCP smoke checks.
 
 ## Output
 
@@ -205,7 +207,7 @@ PRE-PUBLISH AUDIT — PASS  (agent-tree v$PKG)
   tarball  : exact file-set matches baseline (11)
   dist     : fresh
   mcp      : inline object, paths resolve
-  smoke    : lint + typecheck + 134 tests + build
+  smoke    : lint + both compilers + tests + build + release checks + tarball
 =========================================================
 Ready to npm publish.
 ```

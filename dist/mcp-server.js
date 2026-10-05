@@ -42948,7 +42948,7 @@ async function readPicks(sessionId, opts = {}) {
 }
 
 // src/version.ts
-var VERSION = true ? "0.2.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.2.1" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/mcp/server.ts
 var logger = createLoggerSync("warn");

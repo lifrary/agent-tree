@@ -13,13 +13,16 @@ npm test         # Vitest 5 — must stay green
 
 Requirements:
 
-- **Node.js ≥22.13.0** for the upcoming 0.2.0 release.
+- **Node.js ≥22.13.0** for the upcoming 0.2.1 release.
 - **macOS or Linux** for the full smoke loop. Windows works for the CLI; clipboard / git subprocess paths are platform-shimmed but less exercised.
 - CI covers **Node 22, 24, and 26 on Linux and macOS**.
 - **ESLint 10** uses flat config; **Vitest 5** runs the tests.
-- **TypeScript 6.0.3** is deliberately held below 6.1 for typescript-eslint
-  peer compatibility. TypeScript 7 is the latest major but is not supported
-  by this toolchain; do not upgrade TypeScript independently of its peers.
+- **TypeScript 7.0.2** runs the native type checker and watch mode through
+  the `typescript-native` npm alias. **TypeScript 6.0.3** supplies the
+  JavaScript compiler API required by typescript-eslint. Scripts invoke each
+  compiler explicitly because both packages provide a `tsc` executable.
+- Node type definitions follow the Node 22 support floor. Use
+  `npm run typecheck:legacy` to check compatibility with the lint toolchain.
 
 ## The check chain
 
@@ -27,15 +30,21 @@ Run the full local check chain before opening a PR:
 
 ```bash
 npm run lint        # ESLint 10, flat config
-npm run typecheck   # tsc --noEmit, strict
+npm run typecheck   # TypeScript 7 native compiler, strict
+npm run typecheck:legacy # TypeScript 6 compiler API compatibility
 npm test            # vitest
 npm run build       # esbuild → dist/cli.js + dist/mcp-server.js
+npm run check:release # metadata and bundled version consistency
+npm run smoke:release # install a local tarball and exercise CLI + MCP
 ```
 
-`npm publish` re-runs all four via the `prepublishOnly` hook — so a green local run is a strong signal you can ship.
+`npm publish` re-runs lint, both type checkers, tests, build, and release
+consistency checks through `prepublishOnly`. The tarball smoke check is a
+separate command and runs in CI; it does not publish anything.
 
-CI also audits dependencies with `npm audit` and checks the bundled CLI help
-and portable JSON export across the Node/OS matrix.
+CI also audits dependencies with `npm audit`, rejects stale committed
+bundles, and checks CLI and MCP behavior from a fresh tarball installation
+across the Node/OS matrix.
 
 ## What we care about
 

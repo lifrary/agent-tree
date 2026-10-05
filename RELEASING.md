@@ -3,7 +3,7 @@
 This is the v0.X.Y → v0.X.Y+1 (or v0.X+1.0) checklist. Captures the sequence
 that shipped v0.1.0 so the next release doesn't re-discover it.
 
-The next release is **0.2.0 (unreleased)**. Updating the repository does not
+The next release is **0.2.1 (unreleased)**. Updating the repository does not
 publish to npm; registry and GitHub release steps below are a separate
 maintainer action after release approval.
 
@@ -14,9 +14,9 @@ post-publish smoke test, MCP plugin re-install).
 ## Prerequisites
 
 - **Node.js ≥22.13.0**; CI must cover Node 22/24/26 on Linux and macOS.
-- ESLint 10 flat config, Vitest 5, and TypeScript 6.0.3. TypeScript is held
-  below 6.1 for typescript-eslint peer compatibility; the latest TypeScript 7
-  is not supported by this toolchain.
+- ESLint 10 flat config, Vitest 5, and the TypeScript 7.0.2 native compiler.
+  TypeScript 6.0.3 remains installed for typescript-eslint's JavaScript
+  compiler API. Use the npm scripts to select the intended compiler.
 - Logged in to npm as `seungwoolee`: `npm whoami`
 - Logged in to GitHub via `gh`: `gh auth status`
 - On `main` branch with no untracked / uncommitted changes
@@ -34,13 +34,13 @@ post-publish smoke test, MCP plugin re-install).
 
 ### 1. Bump version everywhere
 
-For 0.2.0, synchronize these editable version fields:
+For 0.2.1, synchronize these editable version fields:
 
-- `package.json` → `"version": "0.2.0"`
-- `.claude-plugin/plugin.json` → `"version": "0.2.0"`
+- `package.json` → `"version": "0.2.1"`
+- `.claude-plugin/plugin.json` → `"version": "0.2.1"`
 - `.claude-plugin/marketplace.json` → **both** `metadata.version` AND
-  `plugins[0].version` → `"0.2.0"`
-- `skills/agent-tree/SKILL.md` → frontmatter `version: 0.2.0`
+  `plugins[0].version` → `"0.2.1"`
+- `skills/agent-tree/SKILL.md` → frontmatter `version: 0.2.1`
 - Refresh `package-lock.json` so its root package versions match.
 
 CLI and MCP both use `src/version.ts`, which reads `package.json` in source
@@ -59,14 +59,14 @@ identity/runtime guidance and `.claude/commands/` audit expectations too.
 > ```bash
 > grep -nE '"version": "0\.[0-9]+\.[0-9]+"' package.json .claude-plugin/*.json
 > grep -nE '^version: 0\.[0-9]+\.[0-9]+' skills/agent-tree/SKILL.md
-> # All five editable fields above must show 0.2.0 for this release.
+> # All five editable fields above must show 0.2.1 for this release.
 > node -e 'const p=require("./package-lock.json"); console.log(p.version, p.packages[""].version)'
 > # Both lockfile root versions must also match.
 > ```
 
 ### 2. Update CHANGELOG.md
 
-- Move `## [Unreleased] — 0.2.0` content → `## [v0.2.0] — YYYY-MM-DD`
+- Move `## [Unreleased] — 0.2.1` content → `## [v0.2.1] — YYYY-MM-DD`
 - Add a fresh empty `## [Unreleased]` at the top
 - Keep already-published historical entries intact. Do not promote the
   unreleased section merely because a preparation commit was pushed.
@@ -74,10 +74,15 @@ identity/runtime guidance and `.claude/commands/` audit expectations too.
 ### 3. Run the full check chain
 
 ```bash
-npm run lint && npm run typecheck && npm test && npm run build
+npm run lint && npm run typecheck && npm run typecheck:legacy && npm test && npm run build
+npm run check:release && npm run smoke:release
 ```
 
 Review the release contract before publishing:
+
+`check:release` verifies metadata and bundled versions. `smoke:release`
+packs the local project, installs the tarball into a temporary directory,
+and exercises the installed CLI and MCP server. Neither command publishes.
 
 - `--file` imports portable Claude Code JSONL; `--cwd` controls discovery and
   project config; `CLAUDE_CONFIG_DIR` changes the Claude session root.
@@ -156,7 +161,7 @@ npm publish --access public --otp=NNNNNN
 
 ```bash
 # Run only after this exact version has been published.
-VERSION=0.2.0
+VERSION=0.2.1
 export VERSION
 SMOKE_DIR=$(mktemp -d)
 cd "$SMOKE_DIR"

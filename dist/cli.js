@@ -6709,7 +6709,7 @@ function useColor() {
 var program = new Command();
 
 // src/version.ts
-var VERSION = true ? "0.2.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.2.1" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/cli/options.ts
 function parseCliArgs(argv) {
