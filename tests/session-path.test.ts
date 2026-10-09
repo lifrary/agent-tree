@@ -14,11 +14,10 @@ import * as fs from 'node:fs/promises';
 import { homedir, tmpdir } from 'node:os';
 import { join, relative } from 'node:path';
 
+import { encodeProjectPath, getProjectsRoot } from '../src/sources/claude.js';
 import {
-  encodeProjectPath,
   findLatestSession,
   findLatestSessionInProject,
-  getProjectsRoot,
   listSessions,
   locateSession,
   sessionFromFile,
@@ -88,7 +87,7 @@ describe('project paths', () => {
     const cwd = '/work/project_with spaces';
     const projectDir = encodeProjectPath(cwd);
     const jsonlPath = makeSession(projectDir);
-    const expected = { sessionId: ID_A, projectDir, jsonlPath };
+    const expected = { source: 'claude', sessionId: ID_A, projectDir, jsonlPath };
     vi.stubEnv('CLAUDE_CONFIG_DIR', tmpRoot);
 
     expect(await listSessions()).toEqual([{ ...expected, mtimeMs: TIME, sizeBytes: 3 }]);
@@ -122,7 +121,7 @@ describe('listSessions', () => {
     writeFileSync(join(projectsRoot, `${ID_C}.jsonl`), '{}\n');
     writeFileSync(join(projectsRoot, 'not-a-project'), '{}\n');
 
-    const sessions = await listSessions({ projectsRoot });
+    const sessions = await listSessions({ root: projectsRoot });
     expect(sessions.map((entry) => entry.jsonlPath)).toEqual([b, a]);
     expect(sessions.map((entry) => entry.sessionId)).toEqual([ID_B, ID_A]);
   });
@@ -133,7 +132,7 @@ describe('listSessions', () => {
     const a = makeSession('-a', ID_A, TIME);
     const newest = makeSession('-z', ID_B, TIME + 1000);
 
-    const sessions = await listSessions({ projectsRoot });
+    const sessions = await listSessions({ root: projectsRoot });
     expect(sessions.map((entry) => entry.jsonlPath)).toEqual([newest, a, c, z]);
     expect(sessions.map((entry) => entry.mtimeMs)).toEqual([TIME + 1000, TIME, TIME, TIME]);
     expect(sessions[3].sizeBytes).toBe(Buffer.byteLength('한글\n'));
@@ -144,14 +143,14 @@ describe('listSessions', () => {
     makeSession('-project', ID_A, TIME);
     makeSession('-project', ID_C, TIME + 1000);
     makeSession('-project', ID_B, TIME + 2000);
-    const all = await listSessions({ projectsRoot });
-    expect(await listSessions({ projectsRoot, limit })).toEqual(all.slice(0, limit));
+    const all = await listSessions({ root: projectsRoot });
+    expect(await listSessions({ root: projectsRoot, limit })).toEqual(all.slice(0, limit));
   });
 
   it.each([-1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1])(
     'rejects invalid limit %s',
     async (limit) => {
-      await expect(listSessions({ projectsRoot, limit })).rejects.toThrow(
+      await expect(listSessions({ root: projectsRoot, limit })).rejects.toThrow(
         'session limit must be a nonnegative safe integer',
       );
     },
@@ -164,28 +163,29 @@ describe('listSessions', () => {
     makeSession('-other', ID_B, TIME + 1000);
     const spy = vi.spyOn(fs, 'readdir');
 
-    const sessions = await listSessions({ projectsRoot, projectCwd: cwd });
+    const sessions = await listSessions({ root: projectsRoot, projectCwd: cwd });
     expect(sessions.map((entry) => entry.jsonlPath)).toEqual([matching]);
     expect(spy).toHaveBeenCalledTimes(1);
     expect(spy).toHaveBeenCalledWith(join(projectsRoot, projectDir), {
       withFileTypes: true,
     });
-    expect(await findLatestSessionInProject(cwd, projectsRoot)).toEqual({
+    expect(await findLatestSessionInProject(cwd, { root: projectsRoot })).toEqual({
+      source: 'claude',
       sessionId: ID_A,
       projectDir,
       jsonlPath: matching,
     });
-    expect(await findLatestSessionInProject('/missing/project', projectsRoot)).toBeNull();
+    expect(await findLatestSessionInProject('/missing/project', { root: projectsRoot })).toBeNull();
   });
 
   it('returns no sessions for missing roots and roots that are not directories', async () => {
     const file = join(tmpRoot, 'file');
     writeFileSync(file, 'not a directory');
     for (const root of [join(tmpRoot, 'missing'), file, join(file, 'projects')]) {
-      expect(await listSessions({ projectsRoot: root })).toEqual([]);
-      expect(await findLatestSession(root)).toBeNull();
-      expect(await findLatestSessionInProject('/work', root)).toBeNull();
-      expect(await locateSession('aaaa', { projectsRoot: root })).toEqual([]);
+      expect(await listSessions({ root })).toEqual([]);
+      expect(await findLatestSession({ root })).toBeNull();
+      expect(await findLatestSessionInProject('/work', { root })).toBeNull();
+      expect(await locateSession('aaaa', { root })).toEqual([]);
     }
   });
 
@@ -201,11 +201,11 @@ describe('listSessions', () => {
     const rootAlias = join(tmpRoot, 'root-alias');
     symlinkSync(projectsRoot, rootAlias, 'dir');
 
-    expect((await listSessions({ projectsRoot })).map((entry) => entry.jsonlPath)).toEqual([
+    expect((await listSessions({ root: projectsRoot })).map((entry) => entry.jsonlPath)).toEqual([
       legitimate,
     ]);
-    expect(await listSessions({ projectsRoot: rootAlias })).toEqual([]);
-    expect(await listSessions({ projectsRoot, projectCwd: '/linked/project' })).toEqual([]);
+    expect(await listSessions({ root: rootAlias })).toEqual([]);
+    expect(await listSessions({ root: projectsRoot, projectCwd: '/linked/project' })).toEqual([]);
   });
 
   it.each(['ENOENT', 'ENOTDIR'])(
@@ -217,7 +217,7 @@ describe('listSessions', () => {
         .mockImplementationOnce(original)
         .mockImplementationOnce(original)
         .mockRejectedValueOnce(ioError(code));
-      expect(await listSessions({ projectsRoot })).toEqual([]);
+      expect(await listSessions({ root: projectsRoot })).toEqual([]);
     },
   );
 
@@ -227,7 +227,7 @@ describe('listSessions', () => {
       makeSession('-project');
       const original = fs.readdir;
       vi.spyOn(fs, 'readdir').mockImplementationOnce(original).mockRejectedValueOnce(ioError(code));
-      expect(await listSessions({ projectsRoot })).toEqual([]);
+      expect(await listSessions({ root: projectsRoot })).toEqual([]);
     },
   );
 
@@ -245,7 +245,7 @@ describe('listSessions', () => {
         return original(file);
       });
 
-    expect(await listSessions({ projectsRoot })).toEqual([]);
+    expect(await listSessions({ root: projectsRoot })).toEqual([]);
   });
 
   it('discards a project replaced by a symlink while its files are scanned', async () => {
@@ -264,7 +264,7 @@ describe('listSessions', () => {
         return entries;
       });
 
-    expect(await listSessions({ projectsRoot })).toEqual([]);
+    expect(await listSessions({ root: projectsRoot })).toEqual([]);
   });
 
   it('discards a root replaced by a symlink while projects are scanned', async () => {
@@ -281,7 +281,7 @@ describe('listSessions', () => {
         return original(join(projectsRoot, '-project'));
       });
 
-    expect(await listSessions({ projectsRoot })).toEqual([]);
+    expect(await listSessions({ root: projectsRoot })).toEqual([]);
   });
 
   it.each(['EACCES', 'EPERM', 'EIO', 'ELOOP'])(
@@ -289,14 +289,14 @@ describe('listSessions', () => {
     async (code) => {
       const error = ioError(code);
       vi.spyOn(fs, 'lstat').mockRejectedValueOnce(error);
-      await expect(listSessions({ projectsRoot })).rejects.toBe(error);
+      await expect(listSessions({ root: projectsRoot })).rejects.toBe(error);
     },
   );
 
   it.each(['EACCES', 'EIO'])('surfaces root directory listing failures (%s)', async (code) => {
     const error = ioError(code);
     vi.spyOn(fs, 'readdir').mockRejectedValueOnce(error);
-    await expect(listSessions({ projectsRoot })).rejects.toBe(error);
+    await expect(listSessions({ root: projectsRoot })).rejects.toBe(error);
   });
 
   it.each(['EACCES', 'EIO'])('surfaces project directory listing failures (%s)', async (code) => {
@@ -304,7 +304,7 @@ describe('listSessions', () => {
     const error = ioError(code);
     const original = fs.readdir;
     vi.spyOn(fs, 'readdir').mockImplementationOnce(original).mockRejectedValueOnce(error);
-    await expect(listSessions({ projectsRoot })).rejects.toBe(error);
+    await expect(listSessions({ root: projectsRoot })).rejects.toBe(error);
   });
 
   it.each(['EACCES', 'EIO'])('surfaces individual session metadata failures (%s)', async (code) => {
@@ -315,39 +315,40 @@ describe('listSessions', () => {
       .mockImplementationOnce(original)
       .mockImplementationOnce(original)
       .mockRejectedValueOnce(error);
-    await expect(listSessions({ projectsRoot })).rejects.toBe(error);
+    await expect(listSessions({ root: projectsRoot })).rejects.toBe(error);
   });
 });
 
-describe('legacy lookup entry points', () => {
+describe('lookup entry points', () => {
   it('prefers the hinted project, then mtime and deterministic path order', async () => {
     const preferred = makeSession('-preferred', ID_A, TIME);
     const newest = makeSession('-other', ID_C, TIME + 1000);
     const tied = makeSession('-other', ID_A, TIME + 1000);
     expect(
       await locateSession('AAAA', {
-        projectsRoot,
+        root: projectsRoot,
         projectHint: '-preferred',
       }),
     ).toEqual([
-      { sessionId: ID_A, projectDir: '-preferred', jsonlPath: preferred },
-      { sessionId: ID_A, projectDir: '-other', jsonlPath: tied },
-      { sessionId: ID_C, projectDir: '-other', jsonlPath: newest },
+      { source: 'claude', sessionId: ID_A, projectDir: '-preferred', jsonlPath: preferred },
+      { source: 'claude', sessionId: ID_A, projectDir: '-other', jsonlPath: tied },
+      { source: 'claude', sessionId: ID_C, projectDir: '-other', jsonlPath: newest },
     ]);
-    expect(await findLatestSession(projectsRoot)).toEqual({
+    expect(await findLatestSession({ root: projectsRoot })).toEqual({
+      source: 'claude',
       sessionId: ID_A,
       projectDir: '-other',
       jsonlPath: tied,
     });
-    expect(await locateSession(ID_C.toUpperCase(), { projectsRoot })).toEqual([
-      { sessionId: ID_C, projectDir: '-other', jsonlPath: newest },
+    expect(await locateSession(ID_C.toUpperCase(), { root: projectsRoot })).toEqual([
+      { source: 'claude', sessionId: ID_C, projectDir: '-other', jsonlPath: newest },
     ]);
   });
 
   it('rejects invalid ids before touching the filesystem', async () => {
     const spy = vi.spyOn(fs, 'lstat');
     for (const id of ['../escape', 'abc', 'not-a-uuid', '']) {
-      await expect(locateSession(id, { projectsRoot })).rejects.toThrow(
+      await expect(locateSession(id, { root: projectsRoot })).rejects.toThrow(
         'is not a valid UUID or prefix',
       );
     }
@@ -360,20 +361,90 @@ describe('sessionFromFile', () => {
     const directory = join(tmpRoot, 'portable exports');
     mkdirSync(directory);
     const file = join(directory, 'my saved conversation.jsonl');
-    writeFileSync(file, '{"sessionId":"envelope-id"}\n');
+    writeFileSync(
+      file,
+      '{"type":"permission-mode","sessionId":"envelope-id","permissionMode":"default"}\n',
+    );
 
     expect(await sessionFromFile(relative(process.cwd(), file))).toEqual({
+      source: 'claude',
       sessionId: 'my saved conversation',
       projectDir: 'portable exports',
       jsonlPath: file,
     });
   });
 
+  it.each(['{}\n', '{"sessionId":"envelope-id"}\n', 'not valid JSON\n', 'null\n[]\n42\n'])(
+    'rejects unrecognized nonempty formats: %j',
+    async (body) => {
+      const file = makeSession('-project', ID_A, TIME, body);
+      await expect(sessionFromFile(file)).rejects.toThrow(
+        'Cannot identify session format; select --source explicitly.',
+      );
+    },
+  );
+
+  it.each(['{}\n', '{"sessionId":"envelope-id"}\n', '{"type":\nnot valid JSON\n'])(
+    'accepts headerless or malformed files with an explicit source: %j',
+    async (body) => {
+      const file = makeSession('-project', ID_A, TIME, body);
+      expect(await sessionFromFile(file, 'claude')).toEqual({
+        source: 'claude',
+        sessionId: ID_A,
+        projectDir: '-project',
+        jsonlPath: file,
+      });
+    },
+  );
+
+  it.each(['', ' \n\t\r\n'])('imports empty exports as Claude sessions: %j', async (body) => {
+    const file = makeSession('-project', ID_A, TIME, body);
+    expect(await sessionFromFile(file)).toEqual({
+      source: 'claude',
+      sessionId: ID_A,
+      projectDir: '-project',
+      jsonlPath: file,
+    });
+  });
+
+  it.each(['user', 'assistant'])(
+    'detects Claude from a %s event after blank, invalid and unrecognized lines',
+    async (role) => {
+      const record = {
+        type: role,
+        uuid: 'message-001',
+        parentUuid: null,
+        sessionId: ID_A,
+        timestamp: '2026-04-20T10:00:00.000Z',
+        cwd: '/work/project',
+        message: { role, content: [{ type: 'text', text: 'Hello' }] },
+      };
+      const file = makeSession(
+        '-project',
+        ID_A,
+        TIME,
+        `\n \t\nnot valid JSON\nnull\n[]\n{}\n${JSON.stringify(record)}\n`,
+      );
+      expect(await sessionFromFile(file)).toEqual({
+        source: 'claude',
+        sessionId: ID_A,
+        projectDir: '-project',
+        jsonlPath: file,
+      });
+    },
+  );
+
   it('resolves an explicitly selected symlink to the real JSONL file', async () => {
-    const file = makeSession('-project');
+    const file = makeSession(
+      '-project',
+      ID_A,
+      TIME,
+      '{"type":"permission-mode","permissionMode":"default"}\n',
+    );
     const alias = join(tmpRoot, 'export-alias.jsonl');
     symlinkSync(file, alias);
     expect(await sessionFromFile(alias)).toEqual({
+      source: 'claude',
       sessionId: ID_A,
       projectDir: '-project',
       jsonlPath: file,

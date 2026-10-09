@@ -4,7 +4,7 @@ import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { encodeProjectPath } from '../src/utils/session_path.js';
+import { encodeProjectPath } from '../src/sources/claude.js';
 
 const exec = promisify(execFile);
 const entry = resolve('src/cli.ts');
@@ -71,7 +71,11 @@ describe('portable CLI workflows', () => {
     const { stdout } = await cli('--sessions', `--cwd=${project}`, '--limit', '1', '--json');
     const { sessions } = JSON.parse(stdout);
     expect(sessions).toHaveLength(1);
-    expect(sessions[0]).toMatchObject({ sessionId: id, projectDir: encodeProjectPath(project) });
+    expect(sessions[0]).toMatchObject({
+      source: 'claude',
+      sessionId: id,
+      projectDir: encodeProjectPath(project),
+    });
     expect(sessions[0].sizeBytes).toBeGreaterThan(0);
     const all = await cli('--sessions', '--json');
     expect(JSON.parse(all.stdout).sessions).toHaveLength(2);

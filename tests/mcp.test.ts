@@ -6,7 +6,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
-import { encodeProjectPath } from '../src/utils/session_path.js';
+import { encodeProjectPath } from '../src/sources/claude.js';
 import { recordPick } from '../src/utils/picks.js';
 
 const testState = vi.hoisted(() => ({ userConfigPath: '' }));
@@ -122,10 +122,14 @@ describe('MCP protocol tools', () => {
     await mkdir(dir, { recursive: true });
     await writeFile(join(dir, `${id}.jsonl`), await readFile(file));
     const result = await call('agent_tree_sessions', { cwd: project, limit: 1 });
-    expect(result.structuredContent).toMatchObject({ sessions: [{ sessionId: id }] });
+    expect(result.structuredContent).toMatchObject({
+      sessions: [{ source: 'claude', sessionId: id }],
+    });
     const relativeCwd = relative(process.cwd(), project);
     const relativeCatalog = await call('agent_tree_sessions', { cwd: relativeCwd });
-    expect(relativeCatalog.structuredContent).toMatchObject({ sessions: [{ sessionId: id }] });
+    expect(relativeCatalog.structuredContent).toMatchObject({
+      sessions: [{ source: 'claude', sessionId: id }],
+    });
     const relativeTree = await call('agent_tree_list', { cwd: relativeCwd, format: 'json' });
     expect(relativeTree.structuredContent).toMatchObject({ mindmap: { session_id: id } });
     expect((await call('agent_tree_sessions', { limit: 0 })).isError).toBe(true);

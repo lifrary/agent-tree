@@ -8,18 +8,19 @@
 
 import { createInterface } from 'node:readline/promises';
 
-import { listSessions, type SessionMatch } from './session_path.js';
+import { listSessions, type SessionMatch, type SessionSelection } from './session_path.js';
 
-export interface PickOptions {
+export interface PickOptions extends SessionSelection {
   limit?: number; // default 10
-  projectsRoot?: string;
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
 }
 
 export async function pickSession(opts: PickOptions = {}): Promise<SessionMatch | null> {
   const candidates = await listSessions({
-    projectsRoot: opts.projectsRoot,
+    root: opts.root,
+    source: opts.source,
+    projectCwd: opts.projectCwd,
     limit: opts.limit ?? 10,
   });
   if (candidates.length === 0) return null;
@@ -55,6 +56,7 @@ export async function pickSession(opts: PickOptions = {}): Promise<SessionMatch 
     }
     const picked = candidates[idx - 1];
     return {
+      source: picked.source,
       sessionId: picked.sessionId,
       projectDir: picked.projectDir,
       jsonlPath: picked.jsonlPath,

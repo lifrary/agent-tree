@@ -15,6 +15,7 @@ vi.mock('node:readline/promises', async (importOriginal) => ({
 
 const candidates: SessionEntry[] = [
   {
+    source: 'claude',
     sessionId: 'aaaaaaaa-0000-4000-8000-000000000001',
     projectDir: '-work-first',
     jsonlPath: '/sessions/first.jsonl',
@@ -22,6 +23,7 @@ const candidates: SessionEntry[] = [
     sizeBytes: 20,
   },
   {
+    source: 'claude',
     sessionId: 'bbbbbbbb-0000-4000-8000-000000000002',
     projectDir: '-work-second',
     jsonlPath: '/sessions/second.jsonl',
@@ -60,7 +62,9 @@ async function startPicker() {
   });
   const createSpy = vi.spyOn(readline, 'createInterface');
   const result = pickSession({
-    projectsRoot: '/chosen/root',
+    root: '/chosen/root',
+    source: 'claude',
+    projectCwd: '/work/project',
     limit: 2,
     input,
     output,
@@ -76,7 +80,9 @@ describe('pickSession', () => {
   it('uses shared discovery and returns the selected session without metadata', async () => {
     const picker = await startPicker();
     expect(listSessions).toHaveBeenCalledExactlyOnceWith({
-      projectsRoot: '/chosen/root',
+      root: '/chosen/root',
+      source: 'claude',
+      projectCwd: '/work/project',
       limit: 2,
     });
     expect(picker.text).toContain('aaaaaaaa');
@@ -84,6 +90,7 @@ describe('pickSession', () => {
     picker.input.write('  2  \n');
 
     await expect(picker.result).resolves.toEqual({
+      source: candidates[1].source,
       sessionId: candidates[1].sessionId,
       projectDir: candidates[1].projectDir,
       jsonlPath: candidates[1].jsonlPath,
