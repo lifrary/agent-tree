@@ -4,14 +4,14 @@
     "name": "Seungwoo Lee"
   },
   "metadata": {
-    "description": "Single-plugin marketplace for agent-tree. Navigate any Claude Code session as a numbered tree and resume from any node.",
-    "version": "0.2.1"
+    "description": "Single-plugin marketplace for agent-tree. Navigate Claude Code and Codex sessions and generate resume prompts.",
+    "version": "0.3.0"
   },
   "plugins": [
     {
       "name": "agent-tree",
-      "description": "Visualize a Claude Code session as a numbered tree in your terminal/chat and resume from any node. Terminal-only — no browser.",
-      "version": "0.2.1",
+      "description": "Navigate Claude Code and Codex sessions as numbered trees and generate resume prompts. Terminal-only — no browser.",
+      "version": "0.3.0",
       "author": {
         "name": "Seungwoo Lee"
       },
@@ -20,7 +20,16 @@
       "homepage": "https://github.com/lifrary/agent-tree",
       "repository": "https://github.com/lifrary/agent-tree",
       "license": "MIT",
-      "keywords": ["claude", "claude-code", "session", "mindmap", "resume", "fork", "navigation"]
+      "keywords": [
+        "claude",
+        "claude-code",
+        "codex",
+        "session",
+        "mindmap",
+        "resume",
+        "fork",
+        "navigation"
+      ]
     }
   ]
 }

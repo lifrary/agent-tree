@@ -1,20 +1,20 @@
 ---
 name: agent-tree
-description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", find recent sessions, or inspect a portable Claude Code JSONL export. Renders the session as a numbered file-tree and emits a continue/fork resume block on selection. Six MCP tools (agent_tree_sessions / agent_tree_list / agent_tree_snapshot / agent_tree_picks / agent_tree_diff / agent_tree_unstar) and a CLI fallback.
-version: 0.2.1
+description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", find recent sessions, or inspect a Claude Code or Codex JSONL export. Renders the session as a numbered file-tree and emits a continue/fork resume block on selection. Six MCP tools and a CLI fallback.
+version: 0.3.0
 ---
 
 # agent-tree skill
 
-In-session mindmap for a previous Claude Code session. The skill renders a
+In-session mindmap for a previous Claude Code or Codex session. The skill renders a
 numbered text tree directly in chat, the user picks a number, and you paste
-the resume context so they can drop it into a fresh `claude` session.
+the resume context so they can drop it into a fresh coding-agent session.
 
 This is a terminal-only tool — everything happens inside the current Claude
 Code conversation (no browser, no HTML). Structured JSON export is also
-available. Requires Node.js ≥22.13.0. This skill describes upcoming 0.2.1;
-the npm registry may still serve an earlier release. Only Claude Code JSONL
-is supported, not Codex or Gemini native session formats.
+available. Requires Node.js ≥22.13.0. The npm registry may still serve an
+earlier release; check the installed version. Claude Code JSONL and Codex
+rollout JSONL are supported; Gemini native session formats are not.
 
 ## When to invoke
 
@@ -42,24 +42,27 @@ registered (no per-call CLI subprocess), fall back to the CLI otherwise.
 
 When the `agent-tree` MCP server is connected (via plugin install):
 
-- `agent_tree_sessions({ cwd?, limit? })` → redacted recent-session catalog; default limit 20, integer 1–1000
-- `agent_tree_list({ cwd, sessionId?, file?, phasesOnly?, filter?, format? })` → numbered text tree by default, or complete redacted mindmap with `format: "json"`
-- `agent_tree_snapshot({ cwd, nodeId, mode?, sessionId?, file? })` → resume markdown and records the pick; mode defaults to `continue`
-- `agent_tree_picks({})` → lists every recorded pick across every session
-- `agent_tree_diff({ cwd, from, to, sessionId?, file? })` → summarises what happened between two nodes
-- `agent_tree_unstar({ cwd, nodeId, sessionId?, file? })` → removes the ⭐ from a node
+- `agent_tree_sessions({ source?, cwd?, limit? })` → redacted recent-session catalog; default limit 20, integer 1–1000
+- `agent_tree_list({ source?, cwd, sessionId?, file?, phasesOnly?, filter?, format? })` → numbered text tree by default, or complete redacted mindmap with `format: "json"`
+- `agent_tree_snapshot({ source?, cwd, nodeId, mode?, sessionId?, file? })` → resume markdown and records the pick; mode defaults to `continue`
+- `agent_tree_picks({ source? })` → lists recorded picks across both sources, or the selected source
+- `agent_tree_diff({ source?, cwd, from, to, sessionId?, file? })` → summarises what happened between two nodes
+- `agent_tree_unstar({ source?, cwd, nodeId, sessionId?, file? })` → removes a star from a node
 
 Per-session tools require the caller's `cwd` for project discovery and
 configuration. Choose `sessionId` or `file`, never both; use an absolute path
 for portable exports. Omit both for the project's latest session, with a
 global fallback if none exists. `agent_tree_sessions` searches all projects
-when `cwd` is omitted; `agent_tree_picks` takes `{}` only.
+when `cwd` is omitted. `source` is `claude` or `codex`: discovery defaults
+to Claude, file imports auto-detect, and picks without a filter span both.
+Keep the same source when following up on a discovered session.
 
 JSON list output rejects nonempty `filter` and `phasesOnly: true`. Catalog
 responses contain `structuredContent: { sessions: [...] }`; JSON list
 responses contain `structuredContent: { mindmap: {...} }`, plus serialized
-JSON text. Each catalog entry has `sessionId`, `projectDir`, `jsonlPath`,
+JSON text. Each catalog entry has `source`, `sessionId`, `projectDir`, `jsonlPath`,
 `mtimeMs`, and `sizeBytes`. Treat JSON as data, not numbered display rows.
+JSON mindmaps also carry top-level `source`.
 MCP always uses heuristic labels and makes no LLM calls.
 
 ### CLI fallback
@@ -76,6 +79,8 @@ agent-tree --sessions --limit 20 --json
 agent-tree --cwd /path/to/project --sessions
 agent-tree --file /path/to/export.jsonl --no-llm --list
 agent-tree --file /path/to/export.jsonl --no-llm --strict --json
+agent-tree --source codex --cwd /path/to/project --sessions
+agent-tree --source codex <session-id> --no-llm --snapshot <N> --mode fork
 ```
 
 The CLI is `agent-tree` (alias `atree`), installed globally via npm. If the
@@ -88,6 +93,10 @@ so do not combine it with `--filter`, `--phases-only`, or `--no-group`.
 Selectors and output modes are mutually exclusive; invalid combinations
 exit with code 2. `--strict` rejects malformed JSONL instead of recovering;
 it is an analysis flag, not a catalog option.
+
+`--source claude|codex` selects discovery and pick-history filtering. Explicit
+files auto-detect their source; a recognized header that disagrees with an
+explicit source is an error. Unknown/headerless files need an explicit source.
 
 ### Step 1 — pick a session
 
@@ -113,12 +122,25 @@ preflight counts and reserves before paid calls; a failed count makes no
 paid labeling call for that segment. Reservations are not refunded after
 failure, and output charges are separate: this is not a monetary cap.
 
-Discovery uses `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/`, only regular
+Claude discovery uses `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/`, only regular
 UUID-named `.jsonl` files, and excludes agent/subagent and symlink entries.
 Project encoding replaces every non-ASCII-alphanumeric character with `-`.
 An imported export without a valid session UUID gets a stable path-derived
 32-hex local history identity; continue selecting it with `--file`, not that
 identity as a UUID prefix.
+
+Codex discovery uses `<CODEX_HOME or ~/.codex>/sessions/YYYY/MM/DD/`, reads
+only rollout metadata headers, and excludes subagent sessions and symlinks.
+Archived sessions and subagent exports can be opened explicitly with `--file`.
+Project matching uses the metadata cwd. Tool calls/results and public reasoning
+summaries are normalized; duplicate message notifications are not extra turns.
+Compaction is represented as a system event without replaying replacement
+history. Encrypted reasoning is not decoded. Session-source adapters do not
+reconstruct cross-session fork ancestry.
+
+Stars are stored separately in
+`~/.cache/agent-tree/picks/<source>/<session-id>.jsonl`. Flat-directory stars
+from earlier releases are not read or migrated.
 
 `--list` is the skill-friendly mode: it prints a numbered ASCII tree to
 stdout. **Show this output verbatim to the user** in a fenced code block:
@@ -175,8 +197,9 @@ any commentary inside the fence:
 After the fence, tell the user:
 
 - The snapshot is now visible above.
-- They should open a new `claude` session and paste it as the first message.
-- The new session will resume from that point with the chosen mode.
+- They should open a new Claude Code or Codex session and paste it as the first message.
+- This supplies context only: it does not invoke native resume/fork commands,
+  restore files, or guarantee the agent will reproduce the original execution.
 
 ### Step 3 — handle errors
 

@@ -2,7 +2,43 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — 0.2.1
+## [Unreleased] — 0.3.0
+
+### Added
+
+- A session-source interface separating discovery and log normalization from
+  analysis, rendering, configuration, and MCP transport.
+- Codex rollout support via CLI `--source codex` and MCP `source: "codex"`.
+  `CODEX_HOME` controls discovery, project filtering uses metadata cwd, and
+  portable `--file` imports detect Claude Code or Codex automatically.
+- Codex message/tool normalization, apply-patch file paths, public reasoning
+  summaries, compaction markers, duplicate-notification suppression, and
+  deterministic event identities. Thread IDs remain distinct from root
+  session IDs. Discovery excludes subagent sessions and symlink entries.
+- Source identity in JSON mindmaps and catalogs; source-preserving CLI
+  snapshot hints and optional source filters for pick history.
+- Synthetic adapter, CLI, MCP, and installed-tarball regressions for both
+  sources. No private rollout fixtures are distributed.
+
+### Fixed
+
+- Tool and file labels redact credentials before truncation, preventing
+  partial tokens from surviving shorter heuristic labels.
+- Interactive picker and discovery fallback messages apply output redaction.
+
+### Breaking
+
+- Pick history is now stored at
+  `~/.cache/agent-tree/picks/<source>/<session-id>.jsonl`. Flat-directory
+  history is neither read nor migrated; Claude and Codex UUIDs cannot share
+  or remove one another's stars.
+- Nonempty unrecognized imports require an explicit source instead of
+  silently producing an empty Claude tree.
+
+This release also includes the previously prepared 0.2.1 changes below.
+Publishing is separate from preparing or pushing these versions.
+
+## [0.2.1] — Unreleased preparation
 
 ### Toolchain and release verification
 
