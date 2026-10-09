@@ -2,11 +2,11 @@
 
 # agent-tree
 
-**Navigate Claude Code and Codex sessions as numbered trees — and pick up from any point.**
+**Navigate Claude Code and Codex sessions as numbered trees, and pick up from any point.**
 
 [![npm](https://img.shields.io/npm/v/@seungwoolee/agent-tree.svg?color=cb3837&label=npm)](https://www.npmjs.com/package/@seungwoolee/agent-tree)
 [![CI](https://github.com/lifrary/agent-tree/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/lifrary/agent-tree/actions/workflows/ci.yml)
-[![last commit](https://img.shields.io/github/last-commit/lifrary/agent-tree/main.svg)](https://github.com/lifrary/agent-tree/commits/main)
+[![node](https://img.shields.io/node/v/@seungwoolee/agent-tree.svg?color=339933)](https://nodejs.org/)
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](./LICENSE)
 
 <br>
@@ -19,9 +19,72 @@
 
 <br>
 
-A long Claude Code session is hard to look back on. Somewhere in hundreds of messages is the moment right before things went sideways, and scrolling the transcript won't find it for you.
+A long coding-agent session is hard to look back on. Somewhere in hundreds of messages is the moment right before things went sideways, and scrolling the transcript won't find it for you.
 
-**agent-tree** reads the session logs Claude Code and Codex already keep and turns them into numbered outlines: every prompt you typed, with the reads, edits and commands it triggered underneath. Every numbered row is a step. Pick one and you get a ready-to-paste prompt that carries on from that moment in a fresh session — or tries it another way.
+**agent-tree** reads the logs Claude Code and Codex already keep and turns each session into a numbered outline: every prompt you typed, with the reads, edits and commands it triggered underneath. Pick any step and you get a ready-to-paste prompt that carries on from that moment in a fresh session, or tries it another way.
+
+If agent-tree saves you a scroll, a ⭐ on GitHub helps others find it.
+
+<sub>🤖 An AI agent reading this? Everything you need is under [For AI agents](#for-ai-agents).</sub>
+
+## Supported agents
+
+| Agent           | Sessions it reads                                       | Select with           | Since |
+| --------------- | ------------------------------------------------------- | --------------------- | ----- |
+| **Claude Code** | `~/.claude/projects/<project>/<session>.jsonl`          | default               | 0.1   |
+| **Codex CLI**   | `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl` | `--source codex`      | 0.3   |
+| Either, exported | any `.jsonl` file, such as one a teammate sent you      | `--file <path>`       | 0.2 (Codex 0.3) |
+
+`--file` detects which agent wrote the log. `CLAUDE_CONFIG_DIR` and `CODEX_HOME` move the default locations.
+
+## Install
+
+```bash
+npm install -g @seungwoolee/agent-tree
+```
+
+This installs the `agent-tree` command and its short alias `atree`. It needs Node.js 22.13 or later. To let Claude browse sessions for you, add [the Claude Code plugin](#use-it-inside-claude-code) as well.
+
+<details>
+<summary><b>Install from source to follow <code>main</code></b></summary>
+
+<br>
+
+`dist/` is committed, so there is no build step:
+
+```bash
+git clone https://github.com/lifrary/agent-tree
+cd agent-tree
+npm install -g .
+```
+
+This links the commands to your clone, so a `git pull` keeps you current. For the optional AI-written step labels, also run `npm install` inside the clone; it adds the Anthropic SDK.
+
+</details>
+
+## Quick start
+
+```bash
+cd ~/Code/your-project
+agent-tree
+```
+
+That opens the project's most recent session as an interactive tree. Type a step's number (`7`) to copy a prompt that carries on from it, `7 fork` for one that tries it another way, or `q` to quit. Then start a new session and paste.
+
+```bash
+agent-tree --list                      # print the tree, for pipes and scripts
+agent-tree --list --phases-only        # only the prompts you typed
+agent-tree --list --filter redis       # only the steps that match a keyword
+agent-tree --snapshot 7 --mode fork    # print one resume prompt
+agent-tree --diff 7 12                 # what happened between two steps
+agent-tree --picks                     # every starred step, across sessions
+agent-tree --sessions --limit 10       # recent sessions, all projects
+agent-tree 3f9c2a71 --list             # a specific session, by ID prefix
+```
+
+If `ANTHROPIC_API_KEY` is set, agent-tree also asks Claude for short step labels, which bills your Anthropic account. Add `--no-llm` to skip that. `agent-tree --help` lists every option.
+
+## Features
 
 <table>
 <tr>
@@ -59,7 +122,7 @@ Install the plugin and Claude can browse and resume sessions for you through MCP
 
 **📦 Scriptable**
 
-Export a session's tree as JSON for dashboards, reports and your own tools.
+Export a session's tree or the session catalog as JSON for dashboards, reports and your own tools.
 
 </td>
 <td valign="top">
@@ -72,109 +135,7 @@ API keys, tokens and card numbers are stripped before anything is shown, copied 
 </tr>
 </table>
 
-## Install
-
-```bash
-npm install -g @seungwoolee/agent-tree
-```
-
-It needs Node.js 22.13 or later. To follow `main` between releases, install from source instead. `dist/` is committed, so there is no build step:
-
-```bash
-git clone https://github.com/lifrary/agent-tree
-cd agent-tree
-npm install -g .
-```
-
-This links the `agent-tree` and `atree` commands to your clone, so a `git pull` keeps you current. For the optional AI-written step labels, also run `npm install` inside the clone; it adds the Anthropic SDK.
-
-To use it from inside Claude Code, install [the plugin](#use-it-inside-claude-code).
-
-## Quick start
-
-```bash
-cd ~/Code/your-project
-agent-tree
-```
-
-That opens the project's most recent session as an interactive tree. Type a step's number (`7`) to copy a prompt that carries on from it, `7 fork` for one that tries it another way, or `q` to quit. Then start a new `claude` session and paste.
-
-A few more commands:
-
-```bash
-agent-tree --list                      # print the tree, for pipes and scripts
-agent-tree --list --phases-only        # only the prompts you typed
-agent-tree --list --filter redis       # only the steps that match a keyword
-agent-tree --snapshot 7 --mode fork    # print one resume prompt
-agent-tree --diff 7 12                 # what happened between two steps
-agent-tree --picks                     # every starred step, across sessions
-agent-tree 3f9c2a71 --list             # a specific session, by ID prefix
-```
-
-If `ANTHROPIC_API_KEY` is set, agent-tree also asks Claude for short step labels, which bills your Anthropic account. Add `--no-llm` to skip that. `agent-tree --help` lists every option.
-
-## Codex sessions
-
-Discovery defaults to Claude Code. Select Codex explicitly, or import a file
-and let agent-tree detect its format:
-
-```bash
-agent-tree --source codex --sessions --limit 10
-agent-tree --source codex --cwd ~/Code/api --no-llm --list
-agent-tree --source codex 3f9c2a71 --no-llm --snapshot 7 --mode fork
-agent-tree --file ./rollout.jsonl --no-llm --strict --json
-agent-tree --source codex --picks
-```
-
-Codex discovery reads metadata headers from
-`<CODEX_HOME or ~/.codex>/sessions/YYYY/MM/DD/rollout-<timestamp>-<uuid>.jsonl`.
-It excludes subagent sessions and symlinks; explicit `--file` can inspect a
-subagent export. `--cwd` matches the working directory recorded in the header.
-Archived sessions are not scanned; open those with `--file`.
-
-Messages, tool calls/results, patch file paths, and public reasoning summaries
-are normalized into the same analysis pipeline as Claude logs. Duplicate
-`event_msg` message notifications are not counted again. Compaction summaries
-are retained as system events; replacement history is not replayed. Encrypted
-reasoning is not decoded. A rollout is a chronological log, not a reconstructed
-cross-session fork tree.
-
-Continue/fork output is a **copy-paste context prompt**, not a native
-`codex resume`/`codex fork` operation, and does not restore files. Claude and
-Codex stars are isolated under
-`~/.cache/agent-tree/picks/<source>/<session-id>.jsonl`. Old flat-directory
-star history is not read or migrated.
-
-JSON mindmaps and catalog entries identify their `source`.
-All MCP tools accept optional `source: "claude" | "codex"`. Omit it for
-Claude discovery or automatic file detection; `agent_tree_picks({})` lists
-both sources. An explicitly selected source that disagrees with a recognized
-file header is rejected. For unknown/headerless exports, specify the source.
-
-## What's new in 0.2
-
-0.2.1 and 0.3.0 are on npm (October 2026). 0.3.0 adds
-[Codex sessions](#codex-sessions) on top of everything below.
-
-- **Browse sessions across projects.** `agent-tree --sessions` lists your recent sessions instantly, without opening them. Claude gets the same view through the new `agent_tree_sessions` tool.
-- **Open any session file.** `--file` reads a session log from anywhere, such as one a teammate exported, and `--cwd` points at another project without changing directory.
-- **JSON for your own tools.** `--json` prints the complete, redacted tree, and `--strict` stops at malformed input instead of skipping it.
-- **Layered configuration.** Defaults, then `~/.config/agent-tree/config.yaml`, a per-project `.agent-tree.yaml`, environment variables, and finally flags.
-- **Ready for current Claude Code logs.** Reads the newest transcript format cleanly, with CI on Linux and macOS for Node 22, 24 and 26.
-- **Native TypeScript 7 checks.** Development uses the native compiler while
-  retaining TypeScript 6 for the lint toolchain's compiler API. CI verifies
-  release versions, committed bundles, and a fresh tarball's CLI and MCP server.
-
-```bash
-agent-tree --sessions --limit 10           # recent sessions, all projects
-agent-tree --cwd ~/Code/api --list         # another project's latest session
-agent-tree --file ./session.jsonl --list   # a session file from anywhere
-agent-tree --json > session.json           # the whole tree as JSON
-```
-
-0.2 also raises the minimum Node.js version to 22.13. The [changelog](./CHANGELOG.md) covers every change.
-
-## Resume from any point
+### Resume from any point
 
 Every step comes with two resume prompts.
 
@@ -183,7 +144,7 @@ Every step comes with two resume prompts.
 | **continue** | Everything up to here was right. Carry on from this point. |
 | **fork**     | This is where it went wrong. Try another way from here.    |
 
-A resume prompt is plain markdown: where it came from, the files involved and your last instruction at that point, plus the repository's current branch, recent commits and status when you run it inside a git repository. In a terminal it lands on your clipboard; paste it as the first message of a new `claude` session.
+A resume prompt is plain markdown: where it came from, the files involved and your last instruction at that point, plus the repository's current branch, recent commits and status when you run it inside a git repository. In a terminal it lands on your clipboard; paste it as the first message of a new session.
 
 ```console
 $ agent-tree 3f9c2a71 --snapshot 7 --mode fork
@@ -201,6 +162,51 @@ $ agent-tree 3f9c2a71 --snapshot 7 --mode fork
 
 Resuming from a step stars it ⭐ (the CLI calls these picks). `--picks` lists them all and `--unstar 7` removes one.
 
+### Codex sessions
+
+Discovery defaults to Claude Code. Select Codex explicitly, or open a file and let agent-tree detect its format:
+
+```bash
+agent-tree --source codex --sessions --limit 10
+agent-tree --source codex --cwd ~/Code/api --no-llm --list
+agent-tree --source codex 3f9c2a71 --no-llm --snapshot 7 --mode fork
+agent-tree --file ./rollout.jsonl --no-llm --strict --json
+agent-tree --source codex --picks
+```
+
+A Codex resume prompt is a copy-paste context prompt, not a native `codex resume` or `codex fork`, and it does not restore files.
+
+<details>
+<summary><b>How Codex logs are read</b></summary>
+
+<br>
+
+Discovery reads only the metadata header of each rollout under `<CODEX_HOME or ~/.codex>/sessions/`. It skips subagent sessions and symlinks; `--file` can still open a subagent export. `--cwd` matches the working directory recorded in the header. Archived sessions are not scanned; open those with `--file`.
+
+Messages, tool calls and results, patch file paths and public reasoning summaries go through the same analysis as Claude logs. Duplicate message notifications are counted once, compaction summaries stay as system events, and encrypted reasoning is not decoded. A rollout is a chronological log, not a reconstructed fork tree.
+
+Claude and Codex stars are kept apart under `~/.cache/agent-tree/picks/<source>/<session-id>.jsonl`. JSON output and catalog entries carry their `source`, and every MCP tool accepts `source: "claude" | "codex"`. A selected source that disagrees with a recognized file header is rejected; name the source for headerless exports.
+
+</details>
+
+## What's new
+
+### 0.3 (October 2026)
+
+- **Codex CLI sessions.** Browse, resume and export Codex rollouts with `--source codex`, or open any rollout with `--file`.
+- **One pipeline, two agents.** A session-source interface separates log discovery and normalization from analysis, so each agent's logs plug into the same tree, resume prompts and MCP tools.
+- **Stars per agent.** Claude and Codex picks are stored separately, so one agent's session IDs never touch the other's stars.
+
+### 0.2 (October 2026)
+
+- **Browse sessions across projects.** `--sessions` lists recent sessions without opening them; Claude gets the same view through the `agent_tree_sessions` tool.
+- **Open any session file.** `--file` reads a log from anywhere, and `--cwd` points at another project without changing directory.
+- **JSON for your own tools.** `--json` prints the complete, redacted tree, and `--strict` stops at malformed input instead of skipping it.
+- **Layered configuration.** Defaults, then `~/.config/agent-tree/config.yaml`, a per-project `.agent-tree.yaml`, environment variables, and finally flags.
+- **Current Claude Code logs.** Reads the newest transcript format, with CI on Linux and macOS for Node 22, 24 and 26.
+
+The [changelog](./CHANGELOG.md) covers every change, including what 0.2 and 0.3 changed incompatibly.
+
 ## Use it inside Claude Code
 
 The plugin gives Claude six tools for browsing and resuming sessions, so you can simply ask:
@@ -214,16 +220,7 @@ claude plugin marketplace add lifrary/agent-tree
 claude plugin install agent-tree@agent-tree
 ```
 
-Restart Claude Code afterwards; `/mcp` should then list `agent-tree` as connected. The plugin installs from this repository, so it runs the latest code on `main`.
-
-| Tool                  | What it does                                                   |
-| --------------------- | -------------------------------------------------------------- |
-| `agent_tree_sessions` | Lists recent sessions, optionally for one project (new in 0.2) |
-| `agent_tree_list`     | Shows a session as a numbered tree, as text or JSON            |
-| `agent_tree_snapshot` | Writes a continue or fork prompt for one step and stars it     |
-| `agent_tree_diff`     | Summarizes what happened between two steps                     |
-| `agent_tree_picks`    | Lists every starred step across sessions                       |
-| `agent_tree_unstar`   | Removes a star                                                 |
+Restart Claude Code afterwards; `/mcp` should then list `agent-tree` as connected. The plugin installs from this repository, so it runs the latest code on `main`. Other MCP clients can run the same server; see [Wire up MCP](#wire-up-mcp).
 
 <details>
 <summary><b>Updating the plugin</b></summary>
@@ -275,7 +272,8 @@ If the tools don't show up:
 
 ```mermaid
 flowchart LR
-    log["Claude Code<br/>session log (JSONL)"] --> read["Read<br/>events and their links"]
+    claude["Claude Code<br/>session log"] --> read["Read<br/>normalize events"]
+    codex["Codex<br/>rollout log"] --> read
     read --> seg["Segment<br/>split the work into steps"]
     seg --> tree["Build the tree<br/>redact secrets"]
     tree --> term["Terminal tree"]
@@ -283,7 +281,7 @@ flowchart LR
     tree --> data["JSON and MCP tools"]
 ```
 
-1. **Read.** Claude Code writes every session to a JSONL log under `~/.claude/projects/`. agent-tree streams that log and rebuilds the order of events from their parent links.
+1. **Read.** Claude Code and Codex write every session to a JSONL log. agent-tree streams the log, normalizes each agent's records into one event shape, and rebuilds their order.
 2. **Segment.** The work under each prompt is split into steps at six kinds of boundaries: pauses, a change of files, topic-shift phrases, slash commands, switches into or out of subagents, and a cap on turns per step.
 3. **Build.** Each prompt you typed becomes a top-level step, with the steps it triggered nested underneath and labeled by the file and tool involved. Secrets are redacted here, before anything is printed, copied or exported.
 4. **Output.** The same tree feeds the terminal view, the resume prompts, JSON export and the MCP tools.
@@ -293,7 +291,121 @@ flowchart LR
 - agent-tree runs on your machine and reads only the session logs that are already there.
 - Everything it prints, copies or exports is redacted first: API keys and tokens for Anthropic, OpenAI, GitHub, Slack, AWS, Google Cloud, Stripe, Hugging Face and npm, plus bearer tokens, JWTs, private keys and card numbers. `--redact-strict` also removes email addresses, phone numbers, US SSNs and Korean RRNs.
 - The one network call is the optional LLM labeling, made only when `ANTHROPIC_API_KEY` is set. `--no-llm` turns it off, and the MCP tools never use it.
+- The first time you resume from the interactive tree, agent-tree prints a short GitHub note to stderr and leaves a marker in `~/.cache/agent-tree/` so it never repeats. Scripts, CI, Claude Code, JSON output and the MCP server never see it, and `AGENT_TREE_NO_STAR_HINT=1` turns it off.
 - Redaction is pattern-based, so read a resume prompt before you share it outside.
+
+## For AI agents
+
+This section is for coding agents that were handed this repository or asked to use agent-tree. It covers what the tool is, how to install and check it, how to connect it over MCP, and which call answers which request.
+
+### Identity
+
+```text
+package    @seungwoolee/agent-tree          bins: agent-tree, atree
+runtime    Node.js ≥ 22.13
+input      Claude Code projects or Codex rollouts; --source selects discovery, --file auto-detects
+output     text tree, markdown resume prompts, source-tagged JSON; six MCP tools over stdio
+network    none, unless ANTHROPIC_API_KEY is set and --no-llm is absent (CLI only)
+```
+
+### Install and self-test
+
+Install into an isolated directory so you never depend on what is on the user's `PATH`:
+
+```bash
+mkdir -p /tmp/atree-probe && cd /tmp/atree-probe
+npm init -y >/dev/null && npm install @seungwoolee/agent-tree
+./node_modules/.bin/agent-tree --version
+./node_modules/.bin/agent-tree --sessions --limit 5
+```
+
+`--sessions` printing nothing means no Claude Code sessions were found; add `--source codex` for Codex. Bare `npx -y @seungwoolee/agent-tree …` works with npm 12, but npm 10 cannot choose between the package's two bins, so prefer the isolated install when you don't know the npm version.
+
+### Wire up MCP
+
+In Claude Code, install [the plugin](#use-it-inside-claude-code). Any other MCP client can start the server over stdio:
+
+```json
+{
+  "mcpServers": {
+    "agent-tree": {
+      "command": "node",
+      "args": ["/tmp/atree-probe/node_modules/@seungwoolee/agent-tree/dist/mcp-server.js"]
+    }
+  }
+}
+```
+
+Use the absolute path of your own install; after `npm install -g`, it is `$(npm root -g)/@seungwoolee/agent-tree/dist/mcp-server.js`.
+
+### Tools
+
+| Tool                  | Use it when                                                              |
+| --------------------- | ------------------------------------------------------------------------ |
+| `agent_tree_sessions` | You need to find a session: recent ones, optionally for one project      |
+| `agent_tree_list`     | You need the numbered tree of one session, as text or as JSON            |
+| `agent_tree_snapshot` | The user picked a step and wants a continue or fork prompt; stars it     |
+| `agent_tree_diff`     | The user asks what changed between two steps                             |
+| `agent_tree_picks`    | The user asks for their starred steps                                    |
+| `agent_tree_unstar`   | The user wants a star removed                                            |
+
+### Recipes
+
+| The user says                                | Call                                                          |
+| -------------------------------------------- | ------------------------------------------------------------- |
+| "find recent sessions in this project"       | `agent_tree_sessions({ cwd: "<repo>", limit: 20 })`           |
+| "show the last session here"                 | `agent_tree_list({ cwd: "<repo>", phasesOnly: true })`        |
+| "go back to where we set up auth"            | `agent_tree_list({ cwd, filter: "auth" })`, then a snapshot   |
+| "try a different direction at step 7"        | `agent_tree_snapshot({ cwd, nodeId: "7", mode: "fork" })`     |
+| "what changed between steps 3 and 11?"       | `agent_tree_diff({ cwd, from: "3", to: "11" })`               |
+| "show my last Codex session"                 | `agent_tree_list({ cwd, source: "codex" })`                   |
+| "inspect this exported session"              | `agent_tree_list({ cwd, file: "/path/to/export.jsonl" })`     |
+| "export the session as JSON"                 | `agent_tree_list({ cwd, file, format: "json" })`              |
+| "show my starred steps" / "remove that star" | `agent_tree_picks({})` / `agent_tree_unstar({ cwd, nodeId })` |
+
+On the command line, the same requests map to `--sessions`, `--list`, `--snapshot <n> --mode <mode>`, `--diff <a> <b>`, `--picks` and `--unstar <n>`.
+
+### Rules
+
+- Show text trees and resume prompts verbatim in a code block; reformatting breaks them.
+- Output is already redacted. Do not try to recover redacted values, and still read a resume prompt before the user shares it outside.
+- Pass `--no-llm` on the CLI unless the user asked for LLM labels, which cost money. MCP tools never call the LLM.
+- Session ID prefixes need at least 4 characters; use 8 or more. An ambiguous prefix is an error that lists the matches.
+- A session that is still running gives partial numbering, so prefer finished sessions for resume prompts.
+- A snapshot stars the step. Use `agent_tree_list` to look around, and call `agent_tree_snapshot` only when the user wants a resume prompt.
+- The encoded Claude project directory replaces every non-alphanumeric character with `-`: `/Users/alice/Code/my_project` becomes `-Users-alice-Code-my-project`.
+
+<details>
+<summary><b>MCP input schemas and results</b></summary>
+
+<br>
+
+```jsonc
+// All tools accept optional source: "claude" | "codex".
+// agent_tree_sessions: newest first; Codex reads metadata headers only
+{ "cwd": "string?", "source": "codex", "limit": 20 } // limit: integer 1–1000
+
+// agent_tree_list: numbered tree; format "json" returns the full redacted mindmap
+{ "cwd": "string", "sessionId": "string?", "file": "string?",
+  "phasesOnly": "boolean?", "filter": "string?", "format": "text|json" }
+
+// agent_tree_snapshot: resume prompt for one step; records a star
+{ "cwd": "string", "nodeId": "7 or n_007", "mode": "continue|fork",
+  "sessionId": "string?", "file": "string?" }
+
+// agent_tree_diff: events, files and tools between two steps
+{ "cwd": "string", "from": "string", "to": "string", "sessionId": "string?", "file": "string?" }
+
+// agent_tree_unstar: remove a step's star
+{ "cwd": "string", "nodeId": "string", "sessionId": "string?", "file": "string?" }
+
+// agent_tree_picks: every star across sources; optional source filter
+{ "source": "codex" }
+```
+
+Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", "text": "…" }] }`; failure adds `"isError": true`. Catalog results also carry `structuredContent: { sessions: [...] }`, and JSON list results carry `structuredContent: { mindmap: {...} }`. Per-session tools take `sessionId` or `file`, never both, and fall back to the latest session in `cwd`, then the latest overall. `format: "json"` rejects a nonempty `filter` and `phasesOnly: true`. The canonical definitions live in [`src/mcp/server.ts`](./src/mcp/server.ts), and the skill Claude Code loads with the plugin is [`skills/agent-tree/SKILL.md`](./skills/agent-tree/SKILL.md).
+
+</details>
 
 ## Reference
 
@@ -307,13 +419,13 @@ flowchart LR
 | `<session-id>`                                                        | smart default       | UUID or prefix (4+ characters; 8+ is safer)                                    |
 | `--latest`                                                            | —                   | the most recent session across all projects                                    |
 | `--pick`                                                              | —                   | choose from recent sessions interactively                                      |
-| `--file <path>`                                                       | —                   | read a Claude Code or Codex JSONL file; auto-detect its source                  |
-| `--source <claude\|codex>`                                            | Claude discovery; automatic file detection | select the session source                              |
-| `--cwd <dir>`                                                         | current directory   | project for discovery and `.agent-tree.yaml` (new in 0.2)                      |
-| `--sessions`                                                          | off                 | list sessions without analyzing them; all projects unless `--cwd` (new in 0.2) |
-| `--limit <n>`                                                         | `20`                | how many sessions `--sessions` lists (new in 0.2)                              |
-| `--json`                                                              | off                 | complete redacted tree, or the `--sessions` catalog (new in 0.2)               |
-| `--strict`                                                            | off                 | fail on malformed JSONL instead of recovering (new in 0.2)                     |
+| `--file <path>`                                                       | —                   | read a Claude Code or Codex JSONL file; auto-detect its source                 |
+| `--source <claude\|codex>`                                            | Claude discovery; automatic file detection | select the session source                               |
+| `--cwd <dir>`                                                         | current directory   | project for discovery and `.agent-tree.yaml`                                   |
+| `--sessions`                                                          | off                 | list sessions without analyzing them; all projects unless `--cwd`              |
+| `--limit <n>`                                                         | `20`                | how many sessions `--sessions` lists                                           |
+| `--json`                                                              | off                 | complete redacted tree, or the `--sessions` catalog                            |
+| `--strict`                                                            | off                 | fail on malformed JSONL instead of recovering                                  |
 | `--list`                                                              | on when piped       | print the tree to stdout                                                       |
 | `--tui`                                                               | on in a terminal    | interactive picker                                                             |
 | `--snapshot <id>`                                                     | —                   | print one step's resume prompt                                                 |
@@ -363,7 +475,7 @@ render:
   lang: en
 ```
 
-Each field is validated on its own: an invalid field produces a warning while the valid ones still apply. Redaction cannot be switched off, and `llm.provider` accepts only `anthropic`. Environment overrides are `AGENT_TREE_NO_LLM`, `AGENT_TREE_MODEL`, `AGENT_TREE_MAX_TOK`, `AGENT_TREE_REDACT_STRICT`, `AGENT_TREE_LANG` and `AGENT_TREE_VERBOSE`. `CLAUDE_CONFIG_DIR` changes where sessions are discovered (default `~/.claude`). The full schema lives in [`src/config/schema.ts`](./src/config/schema.ts).
+Each field is validated on its own: an invalid field produces a warning while the valid ones still apply. Redaction cannot be switched off, and `llm.provider` accepts only `anthropic`. Environment overrides are `AGENT_TREE_NO_LLM`, `AGENT_TREE_MODEL`, `AGENT_TREE_MAX_TOK`, `AGENT_TREE_REDACT_STRICT`, `AGENT_TREE_LANG` and `AGENT_TREE_VERBOSE`; `AGENT_TREE_NO_STAR_HINT=1` silences the one-time GitHub hint. `CLAUDE_CONFIG_DIR` changes where Claude Code sessions are discovered (default `~/.claude`) and `CODEX_HOME` does the same for Codex (default `~/.codex`). The full schema lives in [`src/config/schema.ts`](./src/config/schema.ts).
 
 </details>
 
@@ -378,88 +490,14 @@ Before every paid request, agent-tree counts the prepared prompt with `messages.
 
 </details>
 
-## For AI agents
-
-If you are an LLM agent who was handed this repository, the notes below give you everything needed to install, verify and drive agent-tree.
-
-<details>
-<summary><b>Agent notes: identity, self-test, rules and MCP schemas</b></summary>
-
-<br>
-
-```text
-package    @seungwoolee/agent-tree          bins: agent-tree, atree
-versions   npm 0.3.0 | main 0.3.0 (this README describes main)
-runtime    Node.js ≥ 22.13 from 0.2.1, ≥ 20 for 0.1.x
-input      Claude projects or Codex rollouts; --source selects discovery, --file auto-detects
-output     text tree, markdown resume prompts, source-tagged JSON; MCP tools over stdio
-```
-
-Self-test in an isolated directory:
-
-```bash
-mkdir -p /tmp/atree-probe && cd /tmp/atree-probe
-npm init -y >/dev/null && npm install @seungwoolee/agent-tree
-./node_modules/.bin/agent-tree --version      # the published version
-./node_modules/.bin/agent-tree --no-llm --list
-```
-
-Bare `npx -y @seungwoolee/agent-tree …` works with npm 12, but npm 10 could not choose between the package's two bins; prefer the isolated install when you don't know the npm version.
-
-- Show text trees and resume prompts verbatim in a code block; reformatting breaks them.
-- Pass `--no-llm` on the CLI unless the user asked for LLM labels, which cost money. MCP tools never call the LLM.
-- Session ID prefixes need at least 4 characters; use 8 or more. An ambiguous prefix is an error.
-- A session that is still running gives partial numbering, so prefer finished sessions for resume prompts.
-- The encoded project directory replaces every non-alphanumeric character with `-`: `/Users/alice/Code/my_project` becomes `-Users-alice-Code-my-project`.
-
-| The user says                                | Call                                                          |
-| -------------------------------------------- | ------------------------------------------------------------- |
-| "find recent sessions in this project"       | `agent_tree_sessions({ cwd: "<repo>", limit: 20 })`           |
-| "show the last session here"                 | `agent_tree_list({ cwd: "<repo>", phasesOnly: true })`        |
-| "go back to where we set up auth"            | `agent_tree_list({ cwd, filter: "auth" })`, then a snapshot   |
-| "try a different direction at step 7"        | `agent_tree_snapshot({ cwd, nodeId: "7", mode: "fork" })`     |
-| "what changed between steps 3 and 11?"       | `agent_tree_diff({ cwd, from: "3", to: "11" })`               |
-| "inspect this exported session"              | `agent_tree_list({ cwd, file: "/path/to/export.jsonl" })`     |
-| "export the session as JSON"                 | `agent_tree_list({ cwd, file, format: "json" })`              |
-| "show my starred steps" / "remove that star" | `agent_tree_picks({})` / `agent_tree_unstar({ cwd, nodeId })` |
-
-MCP inputs are validated with zod. Success returns `{ "content": [{ "type": "text", "text": "…" }] }`; failure adds `"isError": true`. Catalog results also carry `structuredContent: { sessions: [...] }`, and JSON list results carry `structuredContent: { mindmap: {...} }`. Per-session tools take `sessionId` or `file`, never both, and fall back to the latest session in `cwd`, then the latest overall. `agent_tree_sessions`, `file` and `format` are new in 0.2.
-
-```jsonc
-// All tools accept optional source: "claude" | "codex".
-// agent_tree_sessions: newest first; Codex reads metadata headers only
-{ "cwd": "string?", "source": "codex", "limit": 20 } // limit: integer 1–1000
-
-// agent_tree_list: numbered tree; format "json" returns the full redacted mindmap
-{ "cwd": "string", "sessionId": "string?", "file": "string?",
-  "phasesOnly": "boolean?", "filter": "string?", "format": "text|json" }
-
-// agent_tree_snapshot: resume prompt for one step; records a star
-{ "cwd": "string", "nodeId": "7 or n_007", "mode": "continue|fork",
-  "sessionId": "string?", "file": "string?" }
-
-// agent_tree_diff: events, files and tools between two steps
-{ "cwd": "string", "from": "string", "to": "string", "sessionId": "string?", "file": "string?" }
-
-// agent_tree_unstar: remove a step's star
-{ "cwd": "string", "nodeId": "string", "sessionId": "string?", "file": "string?" }
-
-// agent_tree_picks: every star across sources; optional source filter
-{ "source": "codex" }
-```
-
-`format: "json"` rejects a nonempty `filter` and `phasesOnly: true`. The canonical definitions live in [`src/mcp/server.ts`](./src/mcp/server.ts), and the skill Claude Code loads with the plugin is [`skills/agent-tree/SKILL.md`](./skills/agent-tree/SKILL.md).
-
-</details>
-
 ## Roadmap
 
 - [x] **0.1** (April 2026): numbered session tree, continue and fork resume prompts, stars, and a Claude Code plugin with five MCP tools
-- [x] **0.2** (October 2026): session catalog, portable session files, JSON export, layered configuration, and support for the current Claude Code log format
-- [x] Publish 0.2 to npm (0.2.1)
-- [x] A session-source interface, so logs from other coding agents can plug in (0.3.0)
-- [x] Codex CLI sessions (0.3.0)
-- [ ] Gemini CLI sessions
+- [x] **0.2** (October 2026, npm 0.2.1): session catalog, portable session files, JSON export, layered configuration, and support for the current Claude Code log format
+- [x] **0.3** (October 2026): a session-source interface, so logs from other coding agents can plug in, and Codex CLI sessions
+- [ ] **Search across sessions**: find the session and the numbered step where something happened, across Claude Code and Codex logs
+- [ ] **Token usage per step**: see what each prompt cost and where the context filled up, from the usage both agents already log
+- [ ] **Open a session from any step**: one command starts a new Claude Code or Codex session with the continue or fork prompt, no copy-paste
 
 Have an idea or hit a bug? [Open an issue](https://github.com/lifrary/agent-tree/issues).
 
@@ -473,11 +511,15 @@ cd agent-tree
 npm install
 npm test && npm run typecheck && npm run typecheck:legacy && npm run lint
 npm run build && npm run check:release && npm run smoke:release
-npm run build       # rebuild dist/ after changing src/
 ```
 
-Every push to `main` runs CI on Linux and macOS with Node 22, 24 and 26: typecheck, lint, tests, build, a smoke run of the bundled CLI and `npm audit`. `dist/` is committed so the plugin installs straight from GitHub; rebuild it whenever you change `src/`. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the workflow, [`RELEASING.md`](./RELEASING.md) the release checklist, and the [changelog](./CHANGELOG.md) the history behind every decision. Two maintainer commands for Claude Code, `/pre-publish-audit` and `/mcp-smoke`, ship in `.claude/commands/`.
+Every push to `main` runs CI on Linux and macOS with Node 22, 24 and 26: typecheck, lint, tests, build, a smoke run of the packed CLI and MCP server, and `npm audit`. `dist/` is committed so the plugin installs straight from GitHub; run `npm run build` whenever you change `src/`. [`CONTRIBUTING.md`](./CONTRIBUTING.md) covers the workflow, [`RELEASING.md`](./RELEASING.md) the release checklist, and the [changelog](./CHANGELOG.md) the history behind every decision. Two maintainer commands for Claude Code, `/pre-publish-audit` and `/mcp-smoke`, ship in `.claude/commands/`.
 
 ## License
 
 [MIT](./LICENSE) © 2026 Seungwoo Lee
+
+<div align="center">
+<br>
+<sub>If agent-tree helped you find your way back through a session, <a href="https://github.com/lifrary/agent-tree">a ⭐ on GitHub</a> helps others find it too.</sub>
+</div>
