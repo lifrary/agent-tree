@@ -84,6 +84,57 @@ describe('portable CLI workflows', () => {
     expect(stdout).not.toContain('Pick a node');
   });
 
+  it('writes the whole export to a pipe even when it exceeds the 64 KiB pipe buffer', async () => {
+    const file = join(root, 'large-session.jsonl');
+    const records: string[] = [];
+    let parent: string | null = null;
+    for (let turn = 0; turn < 400; turn++) {
+      const prompt = `u-${turn}`;
+      const reply = `a-${turn}`;
+      const base = { isSidechain: false, sessionId: id, cwd: '/tmp/proj', userType: 'external' };
+      const at = (offset: number) => new Date(Date.UTC(2026, 3, 20, 10) + (turn * 60 + offset) * 1000);
+      records.push(
+        JSON.stringify({
+          ...base,
+          parentUuid: parent,
+          uuid: prompt,
+          timestamp: at(0).toISOString(),
+          type: 'user',
+          message: {
+            role: 'user',
+            content: [{ type: 'text', text: `Step ${turn}: refactor module ${turn} ${'x'.repeat(200)}` }],
+          },
+        }),
+        JSON.stringify({
+          ...base,
+          parentUuid: prompt,
+          uuid: reply,
+          timestamp: at(5).toISOString(),
+          type: 'assistant',
+          message: { role: 'assistant', content: [{ type: 'text', text: `Done with ${turn}.` }] },
+        }),
+      );
+      parent = reply;
+    }
+    await writeFile(file, records.join('\n') + '\n');
+    const { stdout } = await cli('--file', file, '--json', '--no-llm');
+    // The full export is about 110 KiB; the old exit path cut it at 64 KiB.
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(96 * 1024);
+    expect(JSON.parse(stdout).stats.total_events).toBe(800);
+
+    // A reader that stops early closes the pipe: exit 0, no EPIPE stack trace.
+    const early = await exec(
+      'bash',
+      [
+        '-c',
+        `"${process.execPath}" --import tsx "${entry}" --file "${file}" --json --no-llm 2>"${file}.err" | head -1 >/dev/null; echo "\${PIPESTATUS[0]}"`,
+      ],
+      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: '' }, timeout: 15_000 },
+    );
+    expect(early.stdout.trim()).toBe('0');
+    expect(await readFile(`${file}.err`, 'utf8')).not.toMatch(/EPIPE|Error/);
+  });
+
   it('lists sessions from the custom config root with a project filter', async () => {
     const dir = join(configDir, 'projects', encodeProjectPath(project));
     const other = join(configDir, 'projects', encodeProjectPath('/other'));

@@ -30721,17 +30721,24 @@ Re-run with a longer prefix.`
   return { ok: true, match: matches[0] };
 }
 var invokedDirectly = typeof process !== "undefined" && process.argv[1] && /(^|\/)(cli\.(m?js|ts)|agent-tree|atree)$/.test(process.argv[1]);
+function exitAfterFlush(code) {
+  const flush = (stream, next) => {
+    if (stream.writableLength > 0) stream.write("", next);
+    else next();
+  };
+  flush(process.stdout, () => flush(process.stderr, () => process.exit(code)));
+}
 if (invokedDirectly) {
-  main().then(
-    (code) => process.exit(code),
-    (err) => {
-      console.error(
-        "error:",
-        defaultRedactor().apply(err instanceof Error ? err.message : String(err))
-      );
-      process.exit(1);
-    }
-  );
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on("error", (error62) => {
+      if (error62.code === "EPIPE") process.exit(0);
+      throw error62;
+    });
+  }
+  main().then(exitAfterFlush, (err) => {
+    console.error("error:", defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
+    exitAfterFlush(1);
+  });
 }
 export {
   main

@@ -276,15 +276,29 @@ const invokedDirectly =
   process.argv[1] &&
   /(^|\/)(cli\.(m?js|ts)|agent-tree|atree)$/.test(process.argv[1]);
 
+/**
+ * stdout and stderr are asynchronous when they are pipes, so exiting right
+ * after a large write drops whatever the pipe has not taken yet (output was
+ * cut at a multiple of 64 KiB). Exit only once both streams have flushed.
+ */
+function exitAfterFlush(code: number): void {
+  const flush = (stream: NodeJS.WriteStream, next: () => void) => {
+    if (stream.writableLength > 0) stream.write('', next);
+    else next();
+  };
+  flush(process.stdout, () => flush(process.stderr, () => process.exit(code)));
+}
+
 if (invokedDirectly) {
-  main().then(
-    (code) => process.exit(code),
-    (err) => {
-      console.error(
-        'error:',
-        defaultRedactor().apply(err instanceof Error ? err.message : String(err)),
-      );
-      process.exit(1);
-    },
-  );
+  // A reader that stops early (`| head`) closes the pipe; that is not a failure.
+  for (const stream of [process.stdout, process.stderr]) {
+    stream.on('error', (error: NodeJS.ErrnoException) => {
+      if (error.code === 'EPIPE') process.exit(0);
+      throw error;
+    });
+  }
+  main().then(exitAfterFlush, (err) => {
+    console.error('error:', defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
+    exitAfterFlush(1);
+  });
 }
