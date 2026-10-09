@@ -12,9 +12,9 @@ the resume context so they can drop it into a fresh coding-agent session.
 
 This is a terminal-only tool — everything happens inside the current Claude
 Code conversation (no browser, no HTML). Structured JSON export is also
-available. Requires Node.js ≥22.13.0. The npm registry may still serve an
-earlier release; check the installed version. Claude Code JSONL and Codex
-rollout JSONL are supported; Gemini native session formats are not.
+available. Requires Node.js ≥22.13.0. Codex support needs 0.3.0 or later;
+check the installed version with `agent-tree --version`. Claude Code JSONL
+and Codex rollout JSONL are supported; Gemini native session formats are not.
 
 ## When to invoke
 

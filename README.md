@@ -78,7 +78,7 @@ API keys, tokens and card numbers are stripped before anything is shown, copied 
 npm install -g @seungwoolee/agent-tree
 ```
 
-The published 0.1.x release needs Node.js 20 or later. Source builds need Node.js 22.13 or later and include [Codex support](#codex-sessions). Until the next npm release, install from source. `dist/` is committed, so there is no build step:
+It needs Node.js 22.13 or later. To follow `main` between releases, install from source instead. `dist/` is committed, so there is no build step:
 
 ```bash
 git clone https://github.com/lifrary/agent-tree
@@ -86,7 +86,7 @@ cd agent-tree
 npm install -g .
 ```
 
-This links the `agent-tree` and `atree` commands to your clone, so a `git pull` keeps you current. `main` needs Node.js 22.13 or later. For the optional AI-written step labels, also run `npm install` inside the clone; it adds the Anthropic SDK.
+This links the `agent-tree` and `atree` commands to your clone, so a `git pull` keeps you current. For the optional AI-written step labels, also run `npm install` inside the clone; it adds the Anthropic SDK.
 
 To use it from inside Claude Code, install [the plugin](#use-it-inside-claude-code).
 
@@ -153,9 +153,8 @@ file header is rejected. For unknown/headerless exports, specify the source.
 
 ## What's new in 0.2
 
-The 0.2.1 preparation work (October 2026) is included in the current source
-alongside Codex support. npm publication is still pending;
-[install from source](#install) to use it today.
+0.2.1 and 0.3.0 are on npm (October 2026). 0.3.0 adds
+[Codex sessions](#codex-sessions) on top of everything below.
 
 - **Browse sessions across projects.** `agent-tree --sessions` lists your recent sessions instantly, without opening them. Claude gets the same view through the new `agent_tree_sessions` tool.
 - **Open any session file.** `--file` reads a session log from anywhere, such as one a teammate exported, and `--cwd` points at another project without changing directory.
@@ -390,8 +389,8 @@ If you are an LLM agent who was handed this repository, the notes below give you
 
 ```text
 package    @seungwoolee/agent-tree          bins: agent-tree, atree
-versions   npm 0.1.2 | main 0.3.0 (this README describes main)
-runtime    Node.js ≥ 22.13 on main, ≥ 20 for 0.1.x
+versions   npm 0.3.0 | main 0.3.0 (this README describes main)
+runtime    Node.js ≥ 22.13 from 0.2.1, ≥ 20 for 0.1.x
 input      Claude projects or Codex rollouts; --source selects discovery, --file auto-detects
 output     text tree, markdown resume prompts, source-tagged JSON; MCP tools over stdio
 ```
@@ -456,10 +455,10 @@ MCP inputs are validated with zod. Success returns `{ "content": [{ "type": "tex
 ## Roadmap
 
 - [x] **0.1** (April 2026): numbered session tree, continue and fork resume prompts, stars, and a Claude Code plugin with five MCP tools
-- [x] **0.2** (October 2026, on `main`): session catalog, portable session files, JSON export, layered configuration, and support for the current Claude Code log format
-- [ ] Publish 0.2 to npm
-- [x] A session-source interface, so logs from other coding agents can plug in
-- [x] Codex CLI sessions
+- [x] **0.2** (October 2026): session catalog, portable session files, JSON export, layered configuration, and support for the current Claude Code log format
+- [x] Publish 0.2 to npm (0.2.1)
+- [x] A session-source interface, so logs from other coding agents can plug in (0.3.0)
+- [x] Codex CLI sessions (0.3.0)
 - [ ] Gemini CLI sessions
 
 Have an idea or hit a bug? [Open an issue](https://github.com/lifrary/agent-tree/issues).

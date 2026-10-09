@@ -3,9 +3,9 @@
 This is the v0.X.Y → v0.X.Y+1 (or v0.X+1.0) checklist. Captures the sequence
 that shipped v0.1.0 so the next release doesn't re-discover it.
 
-The next release is **0.3.0 (unreleased)**. Updating the repository does not
-publish to npm; registry and GitHub release steps below are a separate
-maintainer action after release approval.
+The latest release is **0.3.0**, published to npm on 2026-10-09. Updating the
+repository does not publish to npm; registry and GitHub release steps below
+are a separate maintainer action after release approval.
 
 The OMC `release` skill (`/oh-my-claudecode:release`) handles the generic
 ordering — this doc is the agent-tree-specific overlay (project-aware steps,
@@ -34,13 +34,13 @@ post-publish smoke test, MCP plugin re-install).
 
 ### 1. Bump version everywhere
 
-For 0.3.0, synchronize these editable version fields:
+For release X.Y.Z, synchronize these editable version fields:
 
-- `package.json` → `"version": "0.3.0"`
-- `.claude-plugin/plugin.json` → `"version": "0.3.0"`
+- `package.json` → `"version": "X.Y.Z"`
+- `.claude-plugin/plugin.json` → `"version": "X.Y.Z"`
 - `.claude-plugin/marketplace.json` → **both** `metadata.version` AND
-  `plugins[0].version` → `"0.3.0"`
-- `skills/agent-tree/SKILL.md` → frontmatter `version: 0.3.0`
+  `plugins[0].version` → `"X.Y.Z"`
+- `skills/agent-tree/SKILL.md` → frontmatter `version: X.Y.Z`
 - Refresh `package-lock.json` so its root package versions match.
 
 CLI and MCP both use `src/version.ts`, which reads `package.json` in source
@@ -59,14 +59,14 @@ identity/runtime guidance and `.claude/commands/` audit expectations too.
 > ```bash
 > grep -nE '"version": "0\.[0-9]+\.[0-9]+"' package.json .claude-plugin/*.json
 > grep -nE '^version: 0\.[0-9]+\.[0-9]+' skills/agent-tree/SKILL.md
-> # All five editable fields above must show 0.3.0 for this release.
+> # All five editable fields above must show X.Y.Z for this release.
 > node -e 'const p=require("./package-lock.json"); console.log(p.version, p.packages[""].version)'
 > # Both lockfile root versions must also match.
 > ```
 
 ### 2. Update CHANGELOG.md
 
-- Move `## [Unreleased] — 0.3.0` content → `## [v0.3.0] — YYYY-MM-DD`
+- Move `## [Unreleased] — X.Y.Z` content → `## [vX.Y.Z] — YYYY-MM-DD`
 - Add a fresh empty `## [Unreleased]` at the top
 - Keep already-published historical entries intact. Do not promote the
   unreleased section merely because a preparation commit was pushed.

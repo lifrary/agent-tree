@@ -2,7 +2,9 @@
 
 All notable changes to this project are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/) and this project adheres to [Semantic Versioning](https://semver.org/).
 
-## [Unreleased] — 0.3.0
+## [Unreleased]
+
+## [v0.3.0] — 2026-10-09
 
 ### Added
 
@@ -35,10 +37,9 @@ All notable changes to this project are documented here. The format follows [Kee
 - Nonempty unrecognized imports require an explicit source instead of
   silently producing an empty Claude tree.
 
-This release also includes the previously prepared 0.2.1 changes below.
-Publishing is separate from preparing or pushing these versions.
+This release also includes the 0.2.1 changes below.
 
-## [0.2.1] — Unreleased preparation
+## [v0.2.1] — 2026-10-09
 
 ### Toolchain and release verification
 
@@ -122,8 +123,6 @@ Publishing is separate from preparing or pushing these versions.
   `agent_tree_picks` takes `{}` only. JSON exports reject display filters.
   Invalid config fields and unsupported settings now warn instead of being
   silently accepted.
-
-The changes above are unreleased; no npm publication is implied.
 
 ### Docs: README jargon + redact-strict accuracy pass (2026-04-29)
 
