@@ -6,6 +6,7 @@
 
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { VERSION } from '../version.js';
+import { REPOSITORY_URL } from '../utils/star_hint.js';
 import type { SessionSourceId } from '../sources/types.js';
 
 export interface CliOptions {
@@ -99,6 +100,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     .option('--picks', 'list every pick across every session (no session arg needed)')
     .option('--unstar <id>', 'remove the ⭐ from a previously-picked node')
     .option('--diff <ids...>', 'summarise what happened between two nodes (numbers or n_NNN ids)')
+    .addHelpText('after', `\nDocs and issues: ${REPOSITORY_URL}`)
     .exitOverride();
 
   try {

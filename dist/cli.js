@@ -6711,6 +6711,45 @@ var program = new Command();
 // src/version.ts
 var VERSION = true ? "0.3.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
+// src/utils/star_hint.ts
+import { mkdir, writeFile } from "node:fs/promises";
+import { homedir } from "node:os";
+import { dirname, join } from "node:path";
+var REPOSITORY_URL = "https://github.com/lifrary/agent-tree";
+var STAR_HINT_OPT_OUT_ENV = "AGENT_TREE_NO_STAR_HINT";
+var STAR_HINT_TEXT = `If agent-tree saves you a scroll, a \u2B50 on GitHub helps others find it: ${REPOSITORY_URL}
+(shown once; set ${STAR_HINT_OPT_OUT_ENV}=1 to never see it)
+`;
+function defaultStarHintMarker() {
+  return join(homedir(), ".cache", "agent-tree", "star-hint-shown");
+}
+function starHintBlocker(ctx) {
+  const optOut = ctx.env[STAR_HINT_OPT_OUT_ENV];
+  if (optOut === "1" || optOut === "true") return "opted-out";
+  if (ctx.env.CI) return "ci";
+  if (!ctx.stdoutIsTTY || !ctx.stderrIsTTY) return "not-a-terminal";
+  if (ctx.json || ctx.dumpJson) return "machine-output";
+  return null;
+}
+async function maybeShowStarHint(ctx) {
+  const blocker = starHintBlocker(ctx);
+  if (blocker) return blocker;
+  const markerPath = ctx.markerPath ?? defaultStarHintMarker();
+  try {
+    await mkdir(dirname(markerPath), { recursive: true, mode: 448 });
+  } catch {
+    return "marker-unwritable";
+  }
+  try {
+    await writeFile(markerPath, `${(/* @__PURE__ */ new Date()).toISOString()}
+`, { flag: "wx", mode: 384 });
+  } catch (error62) {
+    return error62.code === "EEXIST" ? "already-shown" : "marker-unwritable";
+  }
+  (ctx.write ?? ((text) => process.stderr.write(text)))(STAR_HINT_TEXT);
+  return "show";
+}
+
 // src/cli/options.ts
 function parseCliArgs(argv) {
   const program2 = new Command();
@@ -6727,7 +6766,8 @@ function parseCliArgs(argv) {
   ).option("-v, --verbose", "debug logging").option("--trace", "trace logging (implies --verbose)").option("--dry-run", "run the analysis pipeline but do not emit any output").option("--model <name>", "Anthropic model for LLM labeling").option("--max-llm-tokens <n>", "input token budget ceiling across segments", positiveInteger).option("--redact-strict", "add PII patterns (email/phone/SSN/RRN); card check is always on").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").addOption(new Option("--mode <mode>", "snapshot mode").choices(["continue", "fork"])).option("--tui", "interactive readline prompt with numbered selection").option(
     "--filter <kw>",
     "show only rows whose label/time/range matches keyword (case-insensitive)"
-  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").exitOverride();
+  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").addHelpText("after", `
+Docs and issues: ${REPOSITORY_URL}`).exitOverride();
   try {
     program2.parse(argv, { from: "node" });
     const opts = program2.opts();
@@ -7097,10 +7137,10 @@ import { createHash as createHash3 } from "node:crypto";
 // src/cache/disk.ts
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
-import { homedir } from "node:os";
-import { join, resolve } from "node:path";
-var DEFAULT_CACHE_ROOT = join(homedir(), ".cache", "agent-tree");
+import { mkdir as mkdir2, readFile, writeFile as writeFile2 } from "node:fs/promises";
+import { homedir as homedir2 } from "node:os";
+import { join as join2, resolve } from "node:path";
+var DEFAULT_CACHE_ROOT = join2(homedir2(), ".cache", "agent-tree");
 var MODE_RWX_OWNER = 448;
 async function computeInputHash(inp) {
   const h = createHash("sha256");
@@ -7113,16 +7153,16 @@ async function computeInputHash(inp) {
 }
 async function ensureCacheDir(hash2, opts = {}) {
   const root = opts.root ?? DEFAULT_CACHE_ROOT;
-  await mkdir(root, { recursive: true, mode: MODE_RWX_OWNER });
-  const dir = join(root, hash2);
-  await mkdir(dir, { recursive: true, mode: MODE_RWX_OWNER });
+  await mkdir2(root, { recursive: true, mode: MODE_RWX_OWNER });
+  const dir = join2(root, hash2);
+  await mkdir2(dir, { recursive: true, mode: MODE_RWX_OWNER });
   return dir;
 }
 var MODE_RW_OWNER = 384;
 async function writeJsonCache(hash2, filename, value, opts = {}) {
   const dir = await ensureCacheDir(hash2, opts);
-  const p = join(dir, filename);
-  await writeFile(p, JSON.stringify(value, null, 2), {
+  const p = join2(dir, filename);
+  await writeFile2(p, JSON.stringify(value, null, 2), {
     encoding: "utf8",
     mode: MODE_RW_OWNER
   });
@@ -7944,8 +7984,8 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger) {
 import { open as open2 } from "node:fs/promises";
 
 // src/sources/claude.ts
-import { homedir as homedir2 } from "node:os";
-import { join as join2, resolve as resolve2 } from "node:path";
+import { homedir as homedir3 } from "node:os";
+import { join as join3, resolve as resolve2 } from "node:path";
 
 // src/reader/jsonl.ts
 import { createReadStream as createReadStream2 } from "node:fs";
@@ -8264,7 +8304,7 @@ async function isSameDirectory(path2, original) {
 
 // src/sources/claude.ts
 function getProjectsRoot() {
-  return resolve2(process.env.CLAUDE_CONFIG_DIR || join2(homedir2(), ".claude"), "projects");
+  return resolve2(process.env.CLAUDE_CONFIG_DIR || join3(homedir3(), ".claude"), "projects");
 }
 function encodeProjectPath(absPath) {
   return absPath.replace(/[^a-zA-Z0-9]/g, "-");
@@ -8277,7 +8317,7 @@ async function discover(opts) {
   const sessions = [];
   for (const projectDir of projectDirs) {
     if (!projectDir) continue;
-    const projectPath = join2(root, projectDir);
+    const projectPath = join3(root, projectDir);
     const projectInfo = await lstatIfPresent(projectPath);
     if (!projectInfo?.isDirectory()) continue;
     const projectSessions = [];
@@ -8285,7 +8325,7 @@ async function discover(opts) {
       if (!file2.isFile() || !file2.name.endsWith(".jsonl")) continue;
       const sessionId = file2.name.slice(0, -".jsonl".length);
       if (!isFullUuid(sessionId)) continue;
-      const jsonlPath = join2(projectPath, file2.name);
+      const jsonlPath = join3(projectPath, file2.name);
       const info = await lstatIfPresent(jsonlPath);
       if (!info?.isFile()) continue;
       projectSessions.push({
@@ -8313,8 +8353,8 @@ var claudeSource = {
 // src/sources/codex.ts
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { homedir as homedir3 } from "node:os";
-import { join as join3, resolve as resolve3 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join4, resolve as resolve3 } from "node:path";
 
 // src/reader/codex.ts
 import { createHash as createHash2 } from "node:crypto";
@@ -8747,7 +8787,7 @@ async function sessionEntry(jsonlPath, filenameId) {
 }
 async function discover2(options) {
   const root = resolve3(
-    options.root ?? resolve3(process.env.CODEX_HOME || join3(homedir3(), ".codex"), "sessions")
+    options.root ?? resolve3(process.env.CODEX_HOME || join4(homedir4(), ".codex"), "sessions")
   );
   const projectCwd = options.projectCwd === void 0 ? void 0 : resolve3(options.projectCwd);
   async function visit3(directory, depth) {
@@ -8757,13 +8797,13 @@ async function discover2(options) {
     for (const entry of await readDirectory(directory)) {
       if (depth < DATE_DIRECTORIES.length) {
         if (entry.isDirectory() && DATE_DIRECTORIES[depth].test(entry.name)) {
-          for (const session of await visit3(join3(directory, entry.name), depth + 1))
+          for (const session of await visit3(join4(directory, entry.name), depth + 1))
             sessions.push(session);
         }
       } else if (entry.isFile()) {
         const match = ROLLOUT_NAME.exec(entry.name);
         if (!match || !isFullUuid(match[1])) continue;
-        const session = await sessionEntry(join3(directory, entry.name), match[1]);
+        const session = await sessionEntry(join4(directory, entry.name), match[1]);
         if (session && (projectCwd === void 0 || resolve3(session.projectDir) === projectCwd)) {
           sessions.push(session);
         }
@@ -9461,8 +9501,8 @@ function luhnValid(digits) {
 
 // src/config/loader.ts
 import { readFile as readFile2 } from "node:fs/promises";
-import { homedir as homedir4 } from "node:os";
-import { join as join4, resolve as resolve4 } from "node:path";
+import { homedir as homedir5 } from "node:os";
+import { join as join5, resolve as resolve4 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -29276,7 +29316,7 @@ function formatPath(parts) {
 }
 
 // src/config/loader.ts
-var USER_CONFIG_DEFAULT = join4(homedir4(), ".config", "agent-tree", "config.yaml");
+var USER_CONFIG_DEFAULT = join5(homedir5(), ".config", "agent-tree", "config.yaml");
 function envToPartial(env, logger) {
   const out = {};
   const llm = {};
@@ -29362,7 +29402,7 @@ async function loadConfig(opts = {}) {
 function expandPath(template, projectCwd) {
   let p = template;
   if (p.startsWith("~/") || p === "~") {
-    p = join4(homedir4(), p.slice(1));
+    p = join5(homedir5(), p.slice(1));
   }
   p = p.replace("{project}", projectCwd);
   return resolve4(p);
@@ -29618,7 +29658,7 @@ _(no events were parsed.)_
 }
 
 // src/cli/modes.ts
-import { mkdir as mkdir3, writeFile as writeFile2 } from "node:fs/promises";
+import { mkdir as mkdir4, writeFile as writeFile3 } from "node:fs/promises";
 import { resolve as resolve5 } from "node:path";
 
 // src/render/text.ts
@@ -29990,10 +30030,10 @@ async function safeGitCwd(eventsCwd, callerCwd) {
 
 // src/utils/picks.ts
 import { randomBytes } from "node:crypto";
-import { appendFile, lstat as lstat2, mkdir as mkdir2, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
-import { homedir as homedir5 } from "node:os";
-import { dirname, join as join5 } from "node:path";
-var PICKS_ROOT = join5(homedir5(), ".cache", "agent-tree", "picks");
+import { appendFile, lstat as lstat2, mkdir as mkdir3, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
+import { homedir as homedir6 } from "node:os";
+import { dirname as dirname2, join as join6 } from "node:path";
+var PICKS_ROOT = join6(homedir6(), ".cache", "agent-tree", "picks");
 var PICK_SOURCES = ["claude", "codex"];
 var SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
 function validateSource(source) {
@@ -30006,11 +30046,11 @@ function picksFileFor(sessionId, root = PICKS_ROOT, source = "claude") {
   if (typeof sessionId !== "string" || !SESSION_ID_RE.test(sessionId)) {
     throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
   }
-  return join5(root, source, `${sessionId}.jsonl`);
+  return join6(root, source, `${sessionId}.jsonl`);
 }
 async function recordPick(sessionId, nodeId, mode, opts = {}) {
   const file2 = picksFileFor(sessionId, opts.root, opts.source);
-  await mkdir2(dirname(file2), { recursive: true, mode: 448 });
+  await mkdir3(dirname2(file2), { recursive: true, mode: 448 });
   const entry = { node_id: nodeId, mode, ts: (/* @__PURE__ */ new Date()).toISOString() };
   await appendFile(file2, JSON.stringify(entry) + "\n", "utf8");
 }
@@ -30025,7 +30065,7 @@ async function listAllPicks(opts = {}) {
   }
   const out = [];
   for (const source of sources2) {
-    const directory = join5(root, source);
+    const directory = join6(root, source);
     let files;
     try {
       if (!(await lstat2(directory)).isDirectory()) continue;
@@ -30039,7 +30079,7 @@ async function listAllPicks(opts = {}) {
       if (!SESSION_ID_RE.test(sessionId)) continue;
       let raw;
       try {
-        raw = await readFile3(join5(directory, file2.name), "utf8");
+        raw = await readFile3(join6(directory, file2.name), "utf8");
       } catch {
         continue;
       }
@@ -30089,10 +30129,10 @@ async function removePicksForNode(sessionId, nodeId, opts = {}) {
     }
   }
   if (removed === 0) return 0;
-  const { writeFile: writeFile3, rename } = await import("node:fs/promises");
+  const { writeFile: writeFile4, rename } = await import("node:fs/promises");
   const rand = randomBytes(4).toString("hex");
   const tmp = `${file2}.tmp-${process.pid}-${Date.now()}-${rand}`;
-  await writeFile3(tmp, kept.length > 0 ? kept.join("\n") + "\n" : "", {
+  await writeFile4(tmp, kept.length > 0 ? kept.join("\n") + "\n" : "", {
     encoding: "utf8",
     mode: 384
   });
@@ -30328,7 +30368,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
   if (PROTECTED_DUMP_PREFIXES.some((p) => outDir === p || outDir.startsWith(p + "/"))) {
     throw new Error(`refusing to dump into protected path: ${outDir}`);
   }
-  await mkdir3(outDir, { recursive: true, mode: 448 });
+  await mkdir4(outDir, { recursive: true, mode: 448 });
   const safeMeta = redactDeep(graph.meta, redactor);
   const safeEvents = redactDeep(graph.events, redactor);
   const safeGraph = redactDeep(graphToDump(graph), redactor);
@@ -30336,13 +30376,13 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
   const safeTree = redactDeep(mindmap, redactor);
   const opts = { encoding: "utf8", mode: 384, flag: "wx" };
   await Promise.all([
-    writeFile2(
+    writeFile3(
       resolve5(outDir, "raw-events.json"),
       JSON.stringify({ meta: safeMeta, events: safeEvents }, null, 2),
       opts
     ),
-    writeFile2(resolve5(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
-    writeFile2(
+    writeFile3(resolve5(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
+    writeFile3(
       resolve5(outDir, "segments.json"),
       JSON.stringify(
         { session_id: graph.meta.sessionId, count: safeSegments.length, segments: safeSegments },
@@ -30351,7 +30391,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
       ),
       opts
     ),
-    writeFile2(resolve5(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
+    writeFile3(resolve5(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
   ]);
 }
 
@@ -30391,7 +30431,7 @@ import { createInterface as createInterface4 } from "node:readline/promises";
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname2, extname, resolve as resolve6 } from "node:path";
+import { basename as basename2, dirname as dirname3, extname, resolve as resolve6 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
     throw new RangeError("session limit must be a nonnegative safe integer");
@@ -30409,7 +30449,7 @@ async function sessionFromFile(filePath, source) {
   return {
     source: await detectSessionSource(jsonlPath, source),
     sessionId: basename2(jsonlPath, ".jsonl"),
-    projectDir: basename2(dirname2(jsonlPath)),
+    projectDir: basename2(dirname3(jsonlPath)),
     jsonlPath
   };
 }
@@ -30598,7 +30638,19 @@ async function main(argv = process.argv) {
   if (mode.diff) return runDiffMode(ctx);
   if (mode.list) return runListMode(ctx);
   if (mode.snapshot) return runSnapshotMode(ctx);
-  if (mode.tui) return runTuiMode(ctx);
+  if (mode.tui) {
+    const code = await runTuiMode(ctx);
+    if (code === 0) {
+      await maybeShowStarHint({
+        env: process.env,
+        stdoutIsTTY: !!process.stdout.isTTY,
+        stderrIsTTY: !!process.stderr.isTTY,
+        json: opts.json,
+        dumpJson: opts.dumpJson
+      });
+    }
+    return code;
+  }
   console.error("internal error: no output mode resolved");
   return 1;
 }

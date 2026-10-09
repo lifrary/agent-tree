@@ -30,6 +30,7 @@ import { loadConfig } from './config/loader.js';
 import { createLoggerSync, type LogLevel } from './utils/logger.js';
 import { pickSession } from './utils/picker.js';
 import { defaultRedactor, redactDeep, type Redactor } from './utils/redact.js';
+import { maybeShowStarHint } from './utils/star_hint.js';
 import type { SessionSourceId } from './sources/types.js';
 import {
   findLatestSession,
@@ -159,7 +160,19 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   if (mode.diff) return runDiffMode(ctx);
   if (mode.list) return runListMode(ctx);
   if (mode.snapshot) return runSnapshotMode(ctx);
-  if (mode.tui) return runTuiMode(ctx);
+  if (mode.tui) {
+    const code = await runTuiMode(ctx);
+    if (code === 0) {
+      await maybeShowStarHint({
+        env: process.env,
+        stdoutIsTTY: !!process.stdout.isTTY,
+        stderrIsTTY: !!process.stderr.isTTY,
+        json: opts.json,
+        dumpJson: opts.dumpJson,
+      });
+    }
+    return code;
+  }
 
   // Should not reach: at least one mode is always selected by resolveMode.
   console.error('internal error: no output mode resolved');
