@@ -30730,12 +30730,13 @@ function exitAfterFlush(code) {
   flush(process.stdout, () => flush(process.stderr, () => process.exit(code)));
 }
 if (invokedDirectly) {
-  for (const stream of [process.stdout, process.stderr]) {
-    stream.on("error", (error62) => {
-      if (error62.code === "EPIPE") process.exit(0);
-      throw error62;
-    });
-  }
+  process.stdout.on("error", (error62) => {
+    if (error62.code === "EPIPE") process.exit(0);
+    throw error62;
+  });
+  process.stderr.on("error", (error62) => {
+    if (error62.code !== "EPIPE") throw error62;
+  });
   main().then(exitAfterFlush, (err) => {
     console.error("error:", defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
     exitAfterFlush(1);

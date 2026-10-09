@@ -290,13 +290,15 @@ function exitAfterFlush(code: number): void {
 }
 
 if (invokedDirectly) {
-  // A reader that stops early (`| head`) closes the pipe; that is not a failure.
-  for (const stream of [process.stdout, process.stderr]) {
-    stream.on('error', (error: NodeJS.ErrnoException) => {
-      if (error.code === 'EPIPE') process.exit(0);
-      throw error;
-    });
-  }
+  // A stdout reader that stops early (`| head`) has all it wants: exit quietly.
+  // A closed stderr only loses diagnostics, so the export on stdout carries on.
+  process.stdout.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code === 'EPIPE') process.exit(0);
+    throw error;
+  });
+  process.stderr.on('error', (error: NodeJS.ErrnoException) => {
+    if (error.code !== 'EPIPE') throw error;
+  });
   main().then(exitAfterFlush, (err) => {
     console.error('error:', defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
     exitAfterFlush(1);

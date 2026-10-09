@@ -84,11 +84,11 @@ describe('portable CLI workflows', () => {
     expect(stdout).not.toContain('Pick a node');
   });
 
-  it('writes the whole export to a pipe even when it exceeds the 64 KiB pipe buffer', async () => {
+  async function largeSession(turns: number): Promise<string> {
     const file = join(root, 'large-session.jsonl');
     const records: string[] = [];
     let parent: string | null = null;
-    for (let turn = 0; turn < 400; turn++) {
+    for (let turn = 0; turn < turns; turn++) {
       const prompt = `u-${turn}`;
       const reply = `a-${turn}`;
       const base = { isSidechain: false, sessionId: id, cwd: '/tmp/proj', userType: 'external' };
@@ -117,23 +117,43 @@ describe('portable CLI workflows', () => {
       parent = reply;
     }
     await writeFile(file, records.join('\n') + '\n');
-    const { stdout } = await cli('--file', file, '--json', '--no-llm');
-    // The full export is about 110 KiB; the old exit path cut it at 64 KiB.
-    expect(Buffer.byteLength(stdout)).toBeGreaterThan(96 * 1024);
-    expect(JSON.parse(stdout).stats.total_events).toBe(800);
+    return file;
+  }
 
-    // A reader that stops early closes the pipe: exit 0, no EPIPE stack trace.
-    const early = await exec(
-      'bash',
-      [
-        '-c',
-        `"${process.execPath}" --import tsx "${entry}" --file "${file}" --json --no-llm 2>"${file}.err" | head -1 >/dev/null; echo "\${PIPESTATUS[0]}"`,
-      ],
-      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: '' }, timeout: 15_000 },
+  async function shell(script: string) {
+    return exec('bash', ['-c', script], {
+      env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: '', AGENT_TREE_NO_LLM: 'true' },
+      timeout: 25_000,
+      maxBuffer: 8 * 1024 * 1024,
+    });
+  }
+
+  it('writes the whole export to a pipe, past the 64 KiB pipe buffer', async () => {
+    const file = await largeSession(1500);
+    const { stdout } = await cli('--file', file, '--json', '--no-llm');
+    // The full export is about 400 KiB; the old exit path cut it at a multiple of 64 KiB.
+    expect(Buffer.byteLength(stdout)).toBeGreaterThan(256 * 1024);
+    expect(JSON.parse(stdout).stats.total_events).toBe(3000);
+  }, 30_000);
+
+  it('exits 0 without an EPIPE trace when the stdout reader stops early', async () => {
+    const file = await largeSession(1500);
+    const run = await shell(
+      `"${process.execPath}" --import tsx "${entry}" --file "${file}" --json --no-llm 2>"${file}.err" | head -1 >/dev/null; echo "\${PIPESTATUS[0]}"`,
     );
-    expect(early.stdout.trim()).toBe('0');
+    expect(run.stdout.trim()).toBe('0');
     expect(await readFile(`${file}.err`, 'utf8')).not.toMatch(/EPIPE|Error/);
-  });
+  }, 30_000);
+
+  it('still writes stdout in full when the stderr reader stops early', async () => {
+    const file = await largeSession(1500);
+    const out = `${file}.json`;
+    const run = await shell(
+      `"${process.execPath}" --import tsx "${entry}" --file "${file}" --json --no-llm --verbose 2> >(head -c1 >/dev/null) >"${out}"; echo "$?"`,
+    );
+    expect(run.stdout.trim()).toBe('0');
+    expect(JSON.parse(await readFile(out, 'utf8')).stats.total_events).toBe(3000);
+  }, 30_000);
 
   it('lists sessions from the custom config root with a project filter', async () => {
     const dir = join(configDir, 'projects', encodeProjectPath(project));
