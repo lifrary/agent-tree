@@ -144,7 +144,7 @@ Every step comes with two resume prompts.
 | **continue** | Everything up to here was right. Carry on from this point. |
 | **fork**     | This is where it went wrong. Try another way from here.    |
 
-A resume prompt is plain markdown: where it came from, the files involved and your last instruction at that point, plus the repository's current branch, recent commits and status when you run it inside a git repository. In a terminal it lands on your clipboard; paste it as the first message of a new session.
+A resume prompt is plain markdown: where it came from, the files involved and your last instruction at that point, plus the current branch, recent commits and status of the git repository the session worked in. In a terminal it lands on your clipboard; paste it as the first message of a new session.
 
 ```console
 $ agent-tree 3f9c2a71 --snapshot 7 --mode fork
@@ -319,7 +319,7 @@ npm init -y >/dev/null && npm install @seungwoolee/agent-tree
 ./node_modules/.bin/agent-tree --sessions --limit 5
 ```
 
-`--sessions` printing nothing means no Claude Code sessions were found; add `--source codex` for Codex. Bare `npx -y @seungwoolee/agent-tree …` works with npm 12, but npm 10 cannot choose between the package's two bins, so prefer the isolated install when you don't know the npm version.
+An empty `--sessions` result means no Claude Code sessions were found; add `--source codex` for Codex. Bare `npx -y @seungwoolee/agent-tree …` works with npm 12, but npm 10 cannot choose between the package's two bins, so prefer the isolated install when you don't know the npm version.
 
 ### Wire up MCP
 
@@ -370,7 +370,7 @@ On the command line, the same requests map to `--sessions`, `--list`, `--snapsho
 - Show text trees and resume prompts verbatim in a code block; reformatting breaks them.
 - Output is already redacted. Do not try to recover redacted values, and still read a resume prompt before the user shares it outside.
 - Pass `--no-llm` on the CLI unless the user asked for LLM labels, which cost money. MCP tools never call the LLM.
-- Session ID prefixes need at least 4 characters; use 8 or more. An ambiguous prefix is an error that lists the matches.
+- Session ID prefixes need at least 4 characters; use 8 or more. An ambiguous prefix is an error; the CLI also lists the matches.
 - A session that is still running gives partial numbering, so prefer finished sessions for resume prompts.
 - A snapshot stars the step. Use `agent_tree_list` to look around, and call `agent_tree_snapshot` only when the user wants a resume prompt.
 - The encoded Claude project directory replaces every non-alphanumeric character with `-`: `/Users/alice/Code/my_project` becomes `-Users-alice-Code-my-project`.
