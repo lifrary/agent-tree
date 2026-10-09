@@ -28,25 +28,12 @@ import type {
   ToolResultPayload,
   ToolUsePayload,
 } from '../types.js';
-import type { Logger } from '../utils/logger.js';
-
-export interface ReadJsonlResult {
-  meta: SessionMeta;
-  events: RawEvent[];
-  malformedCount: number;
-  skippedMetaCount: number;
-}
-
-export interface ReadJsonlOptions {
-  logger?: Logger;
-  /** Reject malformed JSON, envelopes and payloads instead of recovering. Default false. */
-  strict?: boolean;
-}
+import type { ReadSessionOptions, ReadSessionResult } from '../sources/types.js';
 
 export async function readJsonl(
   path: string,
-  opts: ReadJsonlOptions = {},
-): Promise<ReadJsonlResult> {
+  opts: ReadSessionOptions = {},
+): Promise<ReadSessionResult> {
   const { logger, strict = false } = opts;
 
   const stream = createReadStream(path, { encoding: 'utf8' });

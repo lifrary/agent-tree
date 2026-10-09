@@ -4,6 +4,7 @@ import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runPipeline } from '../src/cli/pipeline.js';
 import { mergeConfig, DEFAULT_CONFIG } from '../src/config/schema.js';
+import type { SessionMatch } from '../src/sources/types.js';
 import { createLoggerSync } from '../src/utils/logger.js';
 
 const mocks = vi.hoisted(() => ({
@@ -29,7 +30,8 @@ vi.mock('../src/llm/anthropic.js', async (importOriginal) => {
   return { ...actual, createAnthropicClient: vi.fn(async () => ({ messages: mocks })) };
 });
 let root: string;
-const match = {
+const match: SessionMatch = {
+  source: 'claude',
   sessionId: 'aaaa1111-2222-3333-4444-555566667777',
   projectDir: '-fixture',
   jsonlPath: resolve('tests/fixtures/minimal-session.jsonl'),

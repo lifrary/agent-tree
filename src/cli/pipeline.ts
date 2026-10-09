@@ -15,13 +15,13 @@ import { graphToDump } from '../reader/graph.js';
 import { createAnthropicClient } from '../llm/anthropic.js';
 import { labelMindMap } from '../llm/labeler.js';
 import { buildGraph } from '../reader/graph.js';
-import { readJsonl } from '../reader/jsonl.js';
+import { getSessionSource } from '../sources/index.js';
 import { buildMindMap } from '../tree/builder.js';
 import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { countRedactions, defaultRedactor, redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
-import { isFullUuid } from '../utils/session_path.js';
+import { isFullUuid } from '../sources/files.js';
 
 import type { ClaudeMapConfig } from '../config/schema.js';
 import { expandPath } from '../config/loader.js';
@@ -63,6 +63,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   const cacheHash = await computeInputHash({
     jsonlPath: match.jsonlPath,
     configJson: JSON.stringify({
+      source: match.source,
       config,
       llm: opts.llm !== false,
       model: opts.model,
@@ -75,7 +76,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
 
   // [1/5] Parsing JSONL
   progress('[1/5] Parsing JSONL...       ');
-  const { meta, events, malformedCount, skippedMetaCount } = await readJsonl(match.jsonlPath, {
+  const { meta, events, malformedCount, skippedMetaCount } = await getSessionSource(match.source).read(match.jsonlPath, {
     logger,
     strict: opts.strict,
   });
