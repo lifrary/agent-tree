@@ -17,9 +17,12 @@ async function discover(opts: DiscoverOptions): Promise<SessionEntry[]> {
   const root = resolve(opts.root ?? getProjectsRoot());
   const rootInfo = await lstatIfPresent(root);
   if (!rootInfo?.isDirectory()) return [];
-  const projectDirs = opts.projectCwd === undefined
-    ? (await readDirectory(root)).filter((entry) => entry.isDirectory()).map((entry) => entry.name)
-    : [encodeProjectPath(opts.projectCwd)];
+  const projectDirs =
+    opts.projectCwd === undefined
+      ? (await readDirectory(root))
+          .filter((entry) => entry.isDirectory())
+          .map((entry) => entry.name)
+      : [encodeProjectPath(opts.projectCwd)];
   const sessions: SessionEntry[] = [];
   for (const projectDir of projectDirs) {
     if (!projectDir) continue;
@@ -34,12 +37,20 @@ async function discover(opts: DiscoverOptions): Promise<SessionEntry[]> {
       const jsonlPath = join(projectPath, file.name);
       const info = await lstatIfPresent(jsonlPath);
       if (!info?.isFile()) continue;
-      projectSessions.push({ source: 'claude', sessionId, projectDir, jsonlPath,
-        mtimeMs: info.mtimeMs, sizeBytes: info.size });
+      projectSessions.push({
+        source: 'claude',
+        sessionId,
+        projectDir,
+        jsonlPath,
+        mtimeMs: info.mtimeMs,
+        sizeBytes: info.size,
+      });
     }
-    if (await isSameDirectory(projectPath, projectInfo)) sessions.push(...projectSessions);
+    if (await isSameDirectory(projectPath, projectInfo)) {
+      for (const session of projectSessions) sessions.push(session);
+    }
   }
-  return await isSameDirectory(root, rootInfo) ? sessions : [];
+  return (await isSameDirectory(root, rootInfo)) ? sessions : [];
 }
 
 export const claudeSource: SessionSource = {

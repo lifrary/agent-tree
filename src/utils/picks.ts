@@ -1,9 +1,10 @@
 /**
  * Pick history — track which nodes the user has already snapshotted.
  *
- * Recorded at `~/.cache/agent-tree/picks/<session-id>.jsonl` (session-scoped,
- * not config-scoped, so re-running with different `--no-llm` / sidechain
- * options still surfaces past picks). Append-only JSONL — each line is one
+ * Recorded at `~/.cache/agent-tree/picks/<source>/<session-id>.jsonl`
+ * (source- and session-scoped, not config-scoped, so re-running with different
+ * `--no-llm` / sidechain options still surfaces past picks). Sources are
+ * `claude` (the default) and `codex`. Append-only JSONL — each line is one
  * pick `{node_id, mode, ts}`.
  *
  * The list / TUI renderers read this map to mark visited nodes with ⭐
@@ -17,17 +18,20 @@
  *     is the canonical "append-only log" pattern.
  *   - `removePicksForNode` writes via tmp-file + atomic `rename` to avoid
  *     losing concurrent `recordPick` writes between read and rewrite.
- *   - Path-traversal hardening: `picksFileFor` rejects any sessionId not
- *     matching `/^[0-9a-f-]{4,40}$/i` — defense in depth on top of the
- *     `locateSession` validator that already gates the same regex upstream.
+ *   - Path-traversal hardening: source names are validated at runtime, and
+ *     `picksFileFor` rejects any sessionId not matching `/^[0-9a-f-]{4,40}$/i`
+ *     — defense in depth on top of the `locateSession` validator.
  */
 
 import { randomBytes } from 'node:crypto';
-import { appendFile, mkdir, readFile } from 'node:fs/promises';
+import type { Dirent } from 'node:fs';
+import { appendFile, lstat, mkdir, readFile, readdir } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
+import type { SessionSourceId } from '../sources/types.js';
 
 const PICKS_ROOT = join(homedir(), '.cache', 'agent-tree', 'picks');
+const PICK_SOURCES: readonly SessionSourceId[] = ['claude', 'codex'];
 
 export interface Pick {
   node_id: string;
@@ -47,68 +51,91 @@ export interface PickIndex {
 // untrusted input (path-traversal hardening per security audit MEDIUM-5).
 const SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
 
-function picksFileFor(sessionId: string, root = PICKS_ROOT): string {
-  if (!SESSION_ID_RE.test(sessionId)) {
+function validateSource(source: SessionSourceId): void {
+  if (source !== 'claude' && source !== 'codex') {
+    throw new Error(`refusing to compose picks path for invalid source "${source}"`);
+  }
+}
+
+function picksFileFor(
+  sessionId: string,
+  root = PICKS_ROOT,
+  source: SessionSourceId = 'claude',
+): string {
+  validateSource(source);
+  if (typeof sessionId !== 'string' || !SESSION_ID_RE.test(sessionId)) {
     throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
   }
-  return join(root, `${sessionId}.jsonl`);
+  return join(root, source, `${sessionId}.jsonl`);
 }
 
 export async function recordPick(
   sessionId: string,
   nodeId: string,
   mode: 'continue' | 'fork',
-  opts: { root?: string } = {},
+  opts: { root?: string; source?: SessionSourceId } = {},
 ): Promise<void> {
-  const file = picksFileFor(sessionId, opts.root);
+  const file = picksFileFor(sessionId, opts.root, opts.source);
   await mkdir(dirname(file), { recursive: true, mode: 0o700 });
   const entry: Pick = { node_id: nodeId, mode, ts: new Date().toISOString() };
   await appendFile(file, JSON.stringify(entry) + '\n', 'utf8');
 }
 
 export interface SessionPicks {
+  source: SessionSourceId;
   sessionId: string;
   picks: Pick[];
 }
 
 /**
- * List every recorded pick across every session, newest first. Used by
- * `agent-tree --picks` so users can review their navigation history.
+ * List recorded picks across both sources (or one selected source), newest
+ * session activity first. Only regular files in real source directories are
+ * read. Used by `agent-tree --picks` to review navigation history.
  */
 export async function listAllPicks(
-  opts: { root?: string } = {},
+  opts: { root?: string; source?: SessionSourceId } = {},
 ): Promise<SessionPicks[]> {
+  if (opts.source !== undefined) validateSource(opts.source);
+  const sources = opts.source === undefined ? PICK_SOURCES : [opts.source];
   const root = opts.root ?? PICKS_ROOT;
-  const { readdir } = await import('node:fs/promises');
-  let files: string[];
   try {
-    files = await readdir(root);
+    if (!(await lstat(root)).isDirectory()) return [];
   } catch {
     return [];
   }
   const out: SessionPicks[] = [];
-  for (const fname of files) {
-    if (!fname.endsWith('.jsonl')) continue;
-    const sessionId = fname.slice(0, -'.jsonl'.length);
-    const filePath = join(root, fname);
-    let raw: string;
+  for (const source of sources) {
+    const directory = join(root, source);
+    let files: Dirent[];
     try {
-      raw = await readFile(filePath, 'utf8');
+      if (!(await lstat(directory)).isDirectory()) continue;
+      files = await readdir(directory, { withFileTypes: true });
     } catch {
       continue;
     }
-    const picks: Pick[] = [];
-    for (const line of raw.split('\n')) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+    for (const file of files) {
+      if (!file.isFile() || !file.name.endsWith('.jsonl')) continue;
+      const sessionId = file.name.slice(0, -'.jsonl'.length);
+      if (!SESSION_ID_RE.test(sessionId)) continue;
+      let raw: string;
       try {
-        const parsed = JSON.parse(trimmed) as Pick;
-        if (parsed.node_id) picks.push(parsed);
+        raw = await readFile(join(directory, file.name), 'utf8');
       } catch {
-        // ignore
+        continue;
       }
+      const picks: Pick[] = [];
+      for (const line of raw.split('\n')) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed) as Pick;
+          if (parsed.node_id) picks.push(parsed);
+        } catch {
+          // ignore
+        }
+      }
+      if (picks.length > 0) out.push({ source, sessionId, picks });
     }
-    if (picks.length > 0) out.push({ sessionId, picks });
   }
   // Newest session activity first (compare last pick timestamp)
   out.sort((a, b) => {
@@ -120,15 +147,15 @@ export async function listAllPicks(
 }
 
 /**
- * Remove every pick entry for a given (session, node_id) pair. Returns the
- * number of entries removed. Atomic-ish via rewrite-then-rename.
+ * Remove every pick entry for a given (source, session, node_id) tuple.
+ * Returns the number of entries removed. Atomic-ish via rewrite-then-rename.
  */
 export async function removePicksForNode(
   sessionId: string,
   nodeId: string,
-  opts: { root?: string } = {},
+  opts: { root?: string; source?: SessionSourceId } = {},
 ): Promise<number> {
-  const file = picksFileFor(sessionId, opts.root);
+  const file = picksFileFor(sessionId, opts.root, opts.source);
   let raw: string;
   try {
     raw = await readFile(file, 'utf8');
@@ -164,20 +191,19 @@ export async function removePicksForNode(
   const { writeFile, rename } = await import('node:fs/promises');
   const rand = randomBytes(4).toString('hex');
   const tmp = `${file}.tmp-${process.pid}-${Date.now()}-${rand}`;
-  await writeFile(
-    tmp,
-    kept.length > 0 ? kept.join('\n') + '\n' : '',
-    { encoding: 'utf8', mode: 0o600 },
-  );
+  await writeFile(tmp, kept.length > 0 ? kept.join('\n') + '\n' : '', {
+    encoding: 'utf8',
+    mode: 0o600,
+  });
   await rename(tmp, file);
   return removed;
 }
 
 export async function readPicks(
   sessionId: string,
-  opts: { root?: string } = {},
+  opts: { root?: string; source?: SessionSourceId } = {},
 ): Promise<PickIndex> {
-  const file = picksFileFor(sessionId, opts.root);
+  const file = picksFileFor(sessionId, opts.root, opts.source);
   const index: PickIndex = { modesByNode: new Map(), total: 0 };
   let raw: string;
   try {

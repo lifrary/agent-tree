@@ -218,7 +218,7 @@ describe('picks — sessionId validator + atomic delete', () => {
     expect(after.total).toBe(1);
     // The implementation writes a `.tmp-…` sibling then renames; after the
     // rename completes there must be no leftover tmp file.
-    const file = join(root, `${sid}.jsonl`);
+    const file = join(root, 'claude', `${sid}.jsonl`);
     const dir = dirname(file);
     const { readdir } = await import('node:fs/promises');
     const entries = await readdir(dir);

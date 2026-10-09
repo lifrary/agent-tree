@@ -3,7 +3,12 @@ import { lstat, realpath } from 'node:fs/promises';
 import { basename, dirname, extname, resolve } from 'node:path';
 import { detectSessionSource, getSessionSource } from '../sources/index.js';
 import { isFullUuid, isUuidPrefix } from '../sources/files.js';
-import type { DiscoverOptions, SessionEntry, SessionMatch, SessionSourceId } from '../sources/types.js';
+import type {
+  DiscoverOptions,
+  SessionEntry,
+  SessionMatch,
+  SessionSourceId,
+} from '../sources/types.js';
 
 export type { SessionEntry, SessionMatch } from '../sources/types.js';
 
@@ -23,7 +28,10 @@ export async function listSessions(
   return opts.limit === undefined ? sessions : sessions.slice(0, opts.limit);
 }
 
-export async function sessionFromFile(filePath: string, source?: SessionSourceId): Promise<SessionMatch> {
+export async function sessionFromFile(
+  filePath: string,
+  source?: SessionSourceId,
+): Promise<SessionMatch> {
   const jsonlPath = await realpath(resolve(filePath));
   if (extname(jsonlPath) !== '.jsonl') throw new Error('session file must have a .jsonl extension');
   const info = await lstat(jsonlPath);
@@ -71,9 +79,16 @@ export async function findLatestSessionInProject(
 }
 
 function compareSessions(a: SessionEntry, b: SessionEntry): number {
-  return b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0);
+  return (
+    b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0)
+  );
 }
 
 function toSessionMatch(entry: SessionEntry): SessionMatch {
-  return { source: entry.source, sessionId: entry.sessionId, projectDir: entry.projectDir, jsonlPath: entry.jsonlPath };
+  return {
+    source: entry.source,
+    sessionId: entry.sessionId,
+    projectDir: entry.projectDir,
+    jsonlPath: entry.jsonlPath,
+  };
 }

@@ -407,6 +407,16 @@ describe('sessionFromFile', () => {
     });
   });
 
+  it('detects a BOM-prefixed header consistently with the reader', async () => {
+    const file = makeSession(
+      '-project',
+      ID_A,
+      TIME,
+      String.fromCharCode(0xfeff) + '{"type":"permission-mode","sessionId":"' + ID_A + '"}\n',
+    );
+    expect((await sessionFromFile(file)).source).toBe('claude');
+  });
+
   it.each(['user', 'assistant'])(
     'detects Claude from a %s event after blank, invalid and unrecognized lines',
     async (role) => {

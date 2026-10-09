@@ -7,6 +7,8 @@
  * shapes rather than failing the whole run.
  */
 
+import type { SessionSourceId } from './sources/types.js';
+
 // ---------------------------------------------------------------------------
 // Raw ingestion
 // ---------------------------------------------------------------------------
@@ -25,13 +27,7 @@ export interface EventEnvelope {
 }
 
 export type RawEventType =
-  | 'attachment'
-  | 'user'
-  | 'assistant'
-  | 'tool_use'
-  | 'tool_result'
-  | 'system'
-  | 'other';
+  'attachment' | 'user' | 'assistant' | 'tool_use' | 'tool_result' | 'system' | 'other';
 
 /**
  * JSONL `type` values that are event-DAG records and therefore must carry a
@@ -169,14 +165,7 @@ export interface TopicSegment {
 // Mindmap — future (M2+)
 // ---------------------------------------------------------------------------
 
-export type NodeType =
-  | 'root'
-  | 'topic'
-  | 'action'
-  | 'decision'
-  | 'error'
-  | 'dead_end'
-  | 'turn';
+export type NodeType = 'root' | 'topic' | 'action' | 'decision' | 'error' | 'dead_end' | 'turn';
 
 export interface ContextSnapshot {
   mode: 'continue' | 'fork';
@@ -224,6 +213,7 @@ export interface MindMapNode {
 }
 
 export interface MindMap {
+  source: SessionSourceId;
   session_id: string;
   project_path: string;
   generated_at: string;

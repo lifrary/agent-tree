@@ -36,6 +36,10 @@ export async function readDirectory(path: string): Promise<Dirent[]> {
 
 export async function isSameDirectory(path: string, original: Stats): Promise<boolean> {
   const current = await lstatIfPresent(path);
-  return current !== null && current.isDirectory() &&
-    current.dev === original.dev && current.ino === original.ino;
+  return (
+    current !== null &&
+    current.isDirectory() &&
+    current.dev === original.dev &&
+    current.ino === original.ino
+  );
 }

@@ -1,8 +1,9 @@
 import { open } from 'node:fs/promises';
 import { claudeSource } from './claude.js';
+import { codexSource } from './codex.js';
 import type { SessionSource, SessionSourceId } from './types.js';
 
-const sources: readonly SessionSource[] = [claudeSource];
+const sources: readonly SessionSource[] = [claudeSource, codexSource];
 
 export function getSessionSource(id: SessionSourceId = 'claude'): SessionSource {
   const source = sources.find((candidate) => candidate.id === id);
@@ -34,9 +35,15 @@ export async function detectSessionSource(
   for (const line of lines) {
     if (!line.trim()) continue;
     let record: unknown;
-    try { record = JSON.parse(line); } catch { continue; }
+    try {
+      record = JSON.parse(line.trim());
+    } catch {
+      continue;
+    }
     if (!record || typeof record !== 'object' || Array.isArray(record)) continue;
-    const source = sources.find((candidate) => candidate.accepts(record as Record<string, unknown>));
+    const source = sources.find((candidate) =>
+      candidate.accepts(record as Record<string, unknown>),
+    );
     if (!source) continue;
     if (selected && source.id !== selected) {
       throw new Error('Session file does not match the selected source.');

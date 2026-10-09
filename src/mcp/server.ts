@@ -1,4 +1,4 @@
-/** Native MCP tools for discovering, navigating and resuming Claude Code sessions. */
+/** MCP tools for discovering sessions and generating source-independent resume prompts. */
 import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
@@ -23,21 +23,27 @@ import {
 import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
 import { listAllPicks, readPicks, recordPick, removePicksForNode } from '../utils/picks.js';
 import { VERSION } from '../version.js';
+import type { SessionSourceId } from '../sources/types.js';
 
 const logger = createLoggerSync('warn');
+const sourceInput = z
+  .enum(['claude', 'codex'])
+  .optional()
+  .describe('Session source. Discovery defaults to claude; file imports auto-detect.');
 const sessionInput = {
+  source: sourceInput,
   sessionId: z.string().optional().describe('UUID prefix; omit for the latest session in cwd.'),
   file: z
     .string()
     .optional()
-    .describe('Exported Claude Code JSONL path; mutually exclusive with sessionId.'),
+    .describe('Claude Code or Codex JSONL path; mutually exclusive with sessionId.'),
   cwd: z
     .string()
     .min(1)
     .transform((cwd) => resolve(cwd))
     .describe('Caller project directory for session selection and configuration.'),
 };
-type SessionInput = { sessionId?: string; file?: string; cwd: string };
+type SessionInput = { sessionId?: string; file?: string; cwd: string; source?: SessionSourceId };
 const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
 
 function text(value: string): CallToolResult {
@@ -57,17 +63,18 @@ function safely<T>(
   };
 }
 
-async function resolveMatch({ sessionId, file, cwd }: SessionInput): Promise<SessionMatch> {
+async function resolveMatch({ sessionId, file, cwd, source }: SessionInput): Promise<SessionMatch> {
   if (file) {
     if (sessionId) throw new Error('Use either sessionId or file, not both.');
-    return sessionFromFile(file);
+    return sessionFromFile(file, source);
   }
   if (sessionId) {
-    const matches = await locateSession(sessionId);
+    const matches = await locateSession(sessionId, { source });
     if (matches.length > 1) throw new Error('Ambiguous session id; use a longer UUID prefix.');
     if (matches.length === 1) return matches[0];
   } else {
-    const match = (await findLatestSessionInProject(cwd)) ?? (await findLatestSession());
+    const match =
+      (await findLatestSessionInProject(cwd, { source })) ?? (await findLatestSession({ source }));
     if (match) return match;
   }
   throw new Error('No matching session found.');
@@ -86,6 +93,7 @@ export function createServer(): McpServer {
     const { config } = await loadConfig({ projectCwd: input.cwd, logger });
     const info = await stat(match.jsonlPath);
     const key = JSON.stringify([
+      match.source,
       match.jsonlPath,
       info.mtimeMs,
       info.ctimeMs,
@@ -120,8 +128,9 @@ export function createServer(): McpServer {
     'agent_tree_sessions',
     {
       description:
-        'List recent Claude Code sessions without parsing their contents. Returns ids, paths, modification times and sizes.',
+        'List recent sessions for one source (default claude). Codex reads metadata headers only. Returns sources, ids, paths, modification times and sizes.',
       inputSchema: {
+        source: sourceInput,
         cwd: z
           .string()
           .min(1)
@@ -132,11 +141,11 @@ export function createServer(): McpServer {
       },
       annotations: readOnly,
     },
-    safely(async ({ cwd, limit }) => {
+    safely(async ({ cwd, limit, source }) => {
       if (cwd && !(await stat(cwd)).isDirectory()) throw new Error('cwd must name a directory.');
       const { config } = await loadConfig({ projectCwd: cwd, logger });
       const redactor = buildRedactor({}, config, logger);
-      const sessions = redactDeep(await listSessions({ projectCwd: cwd, limit }), redactor);
+      const sessions = redactDeep(await listSessions({ source, projectCwd: cwd, limit }), redactor);
       return { ...text(JSON.stringify({ sessions }, null, 2)), structuredContent: { sessions } };
     }),
   );
@@ -145,7 +154,7 @@ export function createServer(): McpServer {
     'agent_tree_list',
     {
       description:
-        'Render a numbered tree of a Claude Code session, or export its complete redacted mindmap as JSON.',
+        'Render a numbered tree of a Claude Code or Codex session, or export its complete redacted mindmap as JSON.',
       inputSchema: {
         ...sessionInput,
         phasesOnly: z.boolean().optional().describe('Hide sub-actions; show phase headers only.'),
@@ -167,7 +176,7 @@ export function createServer(): McpServer {
         return { ...text(JSON.stringify(mindmap, null, 2)), structuredContent: { mindmap } };
       }
       if (result.isEmpty) return text('Session is empty.');
-      const picks = await readPicks(match.sessionId);
+      const picks = await readPicks(match.sessionId, { source: match.source });
       const tree = renderTextTree(result.mindmap, {
         filter: input.filter,
         groupConsecutive: true,
@@ -181,7 +190,7 @@ export function createServer(): McpServer {
           : '';
       return text(
         result.redactor.apply(
-          `Session ${match.sessionId.slice(0, 8)} (${match.projectDir})\n\n${tree.text}${footer}`,
+          `${match.source} session ${match.sessionId.slice(0, 8)} (${match.projectDir})\n\n${tree.text}${footer}`,
         ),
       );
     }),
@@ -217,8 +226,9 @@ export function createServer(): McpServer {
             ? markdown.slice(0, index) + gitMd + '\n\n' + markdown.slice(index)
             : markdown + '\n\n' + gitMd + '\n';
       }
-      await recordPick(match.sessionId, node.id, input.mode).catch((error) =>
-        logger.warn('pick history write failed', { error: redactor.apply(String(error)) }),
+      await recordPick(match.sessionId, node.id, input.mode, { source: match.source }).catch(
+        (error) =>
+          logger.warn('pick history write failed', { error: redactor.apply(String(error)) }),
       );
       return text(redactor.apply(markdown));
     }),
@@ -229,16 +239,18 @@ export function createServer(): McpServer {
     {
       description:
         'List every recorded pick across every session: session, node, mode and timestamp.',
-      inputSchema: {},
+      inputSchema: { source: sourceInput },
       annotations: readOnly,
     },
-    safely(async () => {
-      const all = await listAllPicks();
+    safely(async ({ source }) => {
+      const all = await listAllPicks({ source });
       if (all.length === 0) return text('No picks recorded yet.');
       const lines: string[] = [];
       let total = 0;
       for (const session of all) {
-        lines.push(`session ${session.sessionId.slice(0, 8)}  (${session.picks.length} picks)`);
+        lines.push(
+          `${session.source} session ${session.sessionId.slice(0, 8)}  (${session.picks.length} picks)`,
+        );
         for (const pick of session.picks) {
           lines.push(`  ${pick.ts}  ${pick.mode}  ${pick.node_id}`);
           total++;
@@ -318,7 +330,7 @@ export function createServer(): McpServer {
       if (result.isEmpty) throw new Error('Session is empty.');
       const node = lookupSnapshot(result.mindmap, input.nodeId, renderTextTree(result.mindmap));
       if (!node) throw new Error('No matching node.');
-      const removed = await removePicksForNode(match.sessionId, node.id);
+      const removed = await removePicksForNode(match.sessionId, node.id, { source: match.source });
       return text(
         removed === 0
           ? `No picks recorded for ${node.id}.`

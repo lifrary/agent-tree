@@ -76,7 +76,9 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
 
   // [1/5] Parsing JSONL
   progress('[1/5] Parsing JSONL...       ');
-  const { meta, events, malformedCount, skippedMetaCount } = await getSessionSource(match.source).read(match.jsonlPath, {
+  const { meta, events, malformedCount, skippedMetaCount } = await getSessionSource(
+    match.source,
+  ).read(match.jsonlPath, {
     logger,
     strict: opts.strict,
   });
@@ -97,6 +99,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   if (events.length === 0) {
     // Caller decides how to surface "empty session" — just return a stub.
     const emptyMindmap: MindMap = {
+      source: match.source,
       session_id: meta.sessionId,
       project_path: '',
       generated_at: new Date().toISOString(),
@@ -153,6 +156,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   // [4/5] Mindmap (heuristic)
   progress('[4/5] Building mindmap...    ');
   const mindmap = buildMindMap(graph, segments, {
+    source: match.source,
     jsonlPath: match.jsonlPath,
     specVersion: SPEC_VERSION,
     redactor,

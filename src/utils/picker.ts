@@ -9,11 +9,13 @@
 import { createInterface } from 'node:readline/promises';
 
 import { listSessions, type SessionMatch, type SessionSelection } from './session_path.js';
+import { defaultRedactor, type Redactor } from './redact.js';
 
 export interface PickOptions extends SessionSelection {
   limit?: number; // default 10
   input?: NodeJS.ReadableStream;
   output?: NodeJS.WritableStream;
+  redactor?: Redactor;
 }
 
 export async function pickSession(opts: PickOptions = {}): Promise<SessionMatch | null> {
@@ -26,11 +28,14 @@ export async function pickSession(opts: PickOptions = {}): Promise<SessionMatch 
   if (candidates.length === 0) return null;
 
   const out = opts.output ?? process.stderr;
-  out.write('Recent Claude Code sessions:\n');
+  const redactor = opts.redactor ?? defaultRedactor();
+  out.write(`Recent ${opts.source === 'codex' ? 'Codex' : 'Claude Code'} sessions:\n`);
   candidates.forEach((c, i) => {
     const when = new Date(c.mtimeMs).toISOString().replace('T', ' ').slice(0, 16);
     out.write(
-      `  ${String(i + 1).padStart(2, ' ')}. ${c.sessionId.slice(0, 8)}  ${when}  ${c.projectDir}\n`,
+      redactor.apply(
+        `  ${String(i + 1).padStart(2, ' ')}. ${c.sessionId.slice(0, 8)}  ${when}  ${c.projectDir}\n`,
+      ),
     );
   });
 
