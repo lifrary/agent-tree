@@ -3337,7 +3337,7 @@ var init_js_yaml = __esm({
 });
 
 // src/cli.ts
-import { resolve as resolve5 } from "node:path";
+import { resolve as resolve7 } from "node:path";
 import { stat } from "node:fs/promises";
 
 // node_modules/commander/lib/error.js
@@ -6709,14 +6709,19 @@ function useColor() {
 var program = new Command();
 
 // src/version.ts
-var VERSION = true ? "0.2.1" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.3.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/cli/options.ts
 function parseCliArgs(argv) {
   const program2 = new Command();
   program2.name("agent-tree").description(
-    "Navigate a Claude Code session as a numbered file-tree in your terminal and resume from any node."
-  ).version(VERSION, "-V, --version", "print agent-tree version").argument("[session-id]", "session UUID or short prefix (e.g. 69c2f35e)").option("--latest", "use the most recently modified session").option("--pick", "interactive picker over recent sessions").option("--file <path>", "read an exported Claude Code JSONL file directly").option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions without analyzing their contents").option("--limit <n>", "maximum sessions to list (default: 20)", positiveInteger).option("--json", "emit a redacted mindmap or session catalog as JSON").option("--strict", "reject malformed JSONL instead of skipping invalid lines").option("--no-llm", "skip LLM labeling and run heuristic-only").option(
+    "Navigate Claude Code or Codex sessions as numbered trees and generate resume prompts."
+  ).version(VERSION, "-V, --version", "print agent-tree version").argument("[session-id]", "session UUID or short prefix (e.g. 69c2f35e)").option("--latest", "use the most recently modified session").option("--pick", "interactive picker over recent sessions").option("--file <path>", "read a Claude Code or Codex JSONL file (auto-detected)").addOption(
+    new Option("--source <source>", "session source (discovery: claude; file: auto)").choices([
+      "claude",
+      "codex"
+    ])
+  ).option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions without analyzing their contents").option("--limit <n>", "maximum sessions to list (default: 20)", positiveInteger).option("--json", "emit a redacted mindmap or session catalog as JSON").option("--strict", "reject malformed JSONL instead of skipping invalid lines").option("--no-llm", "skip LLM labeling and run heuristic-only").option(
     "--dump-json <dir>",
     "dump intermediate artifacts (raw events / graph / segments / tree) as JSON"
   ).option("-v, --verbose", "debug logging").option("--trace", "trace logging (implies --verbose)").option("--dry-run", "run the analysis pipeline but do not emit any output").option("--model <name>", "Anthropic model for LLM labeling").option("--max-llm-tokens <n>", "input token budget ceiling across segments", positiveInteger).option("--redact-strict", "add PII patterns (email/phone/SSN/RRN); card check is always on").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").addOption(new Option("--mode <mode>", "snapshot mode").choices(["continue", "fork"])).option("--tui", "interactive readline prompt with numbered selection").option(
@@ -7087,7 +7092,7 @@ function topN(counts, n) {
 }
 
 // src/cli/pipeline.ts
-import { createHash as createHash2 } from "node:crypto";
+import { createHash as createHash3 } from "node:crypto";
 
 // src/cache/disk.ts
 import { createHash } from "node:crypto";
@@ -7379,7 +7384,7 @@ function errMsg(err) {
   return status === null ? "network or client error" : `HTTP ${status}`;
 }
 function defaultSleep(ms) {
-  return new Promise((resolve6) => setTimeout(resolve6, ms));
+  return new Promise((resolve8) => setTimeout(resolve8, ms));
 }
 
 // src/utils/git.ts
@@ -7408,7 +7413,7 @@ async function getGitContext(cwd) {
   };
 }
 function runGit(cwd, args) {
-  return new Promise((resolve6) => {
+  return new Promise((resolve8) => {
     let settled = false;
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
@@ -7420,7 +7425,7 @@ function runGit(cwd, args) {
         child.kill();
       } catch {
       }
-      resolve6({ ok: false, stdout: "" });
+      resolve8({ ok: false, stdout: "" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => {
       if (capped) return;
@@ -7438,13 +7443,13 @@ function runGit(cwd, args) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve6({ ok: false, stdout: "" });
+      resolve8({ ok: false, stdout: "" });
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve6({ ok: capped || code === 0, stdout });
+      resolve8({ ok: capped || code === 0, stdout });
     });
   });
 }
@@ -7935,6 +7940,13 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger) {
   entry.node.context_snapshot_fork = buildForkSnapshot(snapInput);
 }
 
+// src/sources/index.ts
+import { open as open2 } from "node:fs/promises";
+
+// src/sources/claude.ts
+import { homedir as homedir2 } from "node:os";
+import { join as join2, resolve as resolve2 } from "node:path";
+
 // src/reader/jsonl.ts
 import { createReadStream as createReadStream2 } from "node:fs";
 import { createInterface } from "node:readline";
@@ -8216,6 +8228,606 @@ function coerceRawEvent(obj, invalid) {
   }
 }
 
+// src/sources/files.ts
+import { lstat, readdir } from "node:fs/promises";
+var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function isFullUuid(value) {
+  return UUID_RE.test(value);
+}
+function isUuidPrefix(value) {
+  return /^[0-9a-f-]+$/i.test(value) && value.length >= 4 && value.length <= 36;
+}
+function isMissingPath(error62) {
+  const code = error62?.code;
+  return code === "ENOENT" || code === "ENOTDIR";
+}
+async function lstatIfPresent(path2) {
+  try {
+    return await lstat(path2);
+  } catch (error62) {
+    if (isMissingPath(error62)) return null;
+    throw error62;
+  }
+}
+async function readDirectory(path2) {
+  try {
+    return await readdir(path2, { withFileTypes: true });
+  } catch (error62) {
+    if (isMissingPath(error62)) return [];
+    throw error62;
+  }
+}
+async function isSameDirectory(path2, original) {
+  const current = await lstatIfPresent(path2);
+  return current !== null && current.isDirectory() && current.dev === original.dev && current.ino === original.ino;
+}
+
+// src/sources/claude.ts
+function getProjectsRoot() {
+  return resolve2(process.env.CLAUDE_CONFIG_DIR || join2(homedir2(), ".claude"), "projects");
+}
+function encodeProjectPath(absPath) {
+  return absPath.replace(/[^a-zA-Z0-9]/g, "-");
+}
+async function discover(opts) {
+  const root = resolve2(opts.root ?? getProjectsRoot());
+  const rootInfo = await lstatIfPresent(root);
+  if (!rootInfo?.isDirectory()) return [];
+  const projectDirs = opts.projectCwd === void 0 ? (await readDirectory(root)).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [encodeProjectPath(opts.projectCwd)];
+  const sessions = [];
+  for (const projectDir of projectDirs) {
+    if (!projectDir) continue;
+    const projectPath = join2(root, projectDir);
+    const projectInfo = await lstatIfPresent(projectPath);
+    if (!projectInfo?.isDirectory()) continue;
+    const projectSessions = [];
+    for (const file2 of await readDirectory(projectPath)) {
+      if (!file2.isFile() || !file2.name.endsWith(".jsonl")) continue;
+      const sessionId = file2.name.slice(0, -".jsonl".length);
+      if (!isFullUuid(sessionId)) continue;
+      const jsonlPath = join2(projectPath, file2.name);
+      const info = await lstatIfPresent(jsonlPath);
+      if (!info?.isFile()) continue;
+      projectSessions.push({
+        source: "claude",
+        sessionId,
+        projectDir,
+        jsonlPath,
+        mtimeMs: info.mtimeMs,
+        sizeBytes: info.size
+      });
+    }
+    if (await isSameDirectory(projectPath, projectInfo)) {
+      for (const session of projectSessions) sessions.push(session);
+    }
+  }
+  return await isSameDirectory(root, rootInfo) ? sessions : [];
+}
+var claudeSource = {
+  id: "claude",
+  discover,
+  accepts: (record2) => typeof record2.uuid === "string" && typeof record2.type === "string" || record2.type === "permission-mode" || typeof record2.sessionId === "string" && typeof record2.type === "string",
+  read: readJsonl
+};
+
+// src/sources/codex.ts
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
+import { homedir as homedir3 } from "node:os";
+import { join as join3, resolve as resolve3 } from "node:path";
+
+// src/reader/codex.ts
+import { createHash as createHash2 } from "node:crypto";
+import { createReadStream as createReadStream3 } from "node:fs";
+import { createInterface as createInterface2 } from "node:readline";
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function textField(obj, key, invalid, required2 = true) {
+  const value = obj[key];
+  if (typeof value === "string") return value;
+  if (required2 || value !== void 0) invalid(`${key} must be a string`);
+  return void 0;
+}
+function identifier(obj, key, invalid) {
+  const value = textField(obj, key, invalid);
+  if (value !== void 0 && !value.trim()) {
+    invalid(`${key} must be nonempty`);
+    return void 0;
+  }
+  return value;
+}
+function publicText(value, allowed, invalid) {
+  if (!Array.isArray(value)) {
+    invalid("content must be an array");
+    return [];
+  }
+  const blocks = [];
+  for (const block of value) {
+    if (!isRecord2(block) || typeof block.type !== "string" || !block.type.trim()) {
+      invalid("content blocks require a nonempty string type");
+      continue;
+    }
+    if (!allowed.includes(block.type)) continue;
+    const text = textField(block, "text", invalid);
+    if (text !== void 0) blocks.push({ type: "text", text });
+  }
+  return blocks;
+}
+function blockText(blocks) {
+  return blocks.map((block) => "text" in block && typeof block.text === "string" ? block.text : "").join("\n");
+}
+function patchInput(name, input2) {
+  if (name.split(".").at(-1) !== "apply_patch") return input2;
+  const object2 = isRecord2(input2) ? input2 : void 0;
+  const patch = typeof input2 === "string" ? input2 : object2?.input ?? object2?.patch;
+  if (typeof patch !== "string") return input2;
+  const paths = /* @__PURE__ */ new Set();
+  if (Array.isArray(object2?.paths)) {
+    for (const path2 of object2.paths) if (typeof path2 === "string") paths.add(path2);
+  }
+  for (const line of patch.split("\n")) {
+    const match = /^\*\*\* (?:(?:Add|Update|Delete) File|Move to): (.+?)\r?$/.exec(line);
+    if (match && match[1].trim()) paths.add(match[1].trim());
+  }
+  return { ...object2 ?? { input: patch }, paths: [...paths] };
+}
+function toolCall(payload, invalid) {
+  const name = identifier(payload, "name", invalid);
+  const id = identifier(payload, "call_id", invalid);
+  let input2;
+  if (payload.type === "function_call") {
+    const argumentsText = textField(payload, "arguments", invalid);
+    if (argumentsText === void 0) return null;
+    try {
+      input2 = JSON.parse(argumentsText);
+    } catch {
+      invalid("arguments must contain valid JSON");
+      return null;
+    }
+  } else {
+    input2 = textField(payload, "input", invalid);
+    if (input2 === void 0) return null;
+  }
+  return name && id ? { type: "tool_use", tool_use: { id, name, input: patchInput(name, input2) } } : null;
+}
+function localShell(payload, invalid) {
+  const id = identifier(payload, payload.call_id === void 0 ? "id" : "call_id", invalid);
+  if (!isRecord2(payload.action)) {
+    invalid("action must be an object");
+    return null;
+  }
+  const action = payload.action;
+  const type = identifier(action, "type", invalid);
+  if (type !== "exec") return null;
+  if (!Array.isArray(action.command) || action.command.length === 0 || !action.command.every((part) => typeof part === "string")) {
+    invalid("command must be a nonempty array of strings");
+    return null;
+  }
+  const input2 = { ...action };
+  if (action.working_directory === null) {
+    delete input2.working_directory;
+  } else if (action.working_directory !== void 0 && typeof action.working_directory !== "string") {
+    invalid("working_directory must be a string");
+    delete input2.working_directory;
+  }
+  if (action.timeout_ms === null) {
+    delete input2.timeout_ms;
+  } else if (action.timeout_ms !== void 0 && (typeof action.timeout_ms !== "number" || !Number.isFinite(action.timeout_ms) || action.timeout_ms < 0)) {
+    invalid("timeout_ms must be a nonnegative finite number");
+    delete input2.timeout_ms;
+  }
+  return id ? { type: "tool_use", tool_use: { id, name: "local_shell", input: input2 } } : null;
+}
+function responseItem(payload, invalid) {
+  const type = identifier(payload, "type", invalid);
+  switch (type) {
+    case "message": {
+      const role = identifier(payload, "role", invalid);
+      const content = publicText(payload.content, ["input_text", "output_text"], invalid);
+      return (role === "user" || role === "assistant") && Array.isArray(payload.content) ? { type: role, message: { role, content } } : null;
+    }
+    case "function_call":
+    case "custom_tool_call":
+      return toolCall(payload, invalid);
+    case "function_call_output":
+    case "custom_tool_call_output": {
+      const id = identifier(payload, "call_id", invalid);
+      if (typeof payload.output !== "string" && !Array.isArray(payload.output)) {
+        invalid("output must be a string or an array");
+        return null;
+      }
+      const content = typeof payload.output === "string" ? payload.output : publicText(payload.output, ["input_text", "output_text"], invalid);
+      return id ? { type: "tool_result", tool_result: { tool_use_id: id, content } } : null;
+    }
+    case "local_shell_call":
+      return localShell(payload, invalid);
+    case "reasoning": {
+      const summary = blockText(publicText(payload.summary, ["summary_text"], invalid));
+      return summary ? { type: "system", payload: { type: "reasoning", summary } } : null;
+    }
+    default:
+      return null;
+  }
+}
+function permissionMode(payload, invalid) {
+  for (const key of ["permissionMode", "permission_mode"]) {
+    if (payload[key] !== void 0) return textField(payload, key, invalid);
+  }
+  return typeof payload.approval_policy === "string" ? payload.approval_policy : void 0;
+}
+function recordUuid(raw, lineNo) {
+  const hex3 = createHash2("sha256").update(`codex\0${lineNo}\0`).update(raw).digest("hex");
+  const variant = (parseInt(hex3[16], 16) & 3 | 8).toString(16);
+  return `${hex3.slice(0, 8)}-${hex3.slice(8, 12)}-8${hex3.slice(13, 16)}-${variant}${hex3.slice(17, 20)}-${hex3.slice(20, 32)}`;
+}
+function suppressFallbacks(candidates) {
+  let role;
+  let turnId = "";
+  let boundary = 0;
+  let suppressed = 0;
+  const pending = /* @__PURE__ */ new Map();
+  for (const candidate of candidates) {
+    const origin = candidate.origin;
+    if (!origin) continue;
+    if (boundary !== origin.boundary || (!turnId || !origin.turnId) && (role !== origin.role || turnId !== origin.turnId)) {
+      pending.clear();
+    }
+    role = origin.role;
+    turnId = origin.turnId;
+    boundary = origin.boundary;
+    const key = JSON.stringify([turnId, role, origin.text]);
+    const queue = pending.get(key);
+    if (queue && queue.kind !== origin.kind) {
+      const other = queue.items[queue.next++];
+      if (origin.kind === "canonical" && (candidate.event.type === "user" || candidate.event.type === "assistant") && (other.event.type === "user" || other.event.type === "assistant")) {
+        other.event.message = candidate.event.message;
+      }
+      candidate.suppressed = true;
+      suppressed += 1;
+      if (queue.next === queue.items.length) pending.delete(key);
+    } else if (queue) {
+      queue.items.push(candidate);
+    } else {
+      pending.set(key, { kind: origin.kind, items: [candidate], next: 0 });
+    }
+  }
+  return suppressed;
+}
+async function readCodex(path2, opts = {}) {
+  const { logger, strict = false } = opts;
+  const stream = createReadStream3(path2, { encoding: "utf8" });
+  const lines = createInterface2({ input: stream, crlfDelay: Infinity });
+  const meta3 = { sessionId: "", permissionMode: "" };
+  const context = { cwd: "", gitBranch: "", version: "", entrypoint: "", isSidechain: false };
+  const candidates = [];
+  let turnId = "";
+  let boundary = 0;
+  let malformedCount = 0;
+  let skippedMetaCount = 0;
+  let lineNo = 0;
+  let sawMeta = false;
+  try {
+    for await (const raw of lines) {
+      lineNo += 1;
+      if (!raw.trim()) continue;
+      const issues = /* @__PURE__ */ new Set();
+      const invalid = (reason) => {
+        if (strict) throw new Error(`codex jsonl error at line ${lineNo} \u2014 ${reason}`);
+        issues.add(reason);
+      };
+      let parsed;
+      try {
+        parsed = JSON.parse(raw.trim());
+      } catch {
+        invalid("invalid JSON");
+      }
+      let event = null;
+      let origin;
+      let timestamp = "";
+      let metadata = true;
+      if (parsed !== void 0) {
+        if (!isRecord2(parsed)) {
+          invalid("expected an object");
+        } else {
+          const type = identifier(parsed, "type", invalid);
+          if (type && ["session_meta", "turn_context", "response_item", "event_msg", "compacted"].includes(
+            type
+          )) {
+            timestamp = textField(parsed, "timestamp", invalid) ?? "";
+            if (typeof parsed.timestamp === "string" && !Number.isFinite(Date.parse(timestamp))) {
+              invalid("timestamp must be a valid date");
+            }
+            if (parsed.ordinal !== void 0 && (typeof parsed.ordinal !== "number" || !Number.isSafeInteger(parsed.ordinal) || parsed.ordinal < 0)) {
+              invalid("ordinal must be a nonnegative safe integer");
+            }
+            if (!isRecord2(parsed.payload)) {
+              invalid("payload must be an object");
+            } else {
+              const payload = parsed.payload;
+              switch (type) {
+                case "session_meta": {
+                  const id = identifier(payload, "id", invalid);
+                  if (id && !isFullUuid(id)) invalid("session id must be a UUID");
+                  if (payload.session_id !== void 0 && (typeof payload.session_id !== "string" || !isFullUuid(payload.session_id))) {
+                    invalid("root session id must be a UUID");
+                  }
+                  if (id && isFullUuid(id)) {
+                    if (meta3.sessionId && id.toLowerCase() !== meta3.sessionId.toLowerCase()) {
+                      invalid("session metadata id changed");
+                    } else {
+                      meta3.sessionId = id;
+                    }
+                  }
+                  const cwd = identifier(payload, "cwd", invalid);
+                  if (cwd !== void 0) context.cwd = cwd;
+                  const version2 = textField(payload, "cli_version", invalid, false);
+                  if (version2 !== void 0) context.version = version2;
+                  if (payload.git !== void 0 && payload.git !== null) {
+                    if (!isRecord2(payload.git)) invalid("git must be an object");
+                    else if (payload.git.branch !== null) {
+                      const branch = textField(payload.git, "branch", invalid, false);
+                      if (branch !== void 0) context.gitBranch = branch;
+                    }
+                  }
+                  context.entrypoint = typeof payload.source === "string" ? payload.source : "";
+                  context.isSidechain = payload.source === "subagent" || isRecord2(payload.source) && Object.hasOwn(payload.source, "subagent");
+                  const permission = permissionMode(payload, invalid);
+                  if (permission !== void 0) meta3.permissionMode = permission;
+                  metadata = sawMeta;
+                  sawMeta = true;
+                  break;
+                }
+                case "turn_context": {
+                  const cwd = identifier(payload, "cwd", invalid);
+                  if (cwd !== void 0) context.cwd = cwd;
+                  turnId = "";
+                  if (payload.turn_id !== void 0) {
+                    const id = identifier(payload, "turn_id", invalid);
+                    if (id !== void 0) turnId = id;
+                  }
+                  const permission = permissionMode(payload, invalid);
+                  if (permission !== void 0) meta3.permissionMode = permission;
+                  break;
+                }
+                case "response_item":
+                  if (typeof payload.type === "string" && (payload.type.endsWith("_call") || payload.type.endsWith("_call_output"))) {
+                    boundary += 1;
+                  }
+                  event = responseItem(payload, invalid);
+                  if (event?.type === "user" || event?.type === "assistant") {
+                    origin = {
+                      kind: "canonical",
+                      role: event.type,
+                      turnId,
+                      boundary,
+                      text: blockText(event.message.content)
+                    };
+                  }
+                  break;
+                case "event_msg": {
+                  const eventType = identifier(payload, "type", invalid);
+                  if (payload.call_id !== void 0) boundary += 1;
+                  if (payload.turn_id !== void 0 && typeof payload.turn_id === "string")
+                    turnId = payload.turn_id;
+                  if (eventType === "user_message" || eventType === "agent_message") {
+                    const text = textField(payload, "message", invalid);
+                    if (text !== void 0) {
+                      const role = eventType === "user_message" ? "user" : "assistant";
+                      event = { type: role, message: { role, content: [{ type: "text", text }] } };
+                      origin = { kind: "fallback", role, text, turnId, boundary };
+                    }
+                  }
+                  break;
+                }
+                case "compacted": {
+                  boundary += 1;
+                  const message = textField(payload, "message", invalid);
+                  if (message !== void 0)
+                    event = { type: "system", payload: { type: "compaction", message } };
+                  break;
+                }
+              }
+            }
+          }
+        }
+      }
+      if (event) {
+        candidates.push({
+          event: {
+            ...context,
+            uuid: recordUuid(raw, lineNo),
+            parentUuid: null,
+            timestamp,
+            sessionId: meta3.sessionId,
+            userType: "",
+            ...event
+          },
+          origin
+        });
+      } else if (metadata && issues.size === 0) {
+        skippedMetaCount += 1;
+      }
+      if (issues.size > 0) {
+        malformedCount += 1;
+        logger?.warn("malformed codex jsonl line; recovered valid fields where possible", {
+          lineNo,
+          reasons: [...issues]
+        });
+      }
+    }
+  } finally {
+    lines.close();
+    stream.destroy();
+  }
+  skippedMetaCount += suppressFallbacks(candidates);
+  const events = [];
+  let parentUuid = null;
+  for (const candidate of candidates) {
+    if (candidate.suppressed) continue;
+    candidate.event.parentUuid = parentUuid;
+    events.push(candidate.event);
+    parentUuid = candidate.event.uuid;
+  }
+  return { meta: meta3, events, malformedCount, skippedMetaCount };
+}
+
+// src/sources/codex.ts
+var ROLLOUT_NAME = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}-\d{2})?-([0-9a-fA-F-]{36})\.jsonl$/;
+var DATE_DIRECTORIES = [/^\d{4}$/, /^(?:0[1-9]|1[0-2])$/, /^(?:0[1-9]|[12]\d|3[01])$/];
+var HEADER_LIMIT = 1024 * 1024;
+function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+async function sessionEntry(jsonlPath, filenameId) {
+  const original = await lstatIfPresent(jsonlPath);
+  if (!original?.isFile()) return null;
+  let handle;
+  try {
+    handle = await open(
+      jsonlPath,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
+    const info = await handle.stat();
+    if (!info.isFile() || info.dev !== original.dev || info.ino !== original.ino) return null;
+    const chunks = [];
+    let length = 0;
+    let finished = false;
+    while (length < HEADER_LIMIT) {
+      const buffer = Buffer.allocUnsafe(Math.min(16 * 1024, HEADER_LIMIT - length));
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, null);
+      if (bytesRead === 0) {
+        finished = true;
+        break;
+      }
+      const newline = buffer.subarray(0, bytesRead).indexOf(10);
+      const used = newline === -1 ? bytesRead : newline;
+      chunks.push(buffer.subarray(0, used));
+      length += used;
+      if (newline !== -1) {
+        finished = true;
+        break;
+      }
+    }
+    if (!finished) return null;
+    let header;
+    try {
+      header = JSON.parse(Buffer.concat(chunks, length).toString("utf8").trim());
+    } catch {
+      return null;
+    }
+    if (!isRecord3(header) || header.type !== "session_meta" || !isRecord3(header.payload))
+      return null;
+    const meta3 = header.payload;
+    const id = meta3.id;
+    if (typeof id !== "string" || !isFullUuid(id) || id.toLowerCase() !== filenameId.toLowerCase())
+      return null;
+    if (meta3.session_id !== void 0 && (typeof meta3.session_id !== "string" || !isFullUuid(meta3.session_id)))
+      return null;
+    if (typeof meta3.cwd !== "string" || !meta3.cwd.trim()) return null;
+    if (meta3.source === "subagent" || isRecord3(meta3.source) && Object.hasOwn(meta3.source, "subagent"))
+      return null;
+    const current = await lstatIfPresent(jsonlPath);
+    if (!current?.isFile() || current.dev !== info.dev || current.ino !== info.ino) return null;
+    return {
+      source: "codex",
+      sessionId: id,
+      projectDir: meta3.cwd,
+      jsonlPath,
+      mtimeMs: info.mtimeMs,
+      sizeBytes: info.size
+    };
+  } catch (error62) {
+    if (isMissingPath(error62) || error62?.code === "ELOOP")
+      return null;
+    throw error62;
+  } finally {
+    await handle?.close();
+  }
+}
+async function discover2(options) {
+  const root = resolve3(
+    options.root ?? resolve3(process.env.CODEX_HOME || join3(homedir3(), ".codex"), "sessions")
+  );
+  const projectCwd = options.projectCwd === void 0 ? void 0 : resolve3(options.projectCwd);
+  async function visit3(directory, depth) {
+    const original = await lstatIfPresent(directory);
+    if (!original?.isDirectory()) return [];
+    const sessions = [];
+    for (const entry of await readDirectory(directory)) {
+      if (depth < DATE_DIRECTORIES.length) {
+        if (entry.isDirectory() && DATE_DIRECTORIES[depth].test(entry.name)) {
+          for (const session of await visit3(join3(directory, entry.name), depth + 1))
+            sessions.push(session);
+        }
+      } else if (entry.isFile()) {
+        const match = ROLLOUT_NAME.exec(entry.name);
+        if (!match || !isFullUuid(match[1])) continue;
+        const session = await sessionEntry(join3(directory, entry.name), match[1]);
+        if (session && (projectCwd === void 0 || resolve3(session.projectDir) === projectCwd)) {
+          sessions.push(session);
+        }
+      }
+    }
+    return await isSameDirectory(directory, original) ? sessions : [];
+  }
+  return visit3(root, 0);
+}
+var codexSource = {
+  id: "codex",
+  discover: discover2,
+  accepts: (record2) => typeof record2.type === "string" && ["session_meta", "turn_context", "response_item", "event_msg", "compacted"].includes(
+    record2.type
+  ) && isRecord3(record2.payload),
+  read: readCodex
+};
+
+// src/sources/index.ts
+var sources = [claudeSource, codexSource];
+function getSessionSource(id = "claude") {
+  const source = sources.find((candidate) => candidate.id === id);
+  if (!source) throw new Error("Unsupported session source.");
+  return source;
+}
+async function detectSessionSource(path2, selected) {
+  const file2 = await open2(path2, "r");
+  const buffer = Buffer.alloc(1024 * 1024);
+  let bytes = 0;
+  try {
+    while (bytes < buffer.length) {
+      const chunk = await file2.read(buffer, bytes, buffer.length - bytes, bytes);
+      if (chunk.bytesRead === 0) break;
+      bytes += chunk.bytesRead;
+    }
+  } finally {
+    await file2.close();
+  }
+  const text = buffer.toString("utf8", 0, bytes);
+  const lines = text.split("\n");
+  if (bytes === buffer.length) lines.pop();
+  for (const line of lines) {
+    if (!line.trim()) continue;
+    let record2;
+    try {
+      record2 = JSON.parse(line.trim());
+    } catch {
+      continue;
+    }
+    if (!record2 || typeof record2 !== "object" || Array.isArray(record2)) continue;
+    const source = sources.find(
+      (candidate) => candidate.accepts(record2)
+    );
+    if (!source) continue;
+    if (selected && source.id !== selected) {
+      throw new Error("Session file does not match the selected source.");
+    }
+    return source.id;
+  }
+  if (selected) return getSessionSource(selected).id;
+  if (bytes < buffer.length && !text.trim()) return "claude";
+  throw new Error("Cannot identify session format; select --source explicitly.");
+}
+
 // src/tree/builder.ts
 function buildMindMap(graph, segments, opts) {
   const generatedAt = opts.generatedAt ?? (/* @__PURE__ */ new Date()).toISOString();
@@ -8364,6 +8976,7 @@ function buildMindMap(graph, segments, opts) {
     (e) => e.type === "user" || e.type === "assistant"
   ).length;
   return {
+    source: opts.source ?? "claude",
     session_id: sessionId,
     project_path: selectedEvents[0]?.cwd ?? "",
     generated_at: generatedAt,
@@ -8469,10 +9082,8 @@ function deriveSegmentLabel(seg, events, redactor) {
   const topFile = seg.dominant_files[0];
   const topTool = seg.dominant_tools[0];
   const eventCount = seg.event_uuids.length;
-  if (topFile && topTool) return truncate3(`${basename(topFile)} (${topTool})`, 60);
-  if (topFile) return truncate3(basename(topFile), 60);
-  if (topTool) return truncate3(topTool, 60);
-  return `${eventCount} events`;
+  const label = topFile && topTool ? `${basename(topFile)} (${topTool})` : topFile ? basename(topFile) : topTool ?? `${eventCount} events`;
+  return truncate3(redactor ? redactor.apply(label) : label, 60);
 }
 function looksLikeSystemNoise(text) {
   const t = text.trim();
@@ -8496,7 +9107,7 @@ function deriveSegmentSummary(seg) {
   return `events ${seg.start_index}\u2013${seg.end_index}${reasons}${files ? ` \xB7 files: ${files}` : ""}${tools ? ` \xB7 tools: ${tools}` : ""}`;
 }
 function deriveSessionTitle(events, sessionId, override, redactor) {
-  if (override) return truncate3(override, 60);
+  if (override) return truncate3(redactor ? redactor.apply(override) : override, 60);
   const firstSignificant = firstSignificantUserText(events);
   const firstUserText = firstSignificant ?? firstUserMessageText(events);
   if (firstUserText) {
@@ -8848,143 +9459,10 @@ function luhnValid(digits) {
   return sum % 10 === 0;
 }
 
-// src/utils/session_path.ts
-import { lstat, readdir, realpath } from "node:fs/promises";
-import { homedir as homedir2 } from "node:os";
-import { basename as basename2, dirname, extname, join as join2, resolve as resolve2 } from "node:path";
-function getProjectsRoot() {
-  return resolve2(process.env.CLAUDE_CONFIG_DIR || join2(homedir2(), ".claude"), "projects");
-}
-function encodeProjectPath(absPath) {
-  return absPath.replace(/[^a-zA-Z0-9]/g, "-");
-}
-var UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
-var UUID_LOOSE = /^[0-9a-f-]+$/i;
-function isFullUuid(s) {
-  return UUID_RE.test(s);
-}
-function isUuidPrefix(s) {
-  return UUID_LOOSE.test(s) && s.length >= 4 && s.length <= 36;
-}
-async function listSessions(opts = {}) {
-  if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
-    throw new RangeError("session limit must be a nonnegative safe integer");
-  }
-  if (opts.limit === 0) return [];
-  const root = resolve2(opts.projectsRoot ?? getProjectsRoot());
-  const rootInfo = await lstatIfPresent(root);
-  if (!rootInfo?.isDirectory()) return [];
-  const projectDirs = opts.projectCwd === void 0 ? (await readDirectory(root)).filter((entry) => entry.isDirectory()).map((entry) => entry.name) : [encodeProjectPath(opts.projectCwd)];
-  const sessions = [];
-  for (const projectDir of projectDirs) {
-    if (!projectDir) continue;
-    const projectPath = join2(root, projectDir);
-    const projectInfo = await lstatIfPresent(projectPath);
-    if (!projectInfo?.isDirectory()) continue;
-    const projectSessions = [];
-    for (const file2 of await readDirectory(projectPath)) {
-      if (!file2.isFile() || !file2.name.endsWith(".jsonl")) continue;
-      const sessionId = file2.name.slice(0, -".jsonl".length);
-      if (!isFullUuid(sessionId)) continue;
-      const jsonlPath = join2(projectPath, file2.name);
-      const info = await lstatIfPresent(jsonlPath);
-      if (!info?.isFile()) continue;
-      projectSessions.push({
-        sessionId,
-        projectDir,
-        jsonlPath,
-        mtimeMs: info.mtimeMs,
-        sizeBytes: info.size
-      });
-    }
-    if (await isSameDirectory(projectPath, projectInfo)) {
-      for (const session of projectSessions) sessions.push(session);
-    }
-  }
-  if (!await isSameDirectory(root, rootInfo)) return [];
-  sessions.sort(compareSessions);
-  return opts.limit === void 0 ? sessions : sessions.slice(0, opts.limit);
-}
-async function sessionFromFile(filePath) {
-  const jsonlPath = await realpath(resolve2(filePath));
-  if (extname(jsonlPath) !== ".jsonl") {
-    throw new Error("session file must have a .jsonl extension");
-  }
-  const info = await lstat(jsonlPath);
-  if (!info.isFile()) {
-    throw new Error("session file must be a regular file");
-  }
-  return {
-    sessionId: basename2(jsonlPath, ".jsonl"),
-    projectDir: basename2(dirname(jsonlPath)),
-    jsonlPath
-  };
-}
-async function locateSession(sessionIdOrPrefix, opts = {}) {
-  const prefix = sessionIdOrPrefix.toLowerCase();
-  if (!isUuidPrefix(prefix) && !isFullUuid(prefix)) {
-    throw new Error(`session id "${sessionIdOrPrefix}" is not a valid UUID or prefix`);
-  }
-  const matches = (await listSessions({ projectsRoot: opts.projectsRoot })).filter(
-    (session) => session.sessionId.toLowerCase().startsWith(prefix)
-  );
-  matches.sort((a, b) => {
-    if (opts.projectHint) {
-      const aHit = a.projectDir === opts.projectHint ? 1 : 0;
-      const bHit = b.projectDir === opts.projectHint ? 1 : 0;
-      if (aHit !== bHit) return bHit - aHit;
-    }
-    return compareSessions(a, b);
-  });
-  return matches.map(toSessionMatch);
-}
-async function findLatestSession(projectsRoot = getProjectsRoot()) {
-  const [latest] = await listSessions({ projectsRoot, limit: 1 });
-  return latest ? toSessionMatch(latest) : null;
-}
-async function findLatestSessionInProject(cwd, projectsRoot = getProjectsRoot()) {
-  const [latest] = await listSessions({ projectsRoot, projectCwd: cwd, limit: 1 });
-  return latest ? toSessionMatch(latest) : null;
-}
-function compareSessions(a, b) {
-  return b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0);
-}
-function toSessionMatch(entry) {
-  return {
-    sessionId: entry.sessionId,
-    projectDir: entry.projectDir,
-    jsonlPath: entry.jsonlPath
-  };
-}
-function isMissingPath(error62) {
-  const code = error62?.code;
-  return code === "ENOENT" || code === "ENOTDIR";
-}
-async function lstatIfPresent(path2) {
-  try {
-    return await lstat(path2);
-  } catch (error62) {
-    if (isMissingPath(error62)) return null;
-    throw error62;
-  }
-}
-async function readDirectory(path2) {
-  try {
-    return await readdir(path2, { withFileTypes: true });
-  } catch (error62) {
-    if (isMissingPath(error62)) return [];
-    throw error62;
-  }
-}
-async function isSameDirectory(path2, original) {
-  const current = await lstatIfPresent(path2);
-  return current !== null && current.isDirectory() && current.dev === original.dev && current.ino === original.ino;
-}
-
 // src/config/loader.ts
 import { readFile as readFile2 } from "node:fs/promises";
-import { homedir as homedir3 } from "node:os";
-import { join as join3, resolve as resolve3 } from "node:path";
+import { homedir as homedir4 } from "node:os";
+import { join as join4, resolve as resolve4 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -13812,9 +14290,9 @@ function partPattern(schema) {
     return own2;
   }
   if (def.options) {
-    const sources = def.options.map(partPattern);
-    if (sources.every(Boolean))
-      return `^(${sources.map((s) => cleanRegex(s)).join("|")})$`;
+    const sources2 = def.options.map(partPattern);
+    if (sources2.every(Boolean))
+      return `^(${sources2.map((s) => cleanRegex(s)).join("|")})$`;
   }
   return leafPattern(schema);
 }
@@ -14012,7 +14490,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve6) {
+function isRecursive(inst, stack, resolve8) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -14022,7 +14500,7 @@ function isRecursive(inst, stack, resolve6) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve6);
+      const answer = isRecursive(child, stack, resolve8);
       if (answer > result)
         result = answer;
     }
@@ -14033,7 +14511,7 @@ function isRecursive(inst, stack, resolve6) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve6) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve8) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -14097,7 +14575,7 @@ function isRecursive(inst, stack, resolve6) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve6 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve8 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -14161,7 +14639,7 @@ function bucketFor(state, inst) {
   return bucket;
 }
 var handoff;
-var open = [];
+var open3 = [];
 var memo = {
   alloc(_inst, payload, empty) {
     const bucket = handoff;
@@ -14170,7 +14648,7 @@ var memo = {
     handoff = void 0;
     const entry = { value: empty, issues: null };
     bucket.set(payload.value, entry);
-    open.push(entry);
+    open3.push(entry);
     return empty;
   },
   guard(inst) {
@@ -14241,10 +14719,10 @@ var memo = {
           return payload;
         }
         handoff = bucket;
-        const depth = open.length;
+        const depth = open3.length;
         const result = base(payload, ctx);
         handoff = void 0;
-        const entry = open.length > depth ? open.pop() : void 0;
+        const entry = open3.length > depth ? open3.pop() : void 0;
         if (result instanceof Promise) {
           return result.then((r) => {
             if (entry)
@@ -24549,8 +25027,8 @@ function _stringFormat(Class2, format, fnOrRegex, _params = {}) {
 }
 
 // node_modules/zod/v4/core/to-json-schema.js
-function assignProps(target, ...sources) {
-  for (const source of sources) {
+function assignProps(target, ...sources2) {
+  for (const source of sources2) {
     for (const key of Reflect.ownKeys(source)) {
       if (Object.prototype.propertyIsEnumerable.call(source, key)) {
         assignProp(target, key, source[key]);
@@ -28737,7 +29215,7 @@ var DEFAULT_CONFIG = {
   }
 };
 function parseConfigLayer(source, warn) {
-  if (!isRecord2(source)) {
+  if (!isRecord4(source)) {
     warn?.("ignored invalid config root: expected an object");
     return null;
   }
@@ -28748,7 +29226,7 @@ function parseConfigLayer(source, warn) {
       continue;
     }
     if (value === void 0) continue;
-    if (!isRecord2(value)) {
+    if (!isRecord4(value)) {
       warn?.(`ignored invalid config section ${section}: expected an object`);
       continue;
     }
@@ -28781,7 +29259,7 @@ function mergeConfig(target, source) {
   }
   return out;
 }
-function isRecord2(v) {
+function isRecord4(v) {
   if (typeof v !== "object" || v === null || Array.isArray(v)) return false;
   const prototype = Object.getPrototypeOf(v);
   return prototype === Object.prototype || prototype === null;
@@ -28798,7 +29276,7 @@ function formatPath(parts) {
 }
 
 // src/config/loader.ts
-var USER_CONFIG_DEFAULT = join3(homedir3(), ".config", "agent-tree", "config.yaml");
+var USER_CONFIG_DEFAULT = join4(homedir4(), ".config", "agent-tree", "config.yaml");
 function envToPartial(env, logger) {
   const out = {};
   const llm = {};
@@ -28861,7 +29339,7 @@ async function loadConfig(opts = {}) {
   const env = opts.env ?? process.env;
   const projectCwd = opts.projectCwd ?? process.cwd();
   const userPath = opts.userConfigPath ?? USER_CONFIG_DEFAULT;
-  const projectPath = resolve3(projectCwd, ".agent-tree.yaml");
+  const projectPath = resolve4(projectCwd, ".agent-tree.yaml");
   const [userYaml, projectYaml] = await Promise.all([
     readYamlIfPresent(userPath, "user", opts.logger),
     readYamlIfPresent(projectPath, "project", opts.logger)
@@ -28884,10 +29362,10 @@ async function loadConfig(opts = {}) {
 function expandPath(template, projectCwd) {
   let p = template;
   if (p.startsWith("~/") || p === "~") {
-    p = join3(homedir3(), p.slice(1));
+    p = join4(homedir4(), p.slice(1));
   }
   p = p.replace("{project}", projectCwd);
-  return resolve3(p);
+  return resolve4(p);
 }
 
 // src/cli/pipeline.ts
@@ -28902,6 +29380,7 @@ async function runPipeline(deps) {
   const cacheHash = await computeInputHash({
     jsonlPath: match.jsonlPath,
     configJson: JSON.stringify({
+      source: match.source,
       config: config2,
       llm: opts.llm !== false,
       model: opts.model,
@@ -28912,12 +29391,14 @@ async function runPipeline(deps) {
     specVersion: SPEC_VERSION
   });
   progress("[1/5] Parsing JSONL...       ");
-  const { meta: meta3, events, malformedCount, skippedMetaCount } = await readJsonl(match.jsonlPath, {
+  const { meta: meta3, events, malformedCount, skippedMetaCount } = await getSessionSource(
+    match.source
+  ).read(match.jsonlPath, {
     logger,
     strict: opts.strict
   });
   if (!isFullUuid(meta3.sessionId)) {
-    meta3.sessionId = createHash2("sha256").update(match.jsonlPath).digest("hex").slice(0, 32);
+    meta3.sessionId = createHash3("sha256").update(match.jsonlPath).digest("hex").slice(0, 32);
   }
   progress(`\u2714 ${events.length} events`);
   if (malformedCount > 0) progress(`  (${malformedCount} malformed)`);
@@ -28930,6 +29411,7 @@ async function runPipeline(deps) {
   }
   if (events.length === 0) {
     const emptyMindmap = {
+      source: match.source,
       session_id: meta3.sessionId,
       project_path: "",
       generated_at: (/* @__PURE__ */ new Date()).toISOString(),
@@ -28982,6 +29464,7 @@ async function runPipeline(deps) {
 `);
   progress("[4/5] Building mindmap...    ");
   const mindmap = buildMindMap(graph, segments, {
+    source: match.source,
     jsonlPath: match.jsonlPath,
     specVersion: SPEC_VERSION,
     redactor
@@ -29136,7 +29619,7 @@ _(no events were parsed.)_
 
 // src/cli/modes.ts
 import { mkdir as mkdir3, writeFile as writeFile2 } from "node:fs/promises";
-import { resolve as resolve4 } from "node:path";
+import { resolve as resolve5 } from "node:path";
 
 // src/render/text.ts
 var DEFAULT_MAX_WIDTH = 90;
@@ -29398,7 +29881,7 @@ function findNodeById(node2, id) {
 }
 
 // src/cli/tui.ts
-import { createInterface as createInterface2 } from "node:readline/promises";
+import { createInterface as createInterface3 } from "node:readline/promises";
 async function runTui(mindmap, opts = {}) {
   const out = opts.output ?? process.stderr;
   const inn = opts.input ?? process.stdin;
@@ -29412,7 +29895,7 @@ async function runTui(mindmap, opts = {}) {
 
 `
   );
-  const rl = createInterface2({ input: inn, output: out });
+  const rl = createInterface3({ input: inn, output: out });
   const controller = new AbortController();
   const abort = () => controller.abort();
   rl.once("SIGINT", abort);
@@ -29456,19 +29939,19 @@ import { platform } from "node:os";
 function copyToClipboard(text) {
   const cmd = pickCommand();
   if (!cmd) return Promise.resolve({ ok: false, reason: "no clipboard tool detected" });
-  return new Promise((resolve6) => {
+  return new Promise((resolve8) => {
     try {
       const child = spawn2(cmd.command, cmd.args, { stdio: ["pipe", "ignore", "ignore"] });
       child.on("error", (err) => {
-        resolve6({ ok: false, command: cmd.command, reason: err.message });
+        resolve8({ ok: false, command: cmd.command, reason: err.message });
       });
       child.on("exit", (code) => {
-        if (code === 0) resolve6({ ok: true, command: cmd.command });
-        else resolve6({ ok: false, command: cmd.command, reason: `exit ${code}` });
+        if (code === 0) resolve8({ ok: true, command: cmd.command });
+        else resolve8({ ok: false, command: cmd.command, reason: `exit ${code}` });
       });
       child.stdin?.end(text, "utf8");
     } catch (err) {
-      resolve6({
+      resolve8({
         ok: false,
         command: cmd.command,
         reason: err instanceof Error ? err.message : String(err)
@@ -29489,7 +29972,7 @@ function pickCommand() {
 }
 
 // src/utils/safe_path.ts
-import { realpath as realpath2 } from "node:fs/promises";
+import { realpath } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 async function safeGitCwd(eventsCwd, callerCwd) {
   for (const candidate of [eventsCwd, callerCwd]) {
@@ -29497,7 +29980,7 @@ async function safeGitCwd(eventsCwd, callerCwd) {
       continue;
     }
     try {
-      const real = await realpath2(candidate);
+      const real = await realpath(candidate);
       if (isAbsolute(real)) return real;
     } catch {
     }
@@ -29507,54 +29990,71 @@ async function safeGitCwd(eventsCwd, callerCwd) {
 
 // src/utils/picks.ts
 import { randomBytes } from "node:crypto";
-import { appendFile, mkdir as mkdir2, readFile as readFile3 } from "node:fs/promises";
-import { homedir as homedir4 } from "node:os";
-import { dirname as dirname2, join as join4 } from "node:path";
-var PICKS_ROOT = join4(homedir4(), ".cache", "agent-tree", "picks");
+import { appendFile, lstat as lstat2, mkdir as mkdir2, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
+import { homedir as homedir5 } from "node:os";
+import { dirname, join as join5 } from "node:path";
+var PICKS_ROOT = join5(homedir5(), ".cache", "agent-tree", "picks");
+var PICK_SOURCES = ["claude", "codex"];
 var SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
-function picksFileFor(sessionId, root = PICKS_ROOT) {
-  if (!SESSION_ID_RE.test(sessionId)) {
+function validateSource(source) {
+  if (source !== "claude" && source !== "codex") {
+    throw new Error(`refusing to compose picks path for invalid source "${source}"`);
+  }
+}
+function picksFileFor(sessionId, root = PICKS_ROOT, source = "claude") {
+  validateSource(source);
+  if (typeof sessionId !== "string" || !SESSION_ID_RE.test(sessionId)) {
     throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
   }
-  return join4(root, `${sessionId}.jsonl`);
+  return join5(root, source, `${sessionId}.jsonl`);
 }
 async function recordPick(sessionId, nodeId, mode, opts = {}) {
-  const file2 = picksFileFor(sessionId, opts.root);
-  await mkdir2(dirname2(file2), { recursive: true, mode: 448 });
+  const file2 = picksFileFor(sessionId, opts.root, opts.source);
+  await mkdir2(dirname(file2), { recursive: true, mode: 448 });
   const entry = { node_id: nodeId, mode, ts: (/* @__PURE__ */ new Date()).toISOString() };
   await appendFile(file2, JSON.stringify(entry) + "\n", "utf8");
 }
 async function listAllPicks(opts = {}) {
+  if (opts.source !== void 0) validateSource(opts.source);
+  const sources2 = opts.source === void 0 ? PICK_SOURCES : [opts.source];
   const root = opts.root ?? PICKS_ROOT;
-  const { readdir: readdir2 } = await import("node:fs/promises");
-  let files;
   try {
-    files = await readdir2(root);
+    if (!(await lstat2(root)).isDirectory()) return [];
   } catch {
     return [];
   }
   const out = [];
-  for (const fname of files) {
-    if (!fname.endsWith(".jsonl")) continue;
-    const sessionId = fname.slice(0, -".jsonl".length);
-    const filePath = join4(root, fname);
-    let raw;
+  for (const source of sources2) {
+    const directory = join5(root, source);
+    let files;
     try {
-      raw = await readFile3(filePath, "utf8");
+      if (!(await lstat2(directory)).isDirectory()) continue;
+      files = await readdir2(directory, { withFileTypes: true });
     } catch {
       continue;
     }
-    const picks = [];
-    for (const line of raw.split("\n")) {
-      const trimmed = line.trim();
-      if (!trimmed) continue;
+    for (const file2 of files) {
+      if (!file2.isFile() || !file2.name.endsWith(".jsonl")) continue;
+      const sessionId = file2.name.slice(0, -".jsonl".length);
+      if (!SESSION_ID_RE.test(sessionId)) continue;
+      let raw;
       try {
-        const parsed = JSON.parse(trimmed);
-        if (parsed.node_id) picks.push(parsed);
+        raw = await readFile3(join5(directory, file2.name), "utf8");
       } catch {
+        continue;
       }
+      const picks = [];
+      for (const line of raw.split("\n")) {
+        const trimmed = line.trim();
+        if (!trimmed) continue;
+        try {
+          const parsed = JSON.parse(trimmed);
+          if (parsed.node_id) picks.push(parsed);
+        } catch {
+        }
+      }
+      if (picks.length > 0) out.push({ source, sessionId, picks });
     }
-    if (picks.length > 0) out.push({ sessionId, picks });
   }
   out.sort((a, b) => {
     const ta = a.picks[a.picks.length - 1]?.ts ?? "";
@@ -29564,7 +30064,7 @@ async function listAllPicks(opts = {}) {
   return out;
 }
 async function removePicksForNode(sessionId, nodeId, opts = {}) {
-  const file2 = picksFileFor(sessionId, opts.root);
+  const file2 = picksFileFor(sessionId, opts.root, opts.source);
   let raw;
   try {
     raw = await readFile3(file2, "utf8");
@@ -29592,16 +30092,15 @@ async function removePicksForNode(sessionId, nodeId, opts = {}) {
   const { writeFile: writeFile3, rename } = await import("node:fs/promises");
   const rand = randomBytes(4).toString("hex");
   const tmp = `${file2}.tmp-${process.pid}-${Date.now()}-${rand}`;
-  await writeFile3(
-    tmp,
-    kept.length > 0 ? kept.join("\n") + "\n" : "",
-    { encoding: "utf8", mode: 384 }
-  );
+  await writeFile3(tmp, kept.length > 0 ? kept.join("\n") + "\n" : "", {
+    encoding: "utf8",
+    mode: 384
+  });
   await rename(tmp, file2);
   return removed;
 }
 async function readPicks(sessionId, opts = {}) {
-  const file2 = picksFileFor(sessionId, opts.root);
+  const file2 = picksFileFor(sessionId, opts.root, opts.source);
   const index = { modesByNode: /* @__PURE__ */ new Map(), total: 0 };
   let raw;
   try {
@@ -29633,7 +30132,7 @@ async function runListMode(ctx) {
     process.stdout.write(JSON.stringify(redactDeep(ctx.mindmap, ctx.redactor), null, 2) + "\n");
     return 0;
   }
-  const picks = await readPicks(ctx.match.sessionId);
+  const picks = await readPicks(ctx.match.sessionId, { source: ctx.match.source });
   const tree = renderTextTree(ctx.mindmap, {
     filter: ctx.opts.filter,
     groupConsecutive: ctx.opts.group !== false,
@@ -29646,7 +30145,7 @@ async function runListMode(ctx) {
   process.stdout.write(
     ctx.redactor.apply(
       `Pick a node by number. Re-run as:
-  agent-tree ${selector} --snapshot <number> --mode continue|fork
+  agent-tree --source ${ctx.match.source} ${selector} --snapshot <number> --mode continue|fork
 `
     )
   );
@@ -29675,9 +30174,9 @@ async function runSnapshotMode(ctx) {
     gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown
   );
   process.stdout.write(finalMarkdown);
-  await recordPick(ctx.match.sessionId, node2.id, wantFork ? "fork" : "continue").catch(
-    (err) => ctx.logger.warn?.("pick history write failed", { error: String(err) })
-  );
+  await recordPick(ctx.match.sessionId, node2.id, wantFork ? "fork" : "continue", {
+    source: ctx.match.source
+  }).catch((err) => ctx.logger.warn?.("pick history write failed", { error: String(err) }));
   if (process.stdout.isTTY && process.stderr.isTTY) {
     const result = await copyToClipboard(finalMarkdown);
     if (result.ok) {
@@ -29702,8 +30201,8 @@ function appendGitSection(snapshotMd, gitMd) {
   }
   return snapshotMd + "\n\n" + gitMd + "\n";
 }
-async function runPicksMode(redactor) {
-  const all = await listAllPicks();
+async function runPicksMode(redactor, source) {
+  const all = await listAllPicks({ source });
   if (all.length === 0) {
     process.stderr.write("No picks recorded yet.\n");
     return 0;
@@ -29712,7 +30211,7 @@ async function runPicksMode(redactor) {
   let totalPicks = 0;
   for (const session of all) {
     lines.push(
-      `session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? "" : "s"})`
+      `${session.source} session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? "" : "s"})`
     );
     for (const p of session.picks) {
       const when = p.ts.replace("T", " ").slice(0, 19);
@@ -29735,7 +30234,9 @@ async function runUnstarMode(ctx) {
     console.error(`error: no node matches "${ctx.opts.unstar}". Run --list to see numbers.`);
     return 2;
   }
-  const removed = await removePicksForNode(ctx.match.sessionId, node2.id);
+  const removed = await removePicksForNode(ctx.match.sessionId, node2.id, {
+    source: ctx.match.source
+  });
   if (removed === 0) {
     process.stderr.write(`No picks recorded for ${node2.id} \u2014 nothing to unstar.
 `);
@@ -29794,7 +30295,7 @@ function runDiffMode(ctx) {
   return 0;
 }
 async function runTuiMode(ctx) {
-  const picks = await readPicks(ctx.match.sessionId);
+  const picks = await readPicks(ctx.match.sessionId, { source: ctx.match.source });
   const result = await runTui(ctx.mindmap, {
     render: {
       filter: ctx.opts.filter,
@@ -29823,7 +30324,7 @@ var PROTECTED_DUMP_PREFIXES = [
   "/Library/LaunchAgents"
 ];
 async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
-  const outDir = resolve4(dir);
+  const outDir = resolve5(dir);
   if (PROTECTED_DUMP_PREFIXES.some((p) => outDir === p || outDir.startsWith(p + "/"))) {
     throw new Error(`refusing to dump into protected path: ${outDir}`);
   }
@@ -29836,13 +30337,13 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
   const opts = { encoding: "utf8", mode: 384, flag: "wx" };
   await Promise.all([
     writeFile2(
-      resolve4(outDir, "raw-events.json"),
+      resolve5(outDir, "raw-events.json"),
       JSON.stringify({ meta: safeMeta, events: safeEvents }, null, 2),
       opts
     ),
-    writeFile2(resolve4(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
+    writeFile2(resolve5(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
     writeFile2(
-      resolve4(outDir, "segments.json"),
+      resolve5(outDir, "segments.json"),
       JSON.stringify(
         { session_id: graph.meta.sessionId, count: safeSegments.length, segments: safeSegments },
         null,
@@ -29850,7 +30351,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
       ),
       opts
     ),
-    writeFile2(resolve4(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
+    writeFile2(resolve5(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
   ]);
 }
 
@@ -29886,23 +30387,92 @@ function createLoggerSync(level = "info") {
 }
 
 // src/utils/picker.ts
-import { createInterface as createInterface3 } from "node:readline/promises";
+import { createInterface as createInterface4 } from "node:readline/promises";
+
+// src/utils/session_path.ts
+import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname2, extname, resolve as resolve6 } from "node:path";
+async function listSessions(opts = {}) {
+  if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
+    throw new RangeError("session limit must be a nonnegative safe integer");
+  }
+  if (opts.limit === 0) return [];
+  const sessions = await getSessionSource(opts.source).discover(opts);
+  sessions.sort(compareSessions);
+  return opts.limit === void 0 ? sessions : sessions.slice(0, opts.limit);
+}
+async function sessionFromFile(filePath, source) {
+  const jsonlPath = await realpath2(resolve6(filePath));
+  if (extname(jsonlPath) !== ".jsonl") throw new Error("session file must have a .jsonl extension");
+  const info = await lstat3(jsonlPath);
+  if (!info.isFile()) throw new Error("session file must be a regular file");
+  return {
+    source: await detectSessionSource(jsonlPath, source),
+    sessionId: basename2(jsonlPath, ".jsonl"),
+    projectDir: basename2(dirname2(jsonlPath)),
+    jsonlPath
+  };
+}
+async function locateSession(sessionIdOrPrefix, opts = {}) {
+  const prefix = sessionIdOrPrefix.toLowerCase();
+  if (!isUuidPrefix(prefix) && !isFullUuid(prefix)) {
+    throw new Error("session id is not a valid UUID or prefix");
+  }
+  const matches = (await listSessions(opts)).filter(
+    (session) => session.sessionId.toLowerCase().startsWith(prefix)
+  );
+  matches.sort((a, b) => {
+    if (opts.projectHint) {
+      const aHit = a.projectDir === opts.projectHint ? 1 : 0;
+      const bHit = b.projectDir === opts.projectHint ? 1 : 0;
+      if (aHit !== bHit) return bHit - aHit;
+    }
+    return compareSessions(a, b);
+  });
+  return matches.map(toSessionMatch);
+}
+async function findLatestSession(opts = {}) {
+  const [latest] = await listSessions({ ...opts, limit: 1 });
+  return latest ? toSessionMatch(latest) : null;
+}
+async function findLatestSessionInProject(cwd, opts = {}) {
+  return findLatestSession({ ...opts, projectCwd: cwd });
+}
+function compareSessions(a, b) {
+  return b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0);
+}
+function toSessionMatch(entry) {
+  return {
+    source: entry.source,
+    sessionId: entry.sessionId,
+    projectDir: entry.projectDir,
+    jsonlPath: entry.jsonlPath
+  };
+}
+
+// src/utils/picker.ts
 async function pickSession(opts = {}) {
   const candidates = await listSessions({
-    projectsRoot: opts.projectsRoot,
+    root: opts.root,
+    source: opts.source,
+    projectCwd: opts.projectCwd,
     limit: opts.limit ?? 10
   });
   if (candidates.length === 0) return null;
   const out = opts.output ?? process.stderr;
-  out.write("Recent Claude Code sessions:\n");
+  const redactor = opts.redactor ?? defaultRedactor();
+  out.write(`Recent ${opts.source === "codex" ? "Codex" : "Claude Code"} sessions:
+`);
   candidates.forEach((c, i) => {
     const when = new Date(c.mtimeMs).toISOString().replace("T", " ").slice(0, 16);
     out.write(
-      `  ${String(i + 1).padStart(2, " ")}. ${c.sessionId.slice(0, 8)}  ${when}  ${c.projectDir}
+      redactor.apply(
+        `  ${String(i + 1).padStart(2, " ")}. ${c.sessionId.slice(0, 8)}  ${when}  ${c.projectDir}
 `
+      )
     );
   });
-  const rl = createInterface3({
+  const rl = createInterface4({
     input: opts.input ?? process.stdin,
     output: opts.output ?? process.stderr
   });
@@ -29921,6 +30491,7 @@ async function pickSession(opts = {}) {
     }
     const picked = candidates[idx - 1];
     return {
+      source: picked.source,
       sessionId: picked.sessionId,
       projectDir: picked.projectDir,
       jsonlPath: picked.jsonlPath
@@ -29946,7 +30517,7 @@ async function main(argv = process.argv) {
     console.error("error: --tui requires interactive input; use --list or --json instead");
     return 2;
   }
-  const projectCwd = opts.cwd ? resolve5(opts.cwd) : void 0;
+  const projectCwd = opts.cwd ? resolve7(opts.cwd) : void 0;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
   if (!(await stat(cwd)).isDirectory()) {
@@ -29959,6 +30530,7 @@ async function main(argv = process.argv) {
   if (!opts.trace && !opts.verbose) logger = createLoggerSync(config2.log.level);
   if (opts.sessions) {
     const entries = await listSessions({
+      source: opts.source,
       projectCwd,
       limit: opts.limit ?? 20
     });
@@ -29966,15 +30538,21 @@ async function main(argv = process.argv) {
     const safeEntries = redactDeep(entries, redactor);
     process.stdout.write(
       opts.json ? JSON.stringify({ sessions: safeEntries }, null, 2) + "\n" : safeEntries.map(
-        (entry) => `${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`
+        (entry) => `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`
       ).join("\n") + "\n"
     );
     return 0;
   }
   if (opts.picks) {
-    return runPicksMode(buildRedactor(opts, config2, logger));
+    return runPicksMode(buildRedactor(opts, config2, logger), opts.source);
   }
-  const resolved = await resolveSession(sessionArg, opts, logger, cwd);
+  const resolved = await resolveSession(
+    sessionArg,
+    opts,
+    logger,
+    cwd,
+    buildRedactor(opts, config2, logger)
+  );
   if (!resolved.ok) {
     return resolved.reason === "cancelled" ? 130 : 2;
   }
@@ -29999,7 +30577,7 @@ async function main(argv = process.argv) {
       result.mindmap,
       result.redactor
     );
-    logger.info(`dumped JSON artifacts`, { dir: resolve5(opts.dumpJson) });
+    logger.info(`dumped JSON artifacts`, { dir: resolve7(opts.dumpJson) });
   }
   if (opts.dryRun) {
     process.stderr.write("Dry-run \u2014 analysis complete, no output written.\n");
@@ -30024,16 +30602,17 @@ async function main(argv = process.argv) {
   console.error("internal error: no output mode resolved");
   return 1;
 }
-async function resolveSession(sessionArg, opts, logger, cwd) {
+async function resolveSession(sessionArg, opts, logger, cwd, redactor) {
+  const selection = { source: opts.source };
   if (opts.file) {
-    return { ok: true, match: await sessionFromFile(opts.file) };
+    return { ok: true, match: await sessionFromFile(opts.file, opts.source) };
   }
   if (opts.pick) {
     if (!process.stdin.isTTY) {
       console.error("error: --pick requires an interactive terminal; use --sessions instead");
       return { ok: false, reason: "not_found" };
     }
-    const picked = await pickSession();
+    const picked = await pickSession({ ...selection, redactor });
     if (!picked) {
       console.error("Selection cancelled.");
       return { ok: false, reason: "cancelled" };
@@ -30041,7 +30620,7 @@ async function resolveSession(sessionArg, opts, logger, cwd) {
     return { ok: true, match: picked };
   }
   if (opts.latest) {
-    const latest = await findLatestSession();
+    const latest = await findLatestSession(selection);
     if (!latest) {
       console.error("error: no sessions found; use --file to open an exported JSONL");
       return { ok: false, reason: "not_found" };
@@ -30049,24 +30628,26 @@ async function resolveSession(sessionArg, opts, logger, cwd) {
     return { ok: true, match: latest };
   }
   if (!sessionArg) {
-    const inProject = await findLatestSessionInProject(cwd);
+    const inProject = await findLatestSessionInProject(cwd, selection);
     if (inProject) {
       logger.debug("smart default \u2192 this project's latest session", {
         sessionId: inProject.sessionId
       });
       return { ok: true, match: inProject };
     }
-    const global = await findLatestSession();
+    const global = await findLatestSession(selection);
     if (global) {
       console.error(
-        `(no session in this project \u2014 falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`
+        redactor.apply(
+          `(no session in this project \u2014 falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`
+        )
       );
       return { ok: true, match: global };
     }
     console.error("error: no sessions found; use --file to open an exported JSONL");
     return { ok: false, reason: "not_found" };
   }
-  const matches = await locateSession(sessionArg);
+  const matches = await locateSession(sessionArg, selection);
   if (matches.length === 0) {
     console.error(
       `error: no session matched "${sessionArg}"; use --sessions to list available sessions`
@@ -30076,10 +30657,12 @@ async function resolveSession(sessionArg, opts, logger, cwd) {
   if (matches.length > 1) {
     const lines = matches.slice(0, 5).map((m) => `  \u2022 ${m.sessionId}  (${m.projectDir})`).join("\n");
     console.error(
-      `error: "${sessionArg}" is ambiguous; ${matches.length} matches:
+      redactor.apply(
+        `error: "${sessionArg}" is ambiguous; ${matches.length} matches:
 ${lines}
 
 Re-run with a longer prefix.`
+      )
     );
     return { ok: false, reason: "not_found" };
   }

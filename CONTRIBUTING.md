@@ -13,7 +13,7 @@ npm test         # Vitest 5 — must stay green
 
 Requirements:
 
-- **Node.js ≥22.13.0** for the upcoming 0.2.1 release.
+- **Node.js ≥22.13.0**.
 - **macOS or Linux** for the full smoke loop. Windows works for the CLI; clipboard / git subprocess paths are platform-shimmed but less exercised.
 - CI covers **Node 22, 24, and 26 on Linux and macOS**.
 - **ESLint 10** uses flat config; **Vitest 5** runs the tests.
@@ -57,7 +57,7 @@ If you touch any of these, add a test in `tests/security-hardening.test.ts` (or 
 - `src/utils/picks.ts` — concurrency / atomicity changes
 - `src/utils/safe_path.ts` — path-trust hardening
 - `src/mcp/server.ts` — any new tool, session resolution, or analysis cache change
-- `src/utils/session_path.ts` / `src/reader/jsonl.ts` — discovery, portable imports, or malformed-input handling
+- `src/sources/`, `src/utils/session_path.ts`, and `src/reader/` — discovery, portable imports, or malformed-input handling
 - `src/config/loader.ts` / `src/config/schema.ts` — precedence, per-field validation, or security settings
 - `src/llm/labeler.ts` / `src/llm/anthropic.ts` — input reservations, token counting, or paid-request handling
 
@@ -65,7 +65,24 @@ The reason: redaction and path-safety bugs are silent failures that bypass every
 
 ### Routing through canonical helpers
 
-If you add a new code path that analyzes a session, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Catalog discovery is intentionally parse-free, but catalog strings still need redaction before output.
+If you add a new code path that analyzes a session, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Claude catalogs are parse-free; Codex catalogs read bounded metadata headers, never analyze the conversation. Catalog strings still need redaction before output.
+
+### Adding a session source
+
+Implement `SessionSource` from `src/sources/types.ts`: `discover`, positive
+record identification via `accepts`, and `read` into normalized `RawEvent[]`.
+Register it in `src/sources/index.ts`, extend the source ID type and CLI/MCP
+choices, and include it in source-isolated pick enumeration. Keep log-format
+knowledge inside the adapter/reader, not in tree rendering. Unknown formats
+must not silently become empty Claude sessions. Test discovery races, metadata
+limits, malformed records, duplicate notifications, and end-to-end exports
+using synthetic fixtures. Never commit private rollout logs.
+
+Discovery skips symlink entries and discards detected directory replacements.
+These checks are not a filesystem sandbox against another process with write
+access to the session directories: portable Node filesystem APIs do not pin
+every ancestor during path traversal. Treat imported metadata as untrusted,
+retain output redaction, and never execute commands from a transcript.
 
 ### Keep the public contracts aligned
 
@@ -73,8 +90,9 @@ If you add a new code path that analyzes a session, route it through `runPipelin
   There are six tools: `agent_tree_sessions`, `agent_tree_list`,
   `agent_tree_snapshot`, `agent_tree_picks`, `agent_tree_diff`, and
   `agent_tree_unstar`. All per-session tools accept `file` or `sessionId`,
-  never both; picks takes `{}`. MCP remains heuristic-only.
-- Cover portable exports, `CLAUDE_CONFIG_DIR`, UUID-only regular-file
+  never both. All tools accept optional `source`; picks can filter by source
+  or list both. MCP remains heuristic-only.
+- Cover portable exports, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, regular-file
   discovery (no agent/subagent or symlink entries), strict parse failures,
   JSON redaction/no stdout banners, and incompatible CLI flags (exit 2).
   JSON is the complete mindmap, not a filtered text view.

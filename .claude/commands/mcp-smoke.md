@@ -7,6 +7,12 @@ You are running the agent-tree post-publish MCP smoke test. The goal: prove that
 
 Run this **after `npm publish`** has succeeded. It installs from the registry, not from local source.
 
+The handshake below checks tool presence, not source behavior. Before release,
+also run `npm run smoke:release`: its installed-tarball checks cover Claude and
+Codex discovery, portable imports, source schemas, and redacted JSON output.
+All six tools accept optional `source: "claude" | "codex"`; picks without a
+source filter span both.
+
 > **Fixes from Loop 1 + Loop 2 + Loop 3 reviews**:
 >
 > - **Spec-compliant MCP handshake** (Loop 1): the previous version sent
