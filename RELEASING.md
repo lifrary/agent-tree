@@ -155,6 +155,14 @@ Without bypass token, manual OTP fallback (interactive shell only):
 npm publish --access public --otp=NNNNNN
 ```
 
+Without either, npm 12 uses web 2FA: it prints `Authenticate your account
+at:` with a URL and polls until the approval lands in the browser (the
+window is about five minutes). npm only takes that path when stdin and
+stdout are both TTYs, so a scripted publish must run under a pseudo-terminal;
+pass `--no-browser` and open the printed URL yourself. On 2026-10-09, 0.2.1
+needed one browser approval and 0.3.0, published right after it, went
+through without a second prompt, so publish consecutive versions back to back.
+
 > `prepublishOnly` re-runs lint+typecheck+test+build automatically. If it
 > fails, the publish is aborted before any registry write.
 >
@@ -316,6 +324,15 @@ This works because `dist/*.js` is now committed (`.gitignore` exempts it);
 - The `prepublishOnly` script runs `npm run build` and overwrites `dist/`.
   This is intentional — it guarantees the published tarball matches the
   source on `main`. Don't disable it.
+- Publishing a prebuilt tarball (`npm publish <file>.tgz`) runs no
+  lifecycle scripts, so `prepublishOnly` does not run. Run the full check
+  chain and `npm run smoke:release` where the tarball was packed.
+- **The registry can accept a publish before serving it**: the PUT may
+  return `202` with "Your package is being processed and may take a few
+  minutes to become available". The version appears in `npm view` first,
+  while its tarball URL keeps answering `404` (about five more minutes for
+  0.2.1 and 0.3.0), so `npm install` fails until then. Run step 7 only once
+  the tarball URL returns `200`.
 - GitHub Release notes are best generated from CHANGELOG, not free-form,
   so the registry / GitHub / repo all tell the same story.
 - macOS / Linux only for the smoke test in step 7. Windows users would
