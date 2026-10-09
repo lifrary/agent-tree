@@ -1,0 +1,17 @@
+{"timestamp":"2026-01-02T03:04:05Z","type":"session_meta","payload":{"id":"aaaa1111-2222-3333-4444-555566667777","session_id":"dddd1111-2222-3333-4444-555566667777","cwd":"/synthetic/project","cli_version":"0.160.0","source":"cli","base_instructions":"SYNTHETIC_PRIVATE_INSTRUCTIONS"}}
+{"timestamp":"2026-01-02T03:04:06Z","type":"turn_context","payload":{"turn_id":"synthetic-turn-1","cwd":"/synthetic/project"}}
+{"timestamp":"2026-01-02T03:04:07Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Please update src/app.ts for SYNTHETIC_PRIVATE_WORD owner@example.com."}]}}
+{"timestamp":"2026-01-02T03:04:07Z","type":"event_msg","payload":{"type":"user_message","message":"Please update src/app.ts for SYNTHETIC_PRIVATE_WORD owner@example.com."}}
+{"timestamp":"2026-01-02T03:04:08Z","type":"response_item","payload":{"type":"reasoning","summary":[{"type":"summary_text","text":"Inspect src/app.ts before applying the change."}],"encrypted_content":"SYNTHETIC_PRIVATE_REASONING"}}
+{"timestamp":"2026-01-02T03:04:09Z","type":"response_item","payload":{"type":"function_call","name":"read_file","call_id":"synthetic-read-1","arguments":"{\"path\":\"src/app.ts\"}"}}
+{"timestamp":"2026-01-02T03:04:10Z","type":"response_item","payload":{"type":"function_call_output","call_id":"synthetic-read-1","output":"export const enabled = false;"}}
+{"timestamp":"2026-01-02T03:04:11Z","type":"response_item","payload":{"type":"custom_tool_call","name":"apply_patch","call_id":"synthetic-patch-1","input":"*** Begin Patch\n*** Update File: src/app.ts\n@@\n-export const enabled = false;\n+export const enabled = true;\n*** End Patch"}}
+{"timestamp":"2026-01-02T03:04:12Z","type":"response_item","payload":{"type":"custom_tool_call_output","call_id":"synthetic-patch-1","output":"Success. Updated src/app.ts."}}
+{"timestamp":"2026-01-02T03:04:13Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Updated src/app.ts to enable the feature."}]}}
+{"timestamp":"2026-01-02T03:04:13Z","type":"event_msg","payload":{"type":"agent_message","message":"Updated src/app.ts to enable the feature."}}
+{"timestamp":"2026-01-02T03:05:00Z","type":"compacted","payload":{"message":"Updated src/app.ts; next add a guard.","replacement_history":[]}}
+{"timestamp":"2026-01-02T03:06:00Z","type":"turn_context","payload":{"turn_id":"synthetic-turn-2","cwd":"/synthetic/project"}}
+{"timestamp":"2026-01-02T03:06:01Z","type":"event_msg","payload":{"type":"user_message","message":"Now explain how to guard the new feature."}}
+{"timestamp":"2026-01-02T03:06:01Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Now explain how to guard the new feature."}]}}
+{"timestamp":"2026-01-02T03:06:02Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Guard the feature with the enabled flag."}]}}
+{"timestamp":"2026-01-02T03:06:02Z","type":"event_msg","payload":{"type":"agent_message","message":"Guard the feature with the enabled flag."}}

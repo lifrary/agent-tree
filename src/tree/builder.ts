@@ -24,11 +24,13 @@ import type {
   TopicSegment,
 } from '../types.js';
 import type { Redactor } from '../utils/redact.js';
+import type { SessionSourceId } from '../sources/types.js';
 
 import { eventsForSegment } from '../analyzer/segments.js';
 import { buildContinueSnapshot, buildForkSnapshot } from './context_snapshot.js';
 
 export interface BuildMindMapOptions {
+  source?: SessionSourceId;
   jsonlPath: string;
   specVersion: string; // e.g. 'v0.3'
   generatedAt?: string; // ISO-8601; defaults to now
@@ -224,6 +226,7 @@ export function buildMindMap(
   ).length;
 
   return {
+    source: opts.source ?? 'claude',
     session_id: sessionId,
     project_path: selectedEvents[0]?.cwd ?? '',
     generated_at: generatedAt,
@@ -392,10 +395,13 @@ function deriveSegmentLabel(seg: TopicSegment, events: RawEvent[], redactor?: Re
   const topFile = seg.dominant_files[0];
   const topTool = seg.dominant_tools[0];
   const eventCount = seg.event_uuids.length;
-  if (topFile && topTool) return truncate(`${basename(topFile)} (${topTool})`, 60);
-  if (topFile) return truncate(basename(topFile), 60);
-  if (topTool) return truncate(topTool, 60);
-  return `${eventCount} events`;
+  const label =
+    topFile && topTool
+      ? `${basename(topFile)} (${topTool})`
+      : topFile
+        ? basename(topFile)
+        : (topTool ?? `${eventCount} events`);
+  return truncate(redactor ? redactor.apply(label) : label, 60);
 }
 
 /**
@@ -448,7 +454,7 @@ function deriveSessionTitle(
   override?: string | null,
   redactor?: Redactor,
 ): string {
-  if (override) return truncate(override, 60);
+  if (override) return truncate(redactor ? redactor.apply(override) : override, 60);
   // Skip noise (Stop-hook injections, skill bootstrap, shell pastes) so the
   // root label reflects actual user intent. Falls back to the first user
   // message regardless if every turn is noise.

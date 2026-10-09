@@ -29,7 +29,8 @@ import {
 import { loadConfig } from './config/loader.js';
 import { createLoggerSync, type LogLevel } from './utils/logger.js';
 import { pickSession } from './utils/picker.js';
-import { defaultRedactor, redactDeep } from './utils/redact.js';
+import { defaultRedactor, redactDeep, type Redactor } from './utils/redact.js';
+import type { SessionSourceId } from './sources/types.js';
 import {
   findLatestSession,
   findLatestSessionInProject,
@@ -62,6 +63,7 @@ export async function main(argv: string[] = process.argv): Promise<number> {
 
   if (opts.sessions) {
     const entries = await listSessions({
+      source: opts.source,
       projectCwd,
       limit: opts.limit ?? 20,
     });
@@ -73,7 +75,7 @@ export async function main(argv: string[] = process.argv): Promise<number> {
         : safeEntries
             .map(
               (entry) =>
-                `${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`,
+                `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`,
             )
             .join('\n') + '\n',
     );
@@ -83,12 +85,18 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   // --picks is session-independent (lists picks across every session); handle
   // before the session-resolution step.
   if (opts.picks) {
-    return runPicksMode(buildRedactor(opts, config, logger));
+    return runPicksMode(buildRedactor(opts, config, logger), opts.source);
   }
 
   // No explicit selector → smart default: latest session in current project,
   // falling back to globally latest if this project has no sessions yet.
-  const resolved = await resolveSession(sessionArg, opts, logger, cwd);
+  const resolved = await resolveSession(
+    sessionArg,
+    opts,
+    logger,
+    cwd,
+    buildRedactor(opts, config, logger),
+  );
   if (!resolved.ok) {
     // 130 = SIGINT-style "user cancelled" (conventional for interactive pick
     // aborts). 2 = POSIX "misuse / not found". Discriminated union makes
@@ -176,19 +184,21 @@ type SessionResolution =
 
 async function resolveSession(
   sessionArg: string | undefined,
-  opts: { pick?: boolean; latest?: boolean; file?: string },
+  opts: { pick?: boolean; latest?: boolean; file?: string; source?: SessionSourceId },
   logger: { info(msg: string, extra?: unknown): void; debug(msg: string, extra?: unknown): void },
   cwd: string,
+  redactor: Redactor,
 ): Promise<SessionResolution> {
+  const selection = { source: opts.source };
   if (opts.file) {
-    return { ok: true, match: await sessionFromFile(opts.file) };
+    return { ok: true, match: await sessionFromFile(opts.file, opts.source) };
   }
   if (opts.pick) {
     if (!process.stdin.isTTY) {
       console.error('error: --pick requires an interactive terminal; use --sessions instead');
       return { ok: false, reason: 'not_found' };
     }
-    const picked = await pickSession();
+    const picked = await pickSession({ ...selection, redactor });
     if (!picked) {
       console.error('Selection cancelled.');
       return { ok: false, reason: 'cancelled' };
@@ -196,7 +206,7 @@ async function resolveSession(
     return { ok: true, match: picked };
   }
   if (opts.latest) {
-    const latest = await findLatestSession();
+    const latest = await findLatestSession(selection);
     if (!latest) {
       console.error('error: no sessions found; use --file to open an exported JSONL');
       return { ok: false, reason: 'not_found' };
@@ -205,7 +215,7 @@ async function resolveSession(
   }
   if (!sessionArg) {
     // Smart default — try this project's latest first
-    const inProject = await findLatestSessionInProject(cwd);
+    const inProject = await findLatestSessionInProject(cwd, selection);
     if (inProject) {
       logger.debug("smart default → this project's latest session", {
         sessionId: inProject.sessionId,
@@ -213,17 +223,19 @@ async function resolveSession(
       return { ok: true, match: inProject };
     }
     // Fall back to globally latest with a brief notice
-    const global = await findLatestSession();
+    const global = await findLatestSession(selection);
     if (global) {
       console.error(
-        `(no session in this project — falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`,
+        redactor.apply(
+          `(no session in this project — falling back to globally latest: ${global.sessionId.slice(0, 8)} from ${global.projectDir})`,
+        ),
       );
       return { ok: true, match: global };
     }
     console.error('error: no sessions found; use --file to open an exported JSONL');
     return { ok: false, reason: 'not_found' };
   }
-  const matches = await locateSession(sessionArg);
+  const matches = await locateSession(sessionArg, selection);
   if (matches.length === 0) {
     console.error(
       `error: no session matched "${sessionArg}"; use --sessions to list available sessions`,
@@ -236,8 +248,10 @@ async function resolveSession(
       .map((m) => `  • ${m.sessionId}  (${m.projectDir})`)
       .join('\n');
     console.error(
-      `error: "${sessionArg}" is ambiguous; ${matches.length} matches:\n${lines}\n` +
-        `\nRe-run with a longer prefix.`,
+      redactor.apply(
+        `error: "${sessionArg}" is ambiguous; ${matches.length} matches:\n${lines}\n` +
+          `\nRe-run with a longer prefix.`,
+      ),
     );
     return { ok: false, reason: 'not_found' };
   }

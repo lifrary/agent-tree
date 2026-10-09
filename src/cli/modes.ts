@@ -12,6 +12,7 @@ import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
+import type { SessionSourceId } from '../sources/types.js';
 
 import type { CliOptions } from './options.js';
 import type { ResolvedConfig } from './pipeline.js';
@@ -42,7 +43,7 @@ export async function runListMode(ctx: ModeContext): Promise<number> {
     process.stdout.write(JSON.stringify(redactDeep(ctx.mindmap, ctx.redactor), null, 2) + '\n');
     return 0;
   }
-  const picks = await readPicks(ctx.match.sessionId);
+  const picks = await readPicks(ctx.match.sessionId, { source: ctx.match.source });
   const tree = renderTextTree(ctx.mindmap, {
     filter: ctx.opts.filter,
     groupConsecutive: ctx.opts.group !== false,
@@ -57,7 +58,7 @@ export async function runListMode(ctx: ModeContext): Promise<number> {
   process.stdout.write(
     ctx.redactor.apply(
       `Pick a node by number. Re-run as:\n` +
-        `  agent-tree ${selector} --snapshot <number> --mode continue|fork\n`,
+        `  agent-tree --source ${ctx.match.source} ${selector} --snapshot <number> --mode continue|fork\n`,
     ),
   );
   if (picks.total > 0) {
@@ -101,9 +102,9 @@ export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
 
   // Record this pick so future --list / --tui can mark visited nodes.
   // Best-effort — swallow errors so a busted cache dir never blocks output.
-  await recordPick(ctx.match.sessionId, node.id, wantFork ? 'fork' : 'continue').catch((err) =>
-    ctx.logger.warn?.('pick history write failed', { error: String(err) }),
-  );
+  await recordPick(ctx.match.sessionId, node.id, wantFork ? 'fork' : 'continue', {
+    source: ctx.match.source,
+  }).catch((err) => ctx.logger.warn?.('pick history write failed', { error: String(err) }));
 
   // TTY-only: also push to system clipboard so the user can immediately paste
   // into a new `claude` session without remembering `| pbcopy`. When piped or
@@ -142,8 +143,8 @@ function appendGitSection(snapshotMd: string, gitMd: string): string {
 // --picks — list every pick across every session (no session arg needed)
 // ---------------------------------------------------------------------------
 
-export async function runPicksMode(redactor: Redactor): Promise<number> {
-  const all = await listAllPicks();
+export async function runPicksMode(redactor: Redactor, source?: SessionSourceId): Promise<number> {
+  const all = await listAllPicks({ source });
   if (all.length === 0) {
     process.stderr.write('No picks recorded yet.\n');
     return 0;
@@ -152,7 +153,7 @@ export async function runPicksMode(redactor: Redactor): Promise<number> {
   let totalPicks = 0;
   for (const session of all) {
     lines.push(
-      `session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? '' : 's'})`,
+      `${session.source} session ${session.sessionId.slice(0, 8)}  (${session.picks.length} pick${session.picks.length === 1 ? '' : 's'})`,
     );
     for (const p of session.picks) {
       const when = p.ts.replace('T', ' ').slice(0, 19);
@@ -180,7 +181,9 @@ export async function runUnstarMode(ctx: ModeContext): Promise<number> {
     console.error(`error: no node matches "${ctx.opts.unstar}". Run --list to see numbers.`);
     return 2;
   }
-  const removed = await removePicksForNode(ctx.match.sessionId, node.id);
+  const removed = await removePicksForNode(ctx.match.sessionId, node.id, {
+    source: ctx.match.source,
+  });
   if (removed === 0) {
     process.stderr.write(`No picks recorded for ${node.id} — nothing to unstar.\n`);
     return 0;
@@ -251,7 +254,7 @@ export function runDiffMode(ctx: ModeContext): number {
 // ---------------------------------------------------------------------------
 
 export async function runTuiMode(ctx: ModeContext): Promise<number> {
-  const picks = await readPicks(ctx.match.sessionId);
+  const picks = await readPicks(ctx.match.sessionId, { source: ctx.match.source });
   const result = await runTui(ctx.mindmap, {
     render: {
       filter: ctx.opts.filter,

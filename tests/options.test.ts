@@ -30,6 +30,11 @@ describe('CLI argument validation', () => {
     ['--json', '--tui'],
     ['--json', '--filter', 'file'],
     ['--json', '--phases-only'],
+    ['--source'],
+    ['--source', 'invalid'],
+    ['--source', 'CODEX'],
+    ['--source', '../codex'],
+    ['--source', ''],
     ['--unknown'],
   ])('rejects invalid or conflicting arguments %j', (...args) => {
     expect(parse(...args)).toEqual({ ok: false, exitCode: 2 });
@@ -49,6 +54,29 @@ describe('CLI argument validation', () => {
     if (!parsed.ok) return;
     expect(parsed.opts.model).toBeUndefined();
     expect(parsed.opts.maxLlmTokens).toBeUndefined();
+  });
+
+  it.each(['claude', 'codex'])('accepts optional source %s with every workflow', (source) => {
+    for (const args of [
+      ['--sessions', '--json'],
+      ['--picks'],
+      ['--file', 'export.jsonl', '--json'],
+      ['aaaa1111', '--list'],
+      ['--latest', '--snapshot', '1'],
+      ['--file', 'export.jsonl', '--unstar', '1'],
+      ['--file', 'export.jsonl', '--diff', '1', '2'],
+      ['--pick'],
+    ]) {
+      expect(parse('--source', source, ...args)).toMatchObject({ ok: true, opts: { source } });
+    }
+  });
+
+  it('preserves absent source for file auto-detection and cross-source picks', () => {
+    for (const args of [['--file', 'export.jsonl', '--json'], ['--picks'], ['--sessions']]) {
+      const parsed = parse(...args);
+      expect(parsed.ok).toBe(true);
+      if (parsed.ok) expect(parsed.opts.source).toBeUndefined();
+    }
   });
 
   it('parses explicit budgets and portable JSON output', () => {

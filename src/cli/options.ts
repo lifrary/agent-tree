@@ -6,11 +6,13 @@
 
 import { Command, InvalidArgumentError, Option } from 'commander';
 import { VERSION } from '../version.js';
+import type { SessionSourceId } from '../sources/types.js';
 
 export interface CliOptions {
   latest?: boolean;
   pick?: boolean;
   file?: string;
+  source?: SessionSourceId;
   cwd?: string;
   sessions?: boolean;
   limit?: number;
@@ -50,13 +52,19 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
   program
     .name('agent-tree')
     .description(
-      'Navigate a Claude Code session as a numbered file-tree in your terminal and resume from any node.',
+      'Navigate Claude Code or Codex sessions as numbered trees and generate resume prompts.',
     )
     .version(VERSION, '-V, --version', 'print agent-tree version')
     .argument('[session-id]', 'session UUID or short prefix (e.g. 69c2f35e)')
     .option('--latest', 'use the most recently modified session')
     .option('--pick', 'interactive picker over recent sessions')
-    .option('--file <path>', 'read an exported Claude Code JSONL file directly')
+    .option('--file <path>', 'read a Claude Code or Codex JSONL file (auto-detected)')
+    .addOption(
+      new Option('--source <source>', 'session source (discovery: claude; file: auto)').choices([
+        'claude',
+        'codex',
+      ]),
+    )
     .option('--cwd <dir>', 'project directory for session discovery and configuration')
     .option('--sessions', 'list recent sessions without analyzing their contents')
     .option('--limit <n>', 'maximum sessions to list (default: 20)', positiveInteger)
