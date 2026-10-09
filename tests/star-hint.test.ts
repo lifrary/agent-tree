@@ -59,6 +59,7 @@ describe('star hint', () => {
     ['opt-out env "1"', { env: { [STAR_HINT_OPT_OUT_ENV]: '1' } }, 'opted-out'],
     ['opt-out env "true"', { env: { [STAR_HINT_OPT_OUT_ENV]: 'true' } }, 'opted-out'],
     ['CI', { env: { CI: 'true' } }, 'ci'],
+    ['a Claude Code agent', { env: { CLAUDECODE: '1' } }, 'agent'],
     ['stdout piped', { stdoutIsTTY: false }, 'not-a-terminal'],
     ['stderr piped', { stderrIsTTY: false }, 'not-a-terminal'],
     ['--json', { json: true }, 'machine-output'],
@@ -103,6 +104,7 @@ describe('star hint through the real CLI', () => {
       AGENT_TREE_NO_LLM: 'true',
     };
     delete env.CI;
+    delete env.CLAUDECODE;
     delete env[STAR_HINT_OPT_OUT_ENV];
     const result = await exec(process.execPath, ['--import', 'tsx', resolve('src/cli.ts'), ...args], {
       env,

@@ -36,6 +36,7 @@ export type StarHintDecision =
   | 'show'
   | 'opted-out'
   | 'ci'
+  | 'agent'
   | 'not-a-terminal'
   | 'machine-output'
   | 'already-shown'
@@ -50,6 +51,8 @@ export function starHintBlocker(ctx: StarHintContext): StarHintDecision | null {
   const optOut = ctx.env[STAR_HINT_OPT_OUT_ENV];
   if (optOut === '1' || optOut === 'true') return 'opted-out';
   if (ctx.env.CI) return 'ci';
+  // Claude Code sets CLAUDECODE for its tools; an agent at a terminal must not use up the hint.
+  if (ctx.env.CLAUDECODE) return 'agent';
   if (!ctx.stdoutIsTTY || !ctx.stderrIsTTY) return 'not-a-terminal';
   if (ctx.json || ctx.dumpJson) return 'machine-output';
   return null;

@@ -6727,6 +6727,7 @@ function starHintBlocker(ctx) {
   const optOut = ctx.env[STAR_HINT_OPT_OUT_ENV];
   if (optOut === "1" || optOut === "true") return "opted-out";
   if (ctx.env.CI) return "ci";
+  if (ctx.env.CLAUDECODE) return "agent";
   if (!ctx.stdoutIsTTY || !ctx.stderrIsTTY) return "not-a-terminal";
   if (ctx.json || ctx.dumpJson) return "machine-output";
   return null;
