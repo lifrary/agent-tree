@@ -4775,13 +4775,13 @@ var require_core = __commonJS({
     }, warn() {
     }, error() {
     } };
-    function getLogger(logger2) {
-      if (logger2 === false)
+    function getLogger(logger3) {
+      if (logger3 === false)
         return noLogs;
-      if (logger2 === void 0)
+      if (logger3 === void 0)
         return console;
-      if (logger2.log && logger2.warn && logger2.error)
-        return logger2;
+      if (logger3.log && logger3.warn && logger3.error)
+        return logger3;
       throw new Error("logger must implement log, warn and error methods");
     }
     var KEYWORD_NAME = /^[a-z_$][a-z0-9_$:-]*$/i;
@@ -10530,7 +10530,7 @@ var init_js_yaml = __esm({
 });
 
 // src/mcp/server.ts
-import { stat } from "node:fs/promises";
+import { stat as stat2 } from "node:fs/promises";
 import { resolve as resolve7 } from "node:path";
 
 // node_modules/zod/v3/helpers/util.js
@@ -40024,7 +40024,7 @@ function formatPath(parts) {
 
 // src/config/loader.ts
 var USER_CONFIG_DEFAULT = join(homedir(), ".config", "agent-tree", "config.yaml");
-function envToPartial(env, logger2) {
+function envToPartial(env, logger3) {
   const out = {};
   const llm = {};
   if (env.AGENT_TREE_NO_LLM === "1" || env.AGENT_TREE_NO_LLM === "true") {
@@ -40037,7 +40037,7 @@ function envToPartial(env, logger2) {
     if (raw.length > 0 && !/[^0-9]/.test(raw) && Number.isSafeInteger(n) && n > 0) {
       llm.max_input_tokens = n;
     } else {
-      logger2?.warn?.(
+      logger3?.warn?.(
         "ignored invalid environment variable AGENT_TREE_MAX_TOK: expected a positive safe integer"
       );
     }
@@ -40055,7 +40055,7 @@ function envToPartial(env, logger2) {
     if (lang.success) {
       out.render = { lang: lang.data };
     } else {
-      logger2?.warn?.("ignored invalid environment variable AGENT_TREE_LANG");
+      logger3?.warn?.("ignored invalid environment variable AGENT_TREE_LANG");
     }
   }
   const log = {};
@@ -40063,9 +40063,9 @@ function envToPartial(env, logger2) {
     log.level = "debug";
   }
   if (Object.keys(log).length > 0) out.log = log;
-  return parseConfigLayer(out, (message) => logger2?.warn?.(`environment config: ${message}`)) ?? {};
+  return parseConfigLayer(out, (message) => logger3?.warn?.(`environment config: ${message}`)) ?? {};
 }
-async function readYamlIfPresent(path, layer, logger2) {
+async function readYamlIfPresent(path, layer, logger3) {
   try {
     const raw = await readFile(path, "utf8");
     const mod = await Promise.resolve().then(() => (init_js_yaml(), js_yaml_exports));
@@ -40073,12 +40073,12 @@ async function readYamlIfPresent(path, layer, logger2) {
     if (documents.length === 0) return null;
     if (documents.length !== 1) throw new Error("expected one config document");
     const [parsed] = documents;
-    return parseConfigLayer(parsed, (message) => logger2?.warn?.(`${layer} config: ${message}`));
+    return parseConfigLayer(parsed, (message) => logger3?.warn?.(`${layer} config: ${message}`));
   } catch (err) {
     if (err && typeof err === "object" && "code" in err && err.code === "ENOENT") {
       return null;
     }
-    logger2?.warn?.(`failed to read or parse ${layer} config YAML`);
+    logger3?.warn?.(`failed to read or parse ${layer} config YAML`);
     return null;
   }
 }
@@ -40439,13 +40439,13 @@ async function writeJsonCache(hash2, filename, value, opts = {}) {
 
 // src/reader/graph.ts
 function buildGraph(meta3, events, opts = {}) {
-  const { logger: logger2 } = opts;
+  const { logger: logger3 } = opts;
   const childrenOf = /* @__PURE__ */ new Map();
   const byUuid = /* @__PURE__ */ new Map();
   const roots = [];
   for (const e of events) {
     if (byUuid.has(e.uuid)) {
-      logger2?.warn(`duplicate uuid in jsonl, later event overwrites earlier`, {
+      logger3?.warn(`duplicate uuid in jsonl, later event overwrites earlier`, {
         uuid: e.uuid
       });
       byUuid.delete(e.uuid);
@@ -40458,14 +40458,14 @@ function buildGraph(meta3, events, opts = {}) {
       continue;
     }
     if (e.parentUuid === e.uuid) {
-      logger2?.warn(`self-referencing parentUuid, treating as root`, {
+      logger3?.warn(`self-referencing parentUuid, treating as root`, {
         uuid: e.uuid
       });
       roots.push(e.uuid);
       continue;
     }
     if (!byUuid.has(e.parentUuid)) {
-      logger2?.warn(`dangling parentUuid, treating as orphan root`, {
+      logger3?.warn(`dangling parentUuid, treating as orphan root`, {
         uuid: e.uuid,
         parentUuid: e.parentUuid
       });
@@ -40479,10 +40479,10 @@ function buildGraph(meta3, events, opts = {}) {
     }
     bucket.push(e.uuid);
   }
-  breakIndirectCycles(roots, childrenOf, byUuid.keys(), logger2);
+  breakIndirectCycles(roots, childrenOf, byUuid.keys(), logger3);
   return { meta: meta3, events, childrenOf, roots, byUuid };
 }
-function breakIndirectCycles(roots, childrenOf, uuids, logger2) {
+function breakIndirectCycles(roots, childrenOf, uuids, logger3) {
   const visited = /* @__PURE__ */ new Set();
   for (const root of uuids) {
     if (visited.has(root)) continue;
@@ -40499,7 +40499,7 @@ function breakIndirectCycles(roots, childrenOf, uuids, logger2) {
       }
       const child = children[top.childIdx];
       if (inStack.has(child)) {
-        logger2?.warn("cycle detected in parentUuid chain, dropping back-edge", {
+        logger3?.warn("cycle detected in parentUuid chain, dropping back-edge", {
           from: top.uuid,
           to: child
         });
@@ -41201,7 +41201,7 @@ function prepareLabelInput(entry, opts) {
     maxRetries: 0
   };
 }
-function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger2) {
+function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger3) {
   if (res.usage) {
     stats.total_input_tokens += res.usage.inputTokens;
     stats.total_output_tokens += res.usage.outputTokens;
@@ -41210,7 +41210,7 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger2) {
   }
   if (!res.ok) {
     stats.segments_failed += 1;
-    logger2?.warn?.(`LLM label failed for ${entry.segment.id}`, {
+    logger3?.warn?.(`LLM label failed for ${entry.segment.id}`, {
       reason: res.reason
     });
     return;
@@ -41271,7 +41271,7 @@ var UUID_EVENT_TYPES = /* @__PURE__ */ new Set([
 
 // src/reader/jsonl.ts
 async function readJsonl(path, opts = {}) {
-  const { logger: logger2, strict = false } = opts;
+  const { logger: logger3, strict = false } = opts;
   const stream = createReadStream2(path, { encoding: "utf8" });
   const rl = createInterface({ input: stream, crlfDelay: Infinity });
   let meta3 = null;
@@ -41292,7 +41292,7 @@ async function readJsonl(path, opts = {}) {
         if (strict) {
           throw new Error(`jsonl error at ${path}:${lineNo} \u2014 invalid JSON`);
         }
-        logger2?.warn(`skipped malformed jsonl line`, { path, lineNo });
+        logger3?.warn(`skipped malformed jsonl line`, { path, lineNo });
         continue;
       }
       if (!isRecord2(parsed)) {
@@ -41300,7 +41300,7 @@ async function readJsonl(path, opts = {}) {
         if (strict) {
           throw new Error(`jsonl error at ${path}:${lineNo} \u2014 expected an object`);
         }
-        logger2?.warn(`skipped non-object jsonl line`, { path, lineNo });
+        logger3?.warn(`skipped non-object jsonl line`, { path, lineNo });
         continue;
       }
       const issues = /* @__PURE__ */ new Set();
@@ -41321,18 +41321,18 @@ async function readJsonl(path, opts = {}) {
           meta3 = permissionMeta;
         } else {
           skippedMetaCount += 1;
-          logger2?.trace(`skipped uuidless meta line`, { lineNo, type });
+          logger3?.trace(`skipped uuidless meta line`, { lineNo, type });
         }
       } else if (type?.trim() && !UUID_EVENT_TYPES.has(type) && uuidless) {
         skippedMetaCount += 1;
-        logger2?.trace(`skipped uuidless meta line`, { lineNo, type });
+        logger3?.trace(`skipped uuidless meta line`, { lineNo, type });
       } else {
         const ev = coerceRawEvent(parsed, invalid);
         if (ev) events.push(ev);
       }
       if (issues.size > 0) {
         malformedCount += 1;
-        logger2?.warn(`malformed jsonl line; recovered valid fields where possible`, {
+        logger3?.warn(`malformed jsonl line; recovered valid fields where possible`, {
           path,
           lineNo,
           reasons: [...issues]
@@ -41349,7 +41349,7 @@ async function readJsonl(path, opts = {}) {
       sessionId: first?.sessionId ?? "",
       permissionMode: "default"
     };
-    logger2?.warn(`no permission-mode meta line; synthesized from first event`);
+    logger3?.warn(`no permission-mode meta line; synthesized from first event`);
   }
   return { meta: meta3, events, malformedCount, skippedMetaCount };
 }
@@ -41803,7 +41803,7 @@ function suppressFallbacks(candidates) {
   return suppressed;
 }
 async function readCodex(path, opts = {}) {
-  const { logger: logger2, strict = false } = opts;
+  const { logger: logger3, strict = false } = opts;
   const stream = createReadStream3(path, { encoding: "utf8" });
   const lines = createInterface2({ input: stream, crlfDelay: Infinity });
   const meta3 = { sessionId: "", permissionMode: "" };
@@ -41958,7 +41958,7 @@ async function readCodex(path, opts = {}) {
       }
       if (issues.size > 0) {
         malformedCount += 1;
-        logger2?.warn("malformed codex jsonl line; recovered valid fields where possible", {
+        logger3?.warn("malformed codex jsonl line; recovered valid fields where possible", {
           lineNo,
           reasons: [...issues]
         });
@@ -42770,11 +42770,11 @@ function luhnValid(digits) {
 // src/cli/pipeline.ts
 var SPEC_VERSION = "v0.3";
 async function runPipeline(deps) {
-  const { match, opts, config: config2, logger: logger2, quiet = false } = deps;
+  const { match, opts, config: config2, logger: logger3, quiet = false } = deps;
   const progress = (msg) => {
     if (!quiet) process.stderr.write(msg);
   };
-  const redactor = buildRedactor(opts, config2, logger2);
+  const redactor = buildRedactor(opts, config2, logger3);
   const sidechainHandling = pickSidechainMode(opts, config2);
   const cacheHash = await computeInputHash({
     jsonlPath: match.jsonlPath,
@@ -42793,7 +42793,7 @@ async function runPipeline(deps) {
   const { meta: meta3, events, malformedCount, skippedMetaCount } = await getSessionSource(
     match.source
   ).read(match.jsonlPath, {
-    logger: logger2,
+    logger: logger3,
     strict: opts.strict
   });
   if (!isFullUuid(meta3.sessionId)) {
@@ -42849,7 +42849,7 @@ async function runPipeline(deps) {
     };
   }
   progress("[2/5] Building graph...      ");
-  const graph = buildGraph(meta3, events, { logger: logger2 });
+  const graph = buildGraph(meta3, events, { logger: logger3 });
   const sidechainCount = graph.events.reduce((acc, e) => e.isSidechain ? acc + 1 : acc, 0);
   progress(`\u2714 ${pl(graph.roots.length, "root")}, ${pl(sidechainCount, "sidechain")}
 `);
@@ -42872,11 +42872,11 @@ async function runPipeline(deps) {
 `);
   const llmEnabled = opts.llm !== false && config2.llm.enabled;
   if (!llmEnabled) {
-    logger2.debug("LLM labeling disabled (flag or config).");
+    logger3.debug("LLM labeling disabled (flag or config).");
   } else {
     const client = await createAnthropicClient({});
     if (!client) {
-      logger2.warn(
+      logger3.warn(
         "LLM labeling unavailable (no ANTHROPIC_API_KEY or SDK missing) \u2014 heuristic labels retained."
       );
     } else {
@@ -42891,7 +42891,7 @@ async function runPipeline(deps) {
         maxOutputTokens: config2.llm.max_output_tokens,
         cache: config2.llm.cache,
         lang: config2.render.lang,
-        logger: logger2,
+        logger: logger3,
         redactor,
         jsonlPath: match.jsonlPath
       });
@@ -42901,7 +42901,7 @@ async function runPipeline(deps) {
 `
       );
       if (stats.segments_failed > 0) {
-        logger2.warn(`${stats.segments_failed} segment(s) kept heuristic label`);
+        logger3.warn(`${stats.segments_failed} segment(s) kept heuristic label`);
       }
     }
   }
@@ -42917,18 +42917,18 @@ async function runPipeline(deps) {
           segments: redactDeep(segments, redactor)
         },
         cacheOptions
-      ).catch((err) => logger2.warn("aux cache write failed (segments)", { error: String(err) })),
+      ).catch((err) => logger3.warn("aux cache write failed (segments)", { error: String(err) })),
       writeJsonCache(cacheHash, "tree.json", redactDeep(mindmap, redactor), cacheOptions).catch(
-        (err) => logger2.warn("aux cache write failed (tree)", { error: String(err) })
+        (err) => logger3.warn("aux cache write failed (tree)", { error: String(err) })
       ),
       writeJsonCache(
         cacheHash,
         "graph.json",
         redactDeep(graphToDump(graph), redactor),
         cacheOptions
-      ).catch((err) => logger2.warn("aux cache write failed (graph)", { error: String(err) }))
+      ).catch((err) => logger3.warn("aux cache write failed (graph)", { error: String(err) }))
     ]);
-    logger2.debug("mirrored intermediate artifacts to cache", { cacheHash });
+    logger3.debug("mirrored intermediate artifacts to cache", { cacheHash });
   }
   return {
     graph,
@@ -42939,14 +42939,14 @@ async function runPipeline(deps) {
     isEmpty: mindmap.stats.total_events === 0
   };
 }
-function buildRedactor(opts, config2, logger2) {
+function buildRedactor(opts, config2, logger3) {
   return defaultRedactor({
     strict: Boolean(opts.redactStrict) || config2.redaction.strict,
     extraPatterns: (config2.redaction.extra_patterns ?? []).map((pattern, i) => {
       try {
         const regex = new RegExp(pattern, "g");
         if (!passesRedosFuzz(regex)) {
-          logger2.warn("redaction.extra_patterns entry failed ReDoS fuzz guard \u2014 dropping", {
+          logger3.warn("redaction.extra_patterns entry failed ReDoS fuzz guard \u2014 dropping", {
             pattern
           });
           return null;
@@ -42957,7 +42957,7 @@ function buildRedactor(opts, config2, logger2) {
           replacement: "[REDACTED]"
         };
       } catch {
-        logger2.warn("invalid redaction.extra_patterns entry", { pattern });
+        logger3.warn("invalid redaction.extra_patterns entry", { pattern });
         return null;
       }
     }).filter((x) => x !== null)
@@ -43523,12 +43523,599 @@ function safely(handler) {
 }
 
 // src/mcp/search.ts
+import { stat } from "node:fs/promises";
 import { resolve as resolve6 } from "node:path";
+
+// src/search/format.ts
+var TEXT_STEPS_PER_SESSION = 5;
+var FIELD_WIDTH = 11;
+var HIGHLIGHT = ["\x1B[1;31m", "\x1B[0m"];
+function formatSessionBlocks(report, options) {
+  return report.results.map((result) => formatSession(result, options));
+}
+function formatSession(result, options) {
+  const shown = result.hits.slice(0, TEXT_STEPS_PER_SESSION);
+  const more = result.hits.length - shown.length + result.more_hits;
+  const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
+  const lines = [
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${result.project_dir}  ${localTime(result.mtime)}`,
+    ...shown.map(
+      (hit) => `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`
+    )
+  ];
+  if (more > 0) lines.push(`  +${more} more step${more === 1 ? "" : "s"}`);
+  lines.push(
+    `  open: agent-tree --source ${result.source} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+  );
+  return lines.join("\n");
+}
+function formatSummary(report, limit) {
+  const { sessions, bytes, seconds, stopped_early } = report.scanned;
+  const found = report.total_sessions === 0 ? "No matches" : `${report.total_sessions} session${report.total_sessions === 1 ? "" : "s"} with matches`;
+  const scanned = `${sessions} session${sessions === 1 ? "" : "s"} (${formatBytes(bytes)}) scanned in ${seconds} s`;
+  const stop = stopped_early ? `; stopped at the limit of ${limit}, older sessions were not searched` : "";
+  return `${found}; ${scanned}${stop}.`;
+}
+function highlight(snippet, matcher) {
+  if (!matcher) return snippet;
+  const at = matcher.indexIn(snippet);
+  if (at < 0) return snippet;
+  const end = at + matcher.query.length;
+  return `${snippet.slice(0, at)}${HIGHLIGHT[0]}${snippet.slice(at, end)}${HIGHLIGHT[1]}${snippet.slice(end)}`;
+}
+function localTime(iso) {
+  const date5 = new Date(iso);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date5.getFullYear()}-${pad(date5.getMonth() + 1)}-${pad(date5.getDate())} ${pad(date5.getHours())}:${pad(date5.getMinutes())}`;
+}
+function formatBytes(bytes) {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
+}
 
 // src/search/query.ts
 var MAX_SEARCH_LENGTH = 200;
+function searchQueryProblem(query) {
+  if (!query.trim()) return "needs a non-empty query";
+  if (query.length > MAX_SEARCH_LENGTH)
+    return `queries are limited to ${MAX_SEARCH_LENGTH} characters`;
+  if (/[\r\n]/.test(query)) return "queries must be a single line";
+  return null;
+}
+
+// src/tree/steps.ts
+function buildStepIndex(mindmap) {
+  const { numberToId, idToNumber } = renderTextTree(mindmap);
+  const nodes = /* @__PURE__ */ new Map();
+  const deepest = /* @__PURE__ */ new Map();
+  const visit3 = (node2, depth) => {
+    nodes.set(node2.id, node2);
+    const step = idToNumber.get(node2.id);
+    if (step !== void 0) {
+      for (const uuid3 of node2.event_uuids) {
+        const current = deepest.get(uuid3);
+        if (!current || depth > current.depth) deepest.set(uuid3, { step, depth });
+      }
+    }
+    for (const child of node2.children) visit3(child, depth + 1);
+  };
+  visit3(mindmap.root, 0);
+  return {
+    stepOfEvent: (uuid3) => deepest.get(uuid3)?.step,
+    nodeOfStep: (step) => {
+      const id = numberToId.get(step);
+      return id === void 0 ? void 0 : nodes.get(id);
+    },
+    stepOfNode: (id) => idToNumber.get(id)
+  };
+}
+
+// src/search/project.ts
+var MAX_LEAF_DEPTH = 8;
+var SEARCH_COMMAND = /(?:^|[\s/;&|(`'"])(?:agent-tree|atree)\s(?:[^\n]*\s)?--search\b/;
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function eventItems(record2) {
+  switch (record2.type) {
+    case "user":
+    case "assistant": {
+      if (record2.isMeta === true || record2.isCompactSummary === true) return [];
+      const message = record2.message;
+      if (!isRecord5(message)) return [];
+      return messageItems(record2.type, message.content);
+    }
+    case "tool_use":
+      return isRecord5(record2.tool_use) ? toolUseItems(record2.tool_use) : [];
+    case "tool_result":
+      return isRecord5(record2.tool_result) ? toolResultItems(record2.tool_result) : [];
+    default:
+      return [];
+  }
+}
+function messageItems(role, content) {
+  if (typeof content === "string") return [{ kind: "text", field: role, text: content }];
+  if (!Array.isArray(content)) return [];
+  const items = [];
+  for (const block of content) {
+    if (!isRecord5(block)) continue;
+    if (block.type === "text" && typeof block.text === "string") {
+      items.push({ kind: "text", field: role, text: block.text });
+    } else if (block.type === "tool_use") {
+      items.push(...toolUseItems(block));
+    } else if (block.type === "tool_result") {
+      items.push(...toolResultItems(block));
+    }
+  }
+  return items;
+}
+function toolUseItems(block) {
+  if (typeof block.name !== "string") return [];
+  const id = typeof block.id === "string" ? block.id : "";
+  return [{ kind: "tool_use", id, name: block.name, input: block.input }];
+}
+function toolResultItems(block) {
+  const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+  return [{ kind: "tool_result", id, content: block.content }];
+}
+function claudeRecordItems(record2) {
+  return typeof record2.uuid === "string" && record2.uuid.trim() ? eventItems(record2) : [];
+}
+function codexRecordItems(record2) {
+  const payload = record2.payload;
+  if (!isRecord5(payload)) return [];
+  if (record2.type === "event_msg") {
+    if (typeof payload.message !== "string") return [];
+    if (payload.type === "user_message")
+      return [{ kind: "text", field: "user", text: payload.message }];
+    if (payload.type === "agent_message")
+      return [{ kind: "text", field: "assistant", text: payload.message }];
+    return [];
+  }
+  if (record2.type !== "response_item") return [];
+  const id = typeof payload.call_id === "string" ? payload.call_id.trim() && payload.call_id : "";
+  const named = typeof payload.name === "string" && payload.name.trim() !== "";
+  switch (payload.type) {
+    case "message": {
+      const role = payload.role;
+      if (role !== "user" && role !== "assistant" || !Array.isArray(payload.content)) return [];
+      return publicTexts(payload.content).map((text2) => ({ kind: "text", field: role, text: text2 }));
+    }
+    case "function_call": {
+      if (!id || !named || typeof payload.arguments !== "string") return [];
+      let input2;
+      try {
+        input2 = JSON.parse(payload.arguments);
+      } catch {
+        return [];
+      }
+      return [{ kind: "tool_use", id, name: payload.name, input: input2 }];
+    }
+    case "custom_tool_call":
+      return id && named && typeof payload.input === "string" ? [{ kind: "tool_use", id, name: payload.name, input: payload.input }] : [];
+    case "local_shell_call": {
+      const action = payload.action;
+      if (!isRecord5(action) || action.type !== "exec") return [];
+      const shellId = payload.call_id === void 0 && typeof payload.id === "string" ? payload.id : id;
+      return shellId.trim() ? [{ kind: "tool_use", id: shellId, name: "local_shell", input: action }] : [];
+    }
+    case "function_call_output":
+    case "custom_tool_call_output": {
+      const output2 = payload.output;
+      if (!id || typeof output2 !== "string" && !Array.isArray(output2)) return [];
+      const content = typeof output2 === "string" ? output2 : publicTexts(output2);
+      return [{ kind: "tool_result", id, content }];
+    }
+    default:
+      return [];
+  }
+}
+function publicTexts(blocks) {
+  const texts = [];
+  for (const block of blocks) {
+    if (isRecord5(block) && (block.type === "input_text" || block.type === "output_text") && typeof block.text === "string") {
+      texts.push(block.text);
+    }
+  }
+  return texts;
+}
+function fieldsOf(items, state) {
+  const fields = [];
+  for (const item of items) {
+    if (item.kind === "text") {
+      if (item.field === "user" && looksLikeSystemNoise2(item.text)) continue;
+      fields.push({ field: item.field, text: item.text });
+    } else if (item.kind === "tool_use") {
+      const leaves = stringLeaves(item.input);
+      if (isSearchCall(item.name, leaves)) {
+        if (item.id) state.searchCalls.add(item.id);
+        continue;
+      }
+      fields.push({ field: "tool_name", text: item.name });
+      for (const text2 of leaves) fields.push({ field: "tool_input", text: text2 });
+    } else if (state.includeToolOutput && !state.searchCalls.has(item.id)) {
+      for (const text2 of outputTexts(item.content)) fields.push({ field: "tool_output", text: text2 });
+    }
+  }
+  return fields;
+}
+function isSearchCall(name, leaves) {
+  return name.endsWith("agent_tree_search") || leaves.some((leaf) => SEARCH_COMMAND.test(leaf));
+}
+function stringLeaves(value, depth = 0, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (depth < MAX_LEAF_DEPTH && Array.isArray(value)) {
+    for (const entry of value) stringLeaves(entry, depth + 1, out);
+  } else if (depth < MAX_LEAF_DEPTH && isRecord5(value)) {
+    for (const entry of Object.values(value)) stringLeaves(entry, depth + 1, out);
+  }
+  return out;
+}
+function outputTexts(content) {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const texts = [];
+  for (const block of content) {
+    if (typeof block === "string") texts.push(block);
+    else if (isRecord5(block) && typeof block.text === "string") texts.push(block.text);
+  }
+  return texts;
+}
+function looksLikeSystemNoise2(text2) {
+  const t = text2.trim();
+  if (!t) return true;
+  if (t.startsWith("<") || t.startsWith("[SYSTEM")) return true;
+  if (t.startsWith("Stop hook ")) return true;
+  if (t.startsWith("Base directory for this skill:")) return true;
+  if (/^[❯>$#] /.test(t)) return true;
+  return false;
+}
+
+// src/search/snippet.ts
+var SNIPPET_CONTEXT = 60;
+var UNPRINTABLE = /[\s\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]+/gu;
+function matchField(field, matcher, redactor) {
+  if (matcher.indexIn(field.text) < 0) return null;
+  const safe = redactor.apply(field.text);
+  const at = matcher.indexIn(safe);
+  if (at < 0) return null;
+  return { field: field.field, snippet: snippetAround(safe, at, matcher.query.length) };
+}
+function snippetAround(text2, at, length) {
+  let start = Math.max(0, at - SNIPPET_CONTEXT);
+  let end = Math.min(text2.length, at + length + SNIPPET_CONTEXT);
+  if (start > 0 && isLowSurrogate(text2.charCodeAt(start))) start -= 1;
+  if (end < text2.length && isLowSurrogate(text2.charCodeAt(end))) end += 1;
+  const body = text2.slice(start, end).replace(UNPRINTABLE, " ").trim();
+  return `${start > 0 ? "\u2026" : ""}${body}${end < text2.length ? "\u2026" : ""}`;
+}
+function isLowSurrogate(unit) {
+  return unit >= 56320 && unit <= 57343;
+}
+
+// src/search/map.ts
+var MAX_HITS_PER_SESSION = 10;
+var quietLogger = createLoggerSync("error");
+async function mapSession(entry, ctx) {
+  const { source, sessionId, projectDir, jsonlPath } = entry;
+  const result = await runPipeline({
+    match: { source, sessionId, projectDir, jsonlPath },
+    opts: { llm: false, cwd: ctx.cwd },
+    config: ctx.config,
+    logger: quietLogger,
+    quiet: true
+  });
+  if (result.isEmpty) return null;
+  const steps = buildStepIndex(result.mindmap);
+  const state = { includeToolOutput: ctx.includeToolOutput, searchCalls: /* @__PURE__ */ new Set() };
+  const byStep = /* @__PURE__ */ new Map();
+  for (const event of result.graph.events) {
+    const items = eventItems(event);
+    for (const field of fieldsOf(items, state)) {
+      const match = matchField(field, ctx.matcher, ctx.redactor);
+      if (!match) continue;
+      const step = steps.stepOfEvent(event.uuid);
+      if (step === void 0) continue;
+      const hit = byStep.get(step);
+      if (hit) {
+        hit.matches_in_step += 1;
+        continue;
+      }
+      byStep.set(step, {
+        step,
+        node_id: steps.nodeOfStep(step)?.id ?? "",
+        field: match.field,
+        timestamp: event.timestamp,
+        snippet: match.snippet,
+        matches_in_step: 1
+      });
+    }
+  }
+  if (byStep.size === 0) return null;
+  const hits = [...byStep.values()].sort((a, b) => a.step - b.step);
+  return {
+    source,
+    session_id: sessionId,
+    project_dir: ctx.redactor.apply(
+      source === "claude" ? firstCwd(result.graph.events) ?? projectDir : projectDir
+    ),
+    mtime: new Date(entry.mtimeMs).toISOString(),
+    hits: hits.slice(0, MAX_HITS_PER_SESSION),
+    more_hits: Math.max(0, hits.length - MAX_HITS_PER_SESSION)
+  };
+}
+function firstCwd(events) {
+  return events.find((event) => event.cwd)?.cwd;
+}
+
+// src/search/matcher.ts
+function createMatcher(query) {
+  const caseSensitive = query !== query.toLowerCase();
+  const folded = caseSensitive ? null : new RegExp(foldAscii(query));
+  const once = JSON.stringify(query).slice(1, -1);
+  const needles = /* @__PURE__ */ new Set([latin1(once), latin1(JSON.stringify(once).slice(1, -1))]);
+  const alternatives = [...needles].map(escapeRegExp);
+  let maxNeedleBytes = Math.max(...[...needles].map((needle) => needle.length));
+  if (/[\u0080-\uffff]/.test(once)) {
+    const escaped = unicodeEscapedPattern(once);
+    alternatives.push(escaped.pattern);
+    maxNeedleBytes = Math.max(maxNeedleBytes, escaped.bytes);
+  }
+  return {
+    query,
+    caseSensitive,
+    indexIn: (text2) => folded ? folded.exec(text2)?.index ?? -1 : text2.indexOf(query),
+    prefilter: new RegExp(alternatives.join("|"), caseSensitive ? "g" : "gi"),
+    maxNeedleBytes
+  };
+}
+function foldAscii(text2) {
+  let pattern = "";
+  for (const char of text2) {
+    pattern += /[a-zA-Z]/.test(char) ? `[${char.toLowerCase()}${char.toUpperCase()}]` : escapeRegExp(char);
+  }
+  return pattern;
+}
+function latin1(text2) {
+  return Buffer.from(text2, "utf8").toString("latin1");
+}
+function unicodeEscapedPattern(text2) {
+  let pattern = "";
+  let bytes = 0;
+  for (let i = 0; i < text2.length; i++) {
+    const unit = text2.charCodeAt(i);
+    if (unit < 128) {
+      pattern += escapeRegExp(text2[i]);
+      bytes += 1;
+      continue;
+    }
+    pattern += "\\\\u";
+    for (const digit of unit.toString(16).padStart(4, "0")) {
+      pattern += /[a-f]/.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit;
+    }
+    bytes += 6;
+  }
+  return { pattern, bytes };
+}
+function escapeRegExp(text2) {
+  return text2.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
+}
+
+// src/search/scan.ts
+import { open as open4 } from "node:fs/promises";
+var DEFAULT_CHUNK_BYTES = 1024 * 1024;
+var NEWLINE = 10;
+async function scanFile(path, matcher, onLine, options = {}) {
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  const overlapBytes = Math.max(0, matcher.maxNeedleBytes - 1);
+  const regex = new RegExp(matcher.prefilter.source, matcher.prefilter.flags);
+  const handle = await open4(path, "r");
+  const buffer = Buffer.allocUnsafe(chunkBytes);
+  const readLine = async (start, end, chunk, chunkStart) => {
+    if (start >= chunkStart) return decode3(chunk.subarray(start - chunkStart, end - chunkStart));
+    const line = Buffer.allocUnsafe(end - start);
+    let filled = 0;
+    while (filled < line.length) {
+      const { bytesRead } = await handle.read(line, filled, line.length - filled, start + filled);
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    return decode3(line.subarray(0, filled));
+  };
+  try {
+    let chunkStart = 0;
+    let lineStart = 0;
+    let pending = false;
+    let overlap = "";
+    for (; ; ) {
+      if (options.signal?.aborted) return;
+      const { bytesRead } = await handle.read(buffer, 0, chunkBytes, chunkStart);
+      if (bytesRead === 0) break;
+      const chunk = buffer.subarray(0, bytesRead);
+      const text2 = overlap + chunk.toString("latin1");
+      const base = chunkStart - overlap.length;
+      regex.lastIndex = 0;
+      if (pending) {
+        const newline = chunk.indexOf(NEWLINE);
+        if (newline < 0) {
+          chunkStart += bytesRead;
+          continue;
+        }
+        if (onLine(await readLine(lineStart, chunkStart + newline, chunk, chunkStart)) === false)
+          return;
+        pending = false;
+        regex.lastIndex = chunkStart + newline + 1 - base;
+      }
+      let match;
+      while ((match = regex.exec(text2)) !== null) {
+        const at = base + match.index - chunkStart;
+        const before = at > 0 ? chunk.lastIndexOf(NEWLINE, at - 1) : -1;
+        const start = before >= 0 ? chunkStart + before + 1 : lineStart;
+        const after = chunk.indexOf(NEWLINE, Math.max(at, 0));
+        if (after < 0) {
+          pending = true;
+          break;
+        }
+        if (onLine(await readLine(start, chunkStart + after, chunk, chunkStart)) === false) return;
+        regex.lastIndex = chunkStart + after + 1 - base;
+      }
+      const last = chunk.lastIndexOf(NEWLINE);
+      if (last >= 0) lineStart = chunkStart + last + 1;
+      const tailStart = Math.max(text2.lastIndexOf("\n") + 1, text2.length - overlapBytes);
+      overlap = pending ? "" : text2.slice(tailStart);
+      chunkStart += bytesRead;
+    }
+    if (pending && lineStart < chunkStart) {
+      onLine(await readLine(lineStart, chunkStart, buffer.subarray(0, 0), chunkStart));
+    }
+  } finally {
+    await handle.close();
+  }
+}
+function decode3(bytes) {
+  const end = bytes.length > 0 && bytes[bytes.length - 1] === 13 ? bytes.length - 1 : bytes.length;
+  return bytes.toString("utf8", 0, end);
+}
+
+// src/search/run.ts
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var DEFAULT_CONCURRENCY = 4;
+var SHORT_ID_LENGTH = 8;
+async function searchSessions(options) {
+  const started = performance.now();
+  const matcher = createMatcher(options.query);
+  const discovered = await discover3(options.sources, options.projectCwd);
+  const cutoff = options.sinceDays === void 0 ? -Infinity : (options.now ?? Date.now)() - options.sinceDays * DAY_MS;
+  const entries = discovered.filter((entry) => entry.mtimeMs >= cutoff);
+  const mapContext = {
+    matcher,
+    redactor: options.redactor,
+    includeToolOutput: options.includeToolOutput,
+    config: options.config,
+    cwd: options.cwd
+  };
+  const controller = new AbortController();
+  const scans = [];
+  const scan = (entry) => confirmSession(entry, matcher, options, controller.signal).then(
+    (found) => ({ found }),
+    (error62) => ({ error: error62 })
+  );
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const results = [];
+  let launched = 0;
+  let scannedSessions = 0;
+  let scannedBytes = 0;
+  let stoppedEarly = false;
+  try {
+    for (let i = 0; i < entries.length; i++) {
+      while (launched < entries.length && launched < i + concurrency) {
+        scans[launched] = scan(entries[launched]);
+        launched += 1;
+      }
+      const outcome = await scans[i];
+      scans[i] = void 0;
+      if (outcome && "error" in outcome) throw outcome.error;
+      scannedSessions += 1;
+      scannedBytes += entries[i].sizeBytes;
+      if (outcome?.found) {
+        const result = await mapSession(entries[i], mapContext).catch((error62) => {
+          if (isMissingPath(error62)) return null;
+          throw error62;
+        });
+        if (result) results.push(result);
+      }
+      options.onProgress?.({ scanned: i + 1, total: entries.length, matched: results.length });
+      if (results.length >= options.limit) {
+        stoppedEarly = i + 1 < entries.length;
+        break;
+      }
+    }
+  } finally {
+    controller.abort();
+    await Promise.all(scans.filter((pending) => pending !== void 0));
+  }
+  const report = {
+    query: options.redactor.apply(options.query),
+    case_sensitive: matcher.caseSensitive,
+    scope: {
+      sources: [...options.sources],
+      project: options.projectCwd ?? null,
+      since_days: options.sinceDays ?? null,
+      include_tool_output: options.includeToolOutput
+    },
+    scanned: {
+      sessions: scannedSessions,
+      bytes: scannedBytes,
+      seconds: Math.round((performance.now() - started) / 100) / 10,
+      stopped_early: stoppedEarly
+    },
+    total_sessions: results.length,
+    results
+  };
+  const known = options.projectCwd === void 0 ? discovered : null;
+  return { report, matcher, commandId: (result) => shortestUniqueId(result, known) };
+}
+async function discover3(sources2, projectCwd) {
+  const lists = await Promise.all(sources2.map((source) => listSessions({ source, projectCwd })));
+  return lists.flat().sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0)
+  );
+}
+async function confirmSession(entry, matcher, options, signal) {
+  const state = {
+    includeToolOutput: options.includeToolOutput,
+    searchCalls: /* @__PURE__ */ new Set()
+  };
+  const items = entry.source === "claude" ? claudeRecordItems : codexRecordItems;
+  let found = false;
+  try {
+    await scanFile(
+      entry.jsonlPath,
+      matcher,
+      (line) => {
+        const record2 = parseRecord(line);
+        if (!record2) return true;
+        found = fieldsOf(items(record2), state).some(
+          (field) => matchField(field, matcher, options.redactor)
+        );
+        return !found;
+      },
+      { chunkBytes: options.chunkBytes, signal }
+    );
+  } catch (error62) {
+    if (isMissingPath(error62)) return false;
+    throw error62;
+  }
+  return found;
+}
+function parseRecord(line) {
+  try {
+    const record2 = JSON.parse(line);
+    return typeof record2 === "object" && record2 !== null && !Array.isArray(record2) ? record2 : null;
+  } catch {
+    return null;
+  }
+}
+function shortestUniqueId(result, known) {
+  const id = result.session_id;
+  if (!known) return id;
+  const others = known.filter((entry) => entry.source === result.source && entry.sessionId !== id).map((entry) => entry.sessionId.toLowerCase());
+  for (let length = SHORT_ID_LENGTH; length < id.length; length++) {
+    const prefix = id.slice(0, length).toLowerCase();
+    if (!others.some((other) => other.startsWith(prefix))) return id.slice(0, length);
+  }
+  return id;
+}
 
 // src/mcp/search.ts
+var MAX_SEARCH_TEXT_BYTES = 20 * 1024;
+var logger = createLoggerSync("warn");
 var searchInput = {
   query: external_exports.string().min(1).max(MAX_SEARCH_LENGTH).describe("Literal text; all lowercase matches any case, any capital makes it case-sensitive."),
   cwd: external_exports.string().min(1).transform((cwd) => resolve6(cwd)).describe('Caller project directory for configuration and the "project" scope.'),
@@ -43546,14 +44133,50 @@ function registerSearchTool(server) {
       inputSchema: searchInput,
       annotations: readOnly
     },
-    safely(async () => {
-      throw new Error("agent_tree_search is not implemented yet.");
+    safely(async (input2) => {
+      const problem = searchQueryProblem(input2.query);
+      if (problem) throw new Error(`Search ${problem}.`);
+      if (!(await stat(input2.cwd)).isDirectory()) throw new Error("cwd must name a directory.");
+      const { config: config2 } = await loadConfig({ projectCwd: input2.cwd, logger });
+      const outcome = await searchSessions({
+        query: input2.query,
+        sources: input2.source ? [input2.source] : ["claude", "codex"],
+        projectCwd: input2.scope === "project" ? input2.cwd : void 0,
+        sinceDays: input2.sinceDays,
+        limit: input2.limit,
+        includeToolOutput: Boolean(input2.includeToolOutput),
+        redactor: buildRedactor({}, config2, logger),
+        config: config2,
+        cwd: input2.cwd
+      });
+      const blocks = formatSessionBlocks(outcome.report, { commandId: outcome.commandId });
+      return {
+        ...text(searchText(blocks, formatSummary(outcome.report, input2.limit))),
+        structuredContent: outcome.report
+      };
     })
   );
 }
+function searchText(blocks, summary) {
+  const parts = [];
+  let bytes = Buffer.byteLength(summary) + 200;
+  for (const block of blocks) {
+    bytes += Buffer.byteLength(block) + 2;
+    if (bytes > MAX_SEARCH_TEXT_BYTES) {
+      const rest = blocks.length - parts.length;
+      parts.push(
+        `(${rest} more session${rest === 1 ? "" : "s"} in structuredContent; text is capped at 20 KB)`
+      );
+      break;
+    }
+    parts.push(block);
+  }
+  parts.push(summary);
+  return parts.join("\n\n");
+}
 
 // src/mcp/server.ts
-var logger = createLoggerSync("warn");
+var logger2 = createLoggerSync("warn");
 var sessionInput = {
   source: sourceInput,
   sessionId: external_exports.string().optional().describe("UUID prefix; omit for the latest session in cwd."),
@@ -43579,10 +44202,10 @@ function createServer() {
   const server = new McpServer({ name: "agent-tree", version: VERSION });
   const cache = [];
   async function analyze(input2) {
-    if (!(await stat(input2.cwd)).isDirectory()) throw new Error("cwd must name a directory.");
+    if (!(await stat2(input2.cwd)).isDirectory()) throw new Error("cwd must name a directory.");
     const match = await resolveMatch(input2);
-    const { config: config2 } = await loadConfig({ projectCwd: input2.cwd, logger });
-    const info = await stat(match.jsonlPath);
+    const { config: config2 } = await loadConfig({ projectCwd: input2.cwd, logger: logger2 });
+    const info = await stat2(match.jsonlPath);
     const key = JSON.stringify([
       match.source,
       match.jsonlPath,
@@ -43603,7 +44226,7 @@ function createServer() {
         match,
         opts: { llm: false, cwd: input2.cwd },
         config: config2,
-        logger,
+        logger: logger2,
         quiet: true
       });
       if (config2.cache.enabled) {
@@ -43626,9 +44249,9 @@ function createServer() {
       annotations: readOnly
     },
     safely(async ({ cwd, limit, source }) => {
-      if (cwd && !(await stat(cwd)).isDirectory()) throw new Error("cwd must name a directory.");
-      const { config: config2 } = await loadConfig({ projectCwd: cwd, logger });
-      const redactor = buildRedactor({}, config2, logger);
+      if (cwd && !(await stat2(cwd)).isDirectory()) throw new Error("cwd must name a directory.");
+      const { config: config2 } = await loadConfig({ projectCwd: cwd, logger: logger2 });
+      const redactor = buildRedactor({}, config2, logger2);
       const sessions = redactDeep(await listSessions({ source, projectCwd: cwd, limit }), redactor);
       return { ...text(JSON.stringify({ sessions }, null, 2)), structuredContent: { sessions } };
     })
@@ -43704,7 +44327,7 @@ ${tree.text}${footer}`
         markdown = index >= 0 ? markdown.slice(0, index) + gitMd + "\n\n" + markdown.slice(index) : markdown + "\n\n" + gitMd + "\n";
       }
       await recordPick(match.sessionId, node2.id, input2.mode, { source: match.source }).catch(
-        (error62) => logger.warn("pick history write failed", { error: redactor.apply(String(error62)) })
+        (error62) => logger2.warn("pick history write failed", { error: redactor.apply(String(error62)) })
       );
       return text(redactor.apply(markdown));
     })

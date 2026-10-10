@@ -30440,45 +30440,58 @@ async function runOpenMode(_ctx) {
   return 1;
 }
 
-// src/cli/search.ts
-async function runSearchMode(_ctx) {
-  console.error("error: --search is not implemented yet");
-  return 1;
+// src/search/format.ts
+var TEXT_STEPS_PER_SESSION = 5;
+var FIELD_WIDTH = 11;
+var HIGHLIGHT = ["\x1B[1;31m", "\x1B[0m"];
+function formatSessionBlocks(report, options) {
+  return report.results.map((result) => formatSession(result, options));
 }
-
-// src/utils/logger.ts
-var LEVEL_RANK = {
-  trace: 10,
-  debug: 20,
-  info: 30,
-  warn: 40,
-  error: 50
-};
-function consoleLogger(level) {
-  const emit = (lvl, msg, extra) => {
-    if (LEVEL_RANK[lvl] < LEVEL_RANK[level]) return;
-    const prefix = `[${lvl}]`;
-    if (extra !== void 0) {
-      console.error(prefix, msg, extra);
-    } else {
-      console.error(prefix, msg);
-    }
-  };
-  return {
-    trace: (m, x) => emit("trace", m, x),
-    debug: (m, x) => emit("debug", m, x),
-    info: (m, x) => emit("info", m, x),
-    warn: (m, x) => emit("warn", m, x),
-    error: (m, x) => emit("error", m, x),
-    level
-  };
+function formatSession(result, options) {
+  const shown = result.hits.slice(0, TEXT_STEPS_PER_SESSION);
+  const more = result.hits.length - shown.length + result.more_hits;
+  const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
+  const lines = [
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${result.project_dir}  ${localTime(result.mtime)}`,
+    ...shown.map(
+      (hit) => `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`
+    )
+  ];
+  if (more > 0) lines.push(`  +${more} more step${more === 1 ? "" : "s"}`);
+  lines.push(
+    `  open: agent-tree --source ${result.source} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+  );
+  return lines.join("\n");
 }
-function createLoggerSync(level = "info") {
-  return consoleLogger(level);
+function formatSummary(report, limit) {
+  const { sessions, bytes, seconds, stopped_early } = report.scanned;
+  const found = report.total_sessions === 0 ? "No matches" : `${report.total_sessions} session${report.total_sessions === 1 ? "" : "s"} with matches`;
+  const scanned = `${sessions} session${sessions === 1 ? "" : "s"} (${formatBytes(bytes)}) scanned in ${seconds} s`;
+  const stop = stopped_early ? `; stopped at the limit of ${limit}, older sessions were not searched` : "";
+  return `${found}; ${scanned}${stop}.`;
 }
-
-// src/utils/picker.ts
-import { createInterface as createInterface4 } from "node:readline/promises";
+function highlight(snippet, matcher) {
+  if (!matcher) return snippet;
+  const at = matcher.indexIn(snippet);
+  if (at < 0) return snippet;
+  const end = at + matcher.query.length;
+  return `${snippet.slice(0, at)}${HIGHLIGHT[0]}${snippet.slice(at, end)}${HIGHLIGHT[1]}${snippet.slice(end)}`;
+}
+function localTime(iso) {
+  const date5 = new Date(iso);
+  const pad = (value) => String(value).padStart(2, "0");
+  return `${date5.getFullYear()}-${pad(date5.getMonth() + 1)}-${pad(date5.getDate())} ${pad(date5.getHours())}:${pad(date5.getMinutes())}`;
+}
+function formatBytes(bytes) {
+  const units = ["B", "KiB", "MiB", "GiB", "TiB"];
+  let value = bytes;
+  let unit = 0;
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024;
+    unit += 1;
+  }
+  return unit === 0 ? `${value} B` : `${value.toFixed(1)} ${units[unit]}`;
+}
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
@@ -30541,7 +30554,630 @@ function toSessionMatch(entry) {
   };
 }
 
+// src/tree/steps.ts
+function buildStepIndex(mindmap) {
+  const { numberToId, idToNumber } = renderTextTree(mindmap);
+  const nodes = /* @__PURE__ */ new Map();
+  const deepest = /* @__PURE__ */ new Map();
+  const visit3 = (node2, depth) => {
+    nodes.set(node2.id, node2);
+    const step = idToNumber.get(node2.id);
+    if (step !== void 0) {
+      for (const uuid3 of node2.event_uuids) {
+        const current = deepest.get(uuid3);
+        if (!current || depth > current.depth) deepest.set(uuid3, { step, depth });
+      }
+    }
+    for (const child of node2.children) visit3(child, depth + 1);
+  };
+  visit3(mindmap.root, 0);
+  return {
+    stepOfEvent: (uuid3) => deepest.get(uuid3)?.step,
+    nodeOfStep: (step) => {
+      const id = numberToId.get(step);
+      return id === void 0 ? void 0 : nodes.get(id);
+    },
+    stepOfNode: (id) => idToNumber.get(id)
+  };
+}
+
+// src/utils/logger.ts
+var LEVEL_RANK = {
+  trace: 10,
+  debug: 20,
+  info: 30,
+  warn: 40,
+  error: 50
+};
+function consoleLogger(level) {
+  const emit = (lvl, msg, extra) => {
+    if (LEVEL_RANK[lvl] < LEVEL_RANK[level]) return;
+    const prefix = `[${lvl}]`;
+    if (extra !== void 0) {
+      console.error(prefix, msg, extra);
+    } else {
+      console.error(prefix, msg);
+    }
+  };
+  return {
+    trace: (m, x) => emit("trace", m, x),
+    debug: (m, x) => emit("debug", m, x),
+    info: (m, x) => emit("info", m, x),
+    warn: (m, x) => emit("warn", m, x),
+    error: (m, x) => emit("error", m, x),
+    level
+  };
+}
+function createLoggerSync(level = "info") {
+  return consoleLogger(level);
+}
+
+// src/search/project.ts
+var MAX_LEAF_DEPTH = 8;
+var SEARCH_COMMAND = /(?:^|[\s/;&|(`'"])(?:agent-tree|atree)\s(?:[^\n]*\s)?--search\b/;
+function isRecord5(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function eventItems(record2) {
+  switch (record2.type) {
+    case "user":
+    case "assistant": {
+      if (record2.isMeta === true || record2.isCompactSummary === true) return [];
+      const message = record2.message;
+      if (!isRecord5(message)) return [];
+      return messageItems(record2.type, message.content);
+    }
+    case "tool_use":
+      return isRecord5(record2.tool_use) ? toolUseItems(record2.tool_use) : [];
+    case "tool_result":
+      return isRecord5(record2.tool_result) ? toolResultItems(record2.tool_result) : [];
+    default:
+      return [];
+  }
+}
+function messageItems(role, content) {
+  if (typeof content === "string") return [{ kind: "text", field: role, text: content }];
+  if (!Array.isArray(content)) return [];
+  const items = [];
+  for (const block of content) {
+    if (!isRecord5(block)) continue;
+    if (block.type === "text" && typeof block.text === "string") {
+      items.push({ kind: "text", field: role, text: block.text });
+    } else if (block.type === "tool_use") {
+      items.push(...toolUseItems(block));
+    } else if (block.type === "tool_result") {
+      items.push(...toolResultItems(block));
+    }
+  }
+  return items;
+}
+function toolUseItems(block) {
+  if (typeof block.name !== "string") return [];
+  const id = typeof block.id === "string" ? block.id : "";
+  return [{ kind: "tool_use", id, name: block.name, input: block.input }];
+}
+function toolResultItems(block) {
+  const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
+  return [{ kind: "tool_result", id, content: block.content }];
+}
+function claudeRecordItems(record2) {
+  return typeof record2.uuid === "string" && record2.uuid.trim() ? eventItems(record2) : [];
+}
+function codexRecordItems(record2) {
+  const payload = record2.payload;
+  if (!isRecord5(payload)) return [];
+  if (record2.type === "event_msg") {
+    if (typeof payload.message !== "string") return [];
+    if (payload.type === "user_message")
+      return [{ kind: "text", field: "user", text: payload.message }];
+    if (payload.type === "agent_message")
+      return [{ kind: "text", field: "assistant", text: payload.message }];
+    return [];
+  }
+  if (record2.type !== "response_item") return [];
+  const id = typeof payload.call_id === "string" ? payload.call_id.trim() && payload.call_id : "";
+  const named = typeof payload.name === "string" && payload.name.trim() !== "";
+  switch (payload.type) {
+    case "message": {
+      const role = payload.role;
+      if (role !== "user" && role !== "assistant" || !Array.isArray(payload.content)) return [];
+      return publicTexts(payload.content).map((text) => ({ kind: "text", field: role, text }));
+    }
+    case "function_call": {
+      if (!id || !named || typeof payload.arguments !== "string") return [];
+      let input2;
+      try {
+        input2 = JSON.parse(payload.arguments);
+      } catch {
+        return [];
+      }
+      return [{ kind: "tool_use", id, name: payload.name, input: input2 }];
+    }
+    case "custom_tool_call":
+      return id && named && typeof payload.input === "string" ? [{ kind: "tool_use", id, name: payload.name, input: payload.input }] : [];
+    case "local_shell_call": {
+      const action = payload.action;
+      if (!isRecord5(action) || action.type !== "exec") return [];
+      const shellId = payload.call_id === void 0 && typeof payload.id === "string" ? payload.id : id;
+      return shellId.trim() ? [{ kind: "tool_use", id: shellId, name: "local_shell", input: action }] : [];
+    }
+    case "function_call_output":
+    case "custom_tool_call_output": {
+      const output2 = payload.output;
+      if (!id || typeof output2 !== "string" && !Array.isArray(output2)) return [];
+      const content = typeof output2 === "string" ? output2 : publicTexts(output2);
+      return [{ kind: "tool_result", id, content }];
+    }
+    default:
+      return [];
+  }
+}
+function publicTexts(blocks) {
+  const texts = [];
+  for (const block of blocks) {
+    if (isRecord5(block) && (block.type === "input_text" || block.type === "output_text") && typeof block.text === "string") {
+      texts.push(block.text);
+    }
+  }
+  return texts;
+}
+function fieldsOf(items, state) {
+  const fields = [];
+  for (const item of items) {
+    if (item.kind === "text") {
+      if (item.field === "user" && looksLikeSystemNoise2(item.text)) continue;
+      fields.push({ field: item.field, text: item.text });
+    } else if (item.kind === "tool_use") {
+      const leaves = stringLeaves(item.input);
+      if (isSearchCall(item.name, leaves)) {
+        if (item.id) state.searchCalls.add(item.id);
+        continue;
+      }
+      fields.push({ field: "tool_name", text: item.name });
+      for (const text of leaves) fields.push({ field: "tool_input", text });
+    } else if (state.includeToolOutput && !state.searchCalls.has(item.id)) {
+      for (const text of outputTexts(item.content)) fields.push({ field: "tool_output", text });
+    }
+  }
+  return fields;
+}
+function isSearchCall(name, leaves) {
+  return name.endsWith("agent_tree_search") || leaves.some((leaf) => SEARCH_COMMAND.test(leaf));
+}
+function stringLeaves(value, depth = 0, out = []) {
+  if (typeof value === "string") out.push(value);
+  else if (depth < MAX_LEAF_DEPTH && Array.isArray(value)) {
+    for (const entry of value) stringLeaves(entry, depth + 1, out);
+  } else if (depth < MAX_LEAF_DEPTH && isRecord5(value)) {
+    for (const entry of Object.values(value)) stringLeaves(entry, depth + 1, out);
+  }
+  return out;
+}
+function outputTexts(content) {
+  if (typeof content === "string") return [content];
+  if (!Array.isArray(content)) return [];
+  const texts = [];
+  for (const block of content) {
+    if (typeof block === "string") texts.push(block);
+    else if (isRecord5(block) && typeof block.text === "string") texts.push(block.text);
+  }
+  return texts;
+}
+function looksLikeSystemNoise2(text) {
+  const t = text.trim();
+  if (!t) return true;
+  if (t.startsWith("<") || t.startsWith("[SYSTEM")) return true;
+  if (t.startsWith("Stop hook ")) return true;
+  if (t.startsWith("Base directory for this skill:")) return true;
+  if (/^[❯>$#] /.test(t)) return true;
+  return false;
+}
+
+// src/search/snippet.ts
+var SNIPPET_CONTEXT = 60;
+var UNPRINTABLE = /[\s\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]+/gu;
+function matchField(field, matcher, redactor) {
+  if (matcher.indexIn(field.text) < 0) return null;
+  const safe = redactor.apply(field.text);
+  const at = matcher.indexIn(safe);
+  if (at < 0) return null;
+  return { field: field.field, snippet: snippetAround(safe, at, matcher.query.length) };
+}
+function snippetAround(text, at, length) {
+  let start = Math.max(0, at - SNIPPET_CONTEXT);
+  let end = Math.min(text.length, at + length + SNIPPET_CONTEXT);
+  if (start > 0 && isLowSurrogate(text.charCodeAt(start))) start -= 1;
+  if (end < text.length && isLowSurrogate(text.charCodeAt(end))) end += 1;
+  const body = text.slice(start, end).replace(UNPRINTABLE, " ").trim();
+  return `${start > 0 ? "\u2026" : ""}${body}${end < text.length ? "\u2026" : ""}`;
+}
+function isLowSurrogate(unit) {
+  return unit >= 56320 && unit <= 57343;
+}
+
+// src/search/map.ts
+var MAX_HITS_PER_SESSION = 10;
+var quietLogger = createLoggerSync("error");
+async function mapSession(entry, ctx) {
+  const { source, sessionId, projectDir, jsonlPath } = entry;
+  const result = await runPipeline({
+    match: { source, sessionId, projectDir, jsonlPath },
+    opts: { llm: false, cwd: ctx.cwd },
+    config: ctx.config,
+    logger: quietLogger,
+    quiet: true
+  });
+  if (result.isEmpty) return null;
+  const steps = buildStepIndex(result.mindmap);
+  const state = { includeToolOutput: ctx.includeToolOutput, searchCalls: /* @__PURE__ */ new Set() };
+  const byStep = /* @__PURE__ */ new Map();
+  for (const event of result.graph.events) {
+    const items = eventItems(event);
+    for (const field of fieldsOf(items, state)) {
+      const match = matchField(field, ctx.matcher, ctx.redactor);
+      if (!match) continue;
+      const step = steps.stepOfEvent(event.uuid);
+      if (step === void 0) continue;
+      const hit = byStep.get(step);
+      if (hit) {
+        hit.matches_in_step += 1;
+        continue;
+      }
+      byStep.set(step, {
+        step,
+        node_id: steps.nodeOfStep(step)?.id ?? "",
+        field: match.field,
+        timestamp: event.timestamp,
+        snippet: match.snippet,
+        matches_in_step: 1
+      });
+    }
+  }
+  if (byStep.size === 0) return null;
+  const hits = [...byStep.values()].sort((a, b) => a.step - b.step);
+  return {
+    source,
+    session_id: sessionId,
+    project_dir: ctx.redactor.apply(
+      source === "claude" ? firstCwd(result.graph.events) ?? projectDir : projectDir
+    ),
+    mtime: new Date(entry.mtimeMs).toISOString(),
+    hits: hits.slice(0, MAX_HITS_PER_SESSION),
+    more_hits: Math.max(0, hits.length - MAX_HITS_PER_SESSION)
+  };
+}
+function firstCwd(events) {
+  return events.find((event) => event.cwd)?.cwd;
+}
+
+// src/search/matcher.ts
+function createMatcher(query) {
+  const caseSensitive = query !== query.toLowerCase();
+  const folded = caseSensitive ? null : new RegExp(foldAscii(query));
+  const once = JSON.stringify(query).slice(1, -1);
+  const needles = /* @__PURE__ */ new Set([latin1(once), latin1(JSON.stringify(once).slice(1, -1))]);
+  const alternatives = [...needles].map(escapeRegExp);
+  let maxNeedleBytes = Math.max(...[...needles].map((needle) => needle.length));
+  if (/[\u0080-\uffff]/.test(once)) {
+    const escaped = unicodeEscapedPattern(once);
+    alternatives.push(escaped.pattern);
+    maxNeedleBytes = Math.max(maxNeedleBytes, escaped.bytes);
+  }
+  return {
+    query,
+    caseSensitive,
+    indexIn: (text) => folded ? folded.exec(text)?.index ?? -1 : text.indexOf(query),
+    prefilter: new RegExp(alternatives.join("|"), caseSensitive ? "g" : "gi"),
+    maxNeedleBytes
+  };
+}
+function foldAscii(text) {
+  let pattern = "";
+  for (const char of text) {
+    pattern += /[a-zA-Z]/.test(char) ? `[${char.toLowerCase()}${char.toUpperCase()}]` : escapeRegExp(char);
+  }
+  return pattern;
+}
+function latin1(text) {
+  return Buffer.from(text, "utf8").toString("latin1");
+}
+function unicodeEscapedPattern(text) {
+  let pattern = "";
+  let bytes = 0;
+  for (let i = 0; i < text.length; i++) {
+    const unit = text.charCodeAt(i);
+    if (unit < 128) {
+      pattern += escapeRegExp(text[i]);
+      bytes += 1;
+      continue;
+    }
+    pattern += "\\\\u";
+    for (const digit of unit.toString(16).padStart(4, "0")) {
+      pattern += /[a-f]/.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit;
+    }
+    bytes += 6;
+  }
+  return { pattern, bytes };
+}
+function escapeRegExp(text) {
+  return text.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
+}
+
+// src/search/scan.ts
+import { open as open4 } from "node:fs/promises";
+var DEFAULT_CHUNK_BYTES = 1024 * 1024;
+var NEWLINE = 10;
+async function scanFile(path2, matcher, onLine, options = {}) {
+  const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
+  const overlapBytes = Math.max(0, matcher.maxNeedleBytes - 1);
+  const regex = new RegExp(matcher.prefilter.source, matcher.prefilter.flags);
+  const handle = await open4(path2, "r");
+  const buffer = Buffer.allocUnsafe(chunkBytes);
+  const readLine = async (start, end, chunk, chunkStart) => {
+    if (start >= chunkStart) return decode3(chunk.subarray(start - chunkStart, end - chunkStart));
+    const line = Buffer.allocUnsafe(end - start);
+    let filled = 0;
+    while (filled < line.length) {
+      const { bytesRead } = await handle.read(line, filled, line.length - filled, start + filled);
+      if (bytesRead === 0) break;
+      filled += bytesRead;
+    }
+    return decode3(line.subarray(0, filled));
+  };
+  try {
+    let chunkStart = 0;
+    let lineStart = 0;
+    let pending = false;
+    let overlap = "";
+    for (; ; ) {
+      if (options.signal?.aborted) return;
+      const { bytesRead } = await handle.read(buffer, 0, chunkBytes, chunkStart);
+      if (bytesRead === 0) break;
+      const chunk = buffer.subarray(0, bytesRead);
+      const text = overlap + chunk.toString("latin1");
+      const base = chunkStart - overlap.length;
+      regex.lastIndex = 0;
+      if (pending) {
+        const newline = chunk.indexOf(NEWLINE);
+        if (newline < 0) {
+          chunkStart += bytesRead;
+          continue;
+        }
+        if (onLine(await readLine(lineStart, chunkStart + newline, chunk, chunkStart)) === false)
+          return;
+        pending = false;
+        regex.lastIndex = chunkStart + newline + 1 - base;
+      }
+      let match;
+      while ((match = regex.exec(text)) !== null) {
+        const at = base + match.index - chunkStart;
+        const before = at > 0 ? chunk.lastIndexOf(NEWLINE, at - 1) : -1;
+        const start = before >= 0 ? chunkStart + before + 1 : lineStart;
+        const after = chunk.indexOf(NEWLINE, Math.max(at, 0));
+        if (after < 0) {
+          pending = true;
+          break;
+        }
+        if (onLine(await readLine(start, chunkStart + after, chunk, chunkStart)) === false) return;
+        regex.lastIndex = chunkStart + after + 1 - base;
+      }
+      const last = chunk.lastIndexOf(NEWLINE);
+      if (last >= 0) lineStart = chunkStart + last + 1;
+      const tailStart = Math.max(text.lastIndexOf("\n") + 1, text.length - overlapBytes);
+      overlap = pending ? "" : text.slice(tailStart);
+      chunkStart += bytesRead;
+    }
+    if (pending && lineStart < chunkStart) {
+      onLine(await readLine(lineStart, chunkStart, buffer.subarray(0, 0), chunkStart));
+    }
+  } finally {
+    await handle.close();
+  }
+}
+function decode3(bytes) {
+  const end = bytes.length > 0 && bytes[bytes.length - 1] === 13 ? bytes.length - 1 : bytes.length;
+  return bytes.toString("utf8", 0, end);
+}
+
+// src/search/run.ts
+var DAY_MS = 24 * 60 * 60 * 1e3;
+var DEFAULT_CONCURRENCY = 4;
+var SHORT_ID_LENGTH = 8;
+async function searchSessions(options) {
+  const started = performance.now();
+  const matcher = createMatcher(options.query);
+  const discovered = await discover3(options.sources, options.projectCwd);
+  const cutoff = options.sinceDays === void 0 ? -Infinity : (options.now ?? Date.now)() - options.sinceDays * DAY_MS;
+  const entries = discovered.filter((entry) => entry.mtimeMs >= cutoff);
+  const mapContext = {
+    matcher,
+    redactor: options.redactor,
+    includeToolOutput: options.includeToolOutput,
+    config: options.config,
+    cwd: options.cwd
+  };
+  const controller = new AbortController();
+  const scans = [];
+  const scan = (entry) => confirmSession(entry, matcher, options, controller.signal).then(
+    (found) => ({ found }),
+    (error62) => ({ error: error62 })
+  );
+  const concurrency = options.concurrency ?? DEFAULT_CONCURRENCY;
+  const results = [];
+  let launched = 0;
+  let scannedSessions = 0;
+  let scannedBytes = 0;
+  let stoppedEarly = false;
+  try {
+    for (let i = 0; i < entries.length; i++) {
+      while (launched < entries.length && launched < i + concurrency) {
+        scans[launched] = scan(entries[launched]);
+        launched += 1;
+      }
+      const outcome = await scans[i];
+      scans[i] = void 0;
+      if (outcome && "error" in outcome) throw outcome.error;
+      scannedSessions += 1;
+      scannedBytes += entries[i].sizeBytes;
+      if (outcome?.found) {
+        const result = await mapSession(entries[i], mapContext).catch((error62) => {
+          if (isMissingPath(error62)) return null;
+          throw error62;
+        });
+        if (result) results.push(result);
+      }
+      options.onProgress?.({ scanned: i + 1, total: entries.length, matched: results.length });
+      if (results.length >= options.limit) {
+        stoppedEarly = i + 1 < entries.length;
+        break;
+      }
+    }
+  } finally {
+    controller.abort();
+    await Promise.all(scans.filter((pending) => pending !== void 0));
+  }
+  const report = {
+    query: options.redactor.apply(options.query),
+    case_sensitive: matcher.caseSensitive,
+    scope: {
+      sources: [...options.sources],
+      project: options.projectCwd ?? null,
+      since_days: options.sinceDays ?? null,
+      include_tool_output: options.includeToolOutput
+    },
+    scanned: {
+      sessions: scannedSessions,
+      bytes: scannedBytes,
+      seconds: Math.round((performance.now() - started) / 100) / 10,
+      stopped_early: stoppedEarly
+    },
+    total_sessions: results.length,
+    results
+  };
+  const known = options.projectCwd === void 0 ? discovered : null;
+  return { report, matcher, commandId: (result) => shortestUniqueId(result, known) };
+}
+async function discover3(sources2, projectCwd) {
+  const lists = await Promise.all(sources2.map((source) => listSessions({ source, projectCwd })));
+  return lists.flat().sort(
+    (a, b) => b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0)
+  );
+}
+async function confirmSession(entry, matcher, options, signal) {
+  const state = {
+    includeToolOutput: options.includeToolOutput,
+    searchCalls: /* @__PURE__ */ new Set()
+  };
+  const items = entry.source === "claude" ? claudeRecordItems : codexRecordItems;
+  let found = false;
+  try {
+    await scanFile(
+      entry.jsonlPath,
+      matcher,
+      (line) => {
+        const record2 = parseRecord(line);
+        if (!record2) return true;
+        found = fieldsOf(items(record2), state).some(
+          (field) => matchField(field, matcher, options.redactor)
+        );
+        return !found;
+      },
+      { chunkBytes: options.chunkBytes, signal }
+    );
+  } catch (error62) {
+    if (isMissingPath(error62)) return false;
+    throw error62;
+  }
+  return found;
+}
+function parseRecord(line) {
+  try {
+    const record2 = JSON.parse(line);
+    return typeof record2 === "object" && record2 !== null && !Array.isArray(record2) ? record2 : null;
+  } catch {
+    return null;
+  }
+}
+function shortestUniqueId(result, known) {
+  const id = result.session_id;
+  if (!known) return id;
+  const others = known.filter((entry) => entry.source === result.source && entry.sessionId !== id).map((entry) => entry.sessionId.toLowerCase());
+  for (let length = SHORT_ID_LENGTH; length < id.length; length++) {
+    const prefix = id.slice(0, length).toLowerCase();
+    if (!others.some((other) => other.startsWith(prefix))) return id.slice(0, length);
+  }
+  return id;
+}
+
+// src/cli/search.ts
+var DEFAULT_SEARCH_LIMIT = 10;
+var PROGRESS_DELAY_MS = 2e3;
+var PROGRESS_INTERVAL_MS = 200;
+async function runSearchMode(ctx) {
+  const { opts, redactor } = ctx;
+  const limit = opts.limit ?? DEFAULT_SEARCH_LIMIT;
+  const progress = progressLine(process.stderr);
+  let outcome;
+  try {
+    outcome = await searchSessions({
+      query: opts.search ?? "",
+      sources: opts.source ? [opts.source] : ["claude", "codex"],
+      projectCwd: ctx.projectCwd,
+      sinceDays: opts.since,
+      limit,
+      includeToolOutput: Boolean(opts.includeToolOutput),
+      redactor,
+      config: ctx.config,
+      cwd: opts.cwd ?? process.cwd(),
+      onProgress: progress.update
+    });
+  } catch (error62) {
+    const message = error62 instanceof Error ? error62.message : String(error62);
+    console.error(`error: search failed: ${redactor.apply(message)}`);
+    return 1;
+  } finally {
+    progress.stop();
+  }
+  const { report } = outcome;
+  if (opts.json) {
+    process.stdout.write(JSON.stringify(report, null, 2) + "\n");
+    return 0;
+  }
+  const color = opts.color !== false && !!process.stdout.isTTY && !process.env.NO_COLOR;
+  const blocks = formatSessionBlocks(report, {
+    commandId: outcome.commandId,
+    highlight: color ? outcome.matcher : void 0
+  });
+  if (blocks.length > 0) process.stdout.write(blocks.join("\n\n") + "\n");
+  if (report.total_sessions === 0) console.error("No matches.");
+  else if (report.scanned.stopped_early || process.stderr.isTTY)
+    console.error(formatSummary(report, limit));
+  return 0;
+}
+function progressLine(stream) {
+  const started = Date.now();
+  let lastDrawn = 0;
+  let drawn = false;
+  return {
+    update(progress) {
+      const now = Date.now();
+      if (!stream.isTTY || now - started < PROGRESS_DELAY_MS) return;
+      if (now - lastDrawn < PROGRESS_INTERVAL_MS) return;
+      lastDrawn = now;
+      drawn = true;
+      stream.write(
+        `\rSearching\u2026 ${progress.scanned}/${progress.total} sessions, ${progress.matched} with matches`
+      );
+    },
+    stop() {
+      if (drawn) stream.write("\r\x1B[K");
+      drawn = false;
+    }
+  };
+}
+
 // src/utils/picker.ts
+import { createInterface as createInterface4 } from "node:readline/promises";
 async function pickSession(opts = {}) {
   const candidates = await listSessions({
     root: opts.root,
