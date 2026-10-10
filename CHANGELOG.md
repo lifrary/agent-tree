@@ -4,6 +4,8 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+## [v0.4.0] — 2026-10-10
+
 ### Fixed
 
 - Output written to a pipe could be cut short. The CLI exited before an

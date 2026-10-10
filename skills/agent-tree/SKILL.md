@@ -1,7 +1,7 @@
 ---
 name: agent-tree
 description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", find recent sessions, or inspect a Claude Code or Codex JSONL export. Renders the session as a numbered file-tree and emits a continue/fork resume block on selection. Finds the session and step where something happened. Seven MCP tools and a CLI fallback.
-version: 0.3.0
+version: 0.4.0
 ---
 
 # agent-tree skill

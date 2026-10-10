@@ -1,6 +1,6 @@
 {
   "name": "@seungwoolee/agent-tree",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Discover, navigate and export Claude Code and Codex sessions, with resume prompts for your terminal or MCP client.",
   "license": "MIT",
   "author": "Seungwoo Lee",

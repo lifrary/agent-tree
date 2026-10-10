@@ -186,7 +186,7 @@ with a URL and polls, so a script can open that URL in the browser itself.
 
 ```bash
 # Run only after this exact version has been published.
-VERSION=0.3.0
+VERSION=0.4.0
 export VERSION
 SMOKE_DIR=$(mktemp -d)
 cd "$SMOKE_DIR"

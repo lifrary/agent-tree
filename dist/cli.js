@@ -6709,7 +6709,7 @@ function useColor() {
 var program = new Command();
 
 // src/version.ts
-var VERSION = true ? "0.3.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.4.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/utils/star_hint.ts
 import { mkdir, writeFile } from "node:fs/promises";

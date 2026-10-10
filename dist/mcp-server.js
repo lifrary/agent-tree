@@ -44095,7 +44095,7 @@ async function readPicks(sessionId, opts = {}) {
 }
 
 // src/version.ts
-var VERSION = true ? "0.3.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.4.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/mcp/common.ts
 var sourceInput = external_exports.enum(["claude", "codex"]).optional().describe("Session source. Discovery defaults to claude; file imports auto-detect.");

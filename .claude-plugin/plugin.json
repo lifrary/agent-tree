@@ -1,6 +1,6 @@
 {
   "name": "agent-tree",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Navigate Claude Code and Codex sessions as numbered trees and generate resume prompts. Terminal-only — no browser.",
   "author": {
     "name": "Seungwoo Lee"
