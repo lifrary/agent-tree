@@ -101,7 +101,7 @@ and exercises the installed CLI and MCP server. Neither command publishes.
   caches; dry run alone does not disable paid labeling.
 - TUI selection matches `--snapshot` for git context, redaction, pick
   recording, and clipboard behavior, and honors display filters.
-- All six MCP tools and schemas below match the README and skill.
+- All seven MCP tools and schemas below match the README and skill.
   MCP is heuristic-only; no smoke step should incur LLM charges.
 - Config security invariants, per-field validation, file/config cache
   invalidation, and concurrent exact input-token reservations are covered by
@@ -233,7 +233,7 @@ try {
   const { tools } = await rpc('tools/list', {});
   const expected = [
     'agent_tree_sessions', 'agent_tree_list', 'agent_tree_snapshot',
-    'agent_tree_picks', 'agent_tree_diff', 'agent_tree_unstar',
+    'agent_tree_picks', 'agent_tree_diff', 'agent_tree_unstar', 'agent_tree_search',
   ];
   assert.deepEqual(tools.map((tool) => tool.name).sort(), expected.sort());
   const schemas = Object.fromEntries(tools.map((tool) => [tool.name, tool.inputSchema]));
@@ -253,7 +253,7 @@ try {
   }
   assert.deepEqual(schemas.agent_tree_list.properties.format.enum, ['text', 'json']);
   assert.equal(schemas.agent_tree_list.properties.format.default, 'text');
-  console.log('PASS: version and all 6 MCP tools/schemas match');
+  console.log('PASS: version and all 7 MCP tools/schemas match');
 } finally {
   clearTimeout(timer);
   lines.close();

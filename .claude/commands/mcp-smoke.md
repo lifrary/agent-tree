@@ -1,16 +1,16 @@
 ---
-description: Post-publish MCP smoke test — installs the published tarball in /tmp, performs MCP `initialize` + `tools/list` JSON-RPC handshake, asserts all 6 agent_tree_* tools surface. Automates RELEASING.md Step 7.
+description: Post-publish MCP smoke test — installs the published tarball in /tmp, performs MCP `initialize` + `tools/list` JSON-RPC handshake, asserts all 7 agent_tree_* tools surface. Automates RELEASING.md Step 7.
 allowed-tools: Bash, Read
 ---
 
-You are running the agent-tree post-publish MCP smoke test. The goal: prove that the **published** tarball boots an MCP server that surfaces all 6 `agent_tree_*` tools via a spec-compliant JSON-RPC handshake. This automates `RELEASING.md` Step 7.
+You are running the agent-tree post-publish MCP smoke test. The goal: prove that the **published** tarball boots an MCP server that surfaces all 7 `agent_tree_*` tools via a spec-compliant JSON-RPC handshake. This automates `RELEASING.md` Step 7.
 
 Run this **after `npm publish`** has succeeded. It installs from the registry, not from local source.
 
 The handshake below checks tool presence, not source behavior. Before release,
 also run `npm run smoke:release`: its installed-tarball checks cover Claude and
 Codex discovery, portable imports, source schemas, and redacted JSON output.
-All six tools accept optional `source: "claude" | "codex"`; picks without a
+All seven tools accept optional `source: "claude" | "codex"`; picks without a
 source filter span both.
 
 > **Fixes from Loop 1 + Loop 2 + Loop 3 reviews**:
@@ -165,30 +165,30 @@ echo "Tools surfaced:"
 printf '%s\n' "$TOOL_NAMES" | sed 's/^/  /'
 
 echo
-echo "--- Step 5/5 : Assert exactly the 6 expected tools ---"
+echo "--- Step 5/5 : Assert exactly the 7 expected tools ---"
 # wc -l is unconditional (no exit-1-on-zero like grep -c). Already guarded by
 # the [ -z "$TOOL_NAMES" ] branch above, but kept defensive.
 COUNT=$(printf '%s\n' "$TOOL_NAMES" | wc -l | tr -d ' ')
-if [ "$COUNT" -ne 6 ]; then
-  echo "FAIL: expected exactly 6 agent_tree_* tools, got $COUNT"
+if [ "$COUNT" -ne 7 ]; then
+  echo "FAIL: expected exactly 7 agent_tree_* tools, got $COUNT"
   exit 1
 fi
 
 # Whole-line match (`-Fxq`) per name — robust against partial-match false-pass.
-for expected in agent_tree_sessions agent_tree_list agent_tree_snapshot agent_tree_picks agent_tree_diff agent_tree_unstar; do
+for expected in agent_tree_sessions agent_tree_list agent_tree_snapshot agent_tree_picks agent_tree_diff agent_tree_unstar agent_tree_search; do
   if ! printf '%s\n' "$TOOL_NAMES" | grep -Fxq "$expected"; then
     echo "FAIL: missing tool $expected"
     exit 1
   fi
 done
-echo "  OK : all 6 expected tools present"
+echo "  OK : all 7 expected tools present"
 
 echo
 echo "============================================="
 echo "MCP SMOKE — PASS  (agent-tree v$VERSION)"
 echo "  install  : @seungwoolee/agent-tree@$VERSION from npm"
 echo "  cli      : --version handshake matches"
-echo "  mcp      : initialize + tools/list handshake, 6/6 expected tools"
+echo "  mcp      : initialize + tools/list handshake, 7/7 expected tools"
 echo "============================================="
 ```
 
@@ -196,7 +196,7 @@ The `trap ... EXIT` will purge `$SMOKE_DIR` and `$STDERR_FILE` regardless of exi
 
 ## What this proves
 
-If you reach the PASS summary, the published tarball is wired correctly: a fresh `npm install` + plain `node` spawn + spec-compliant MCP handshake produces a server that surfaces exactly the 6 `agent_tree_*` tools, and the JSON-RPC response stream is clean of stderr noise. Plugin marketplace installation will register the same MCP server and tools after the cache is refreshed as described in `RELEASING.md` Step 8.
+If you reach the PASS summary, the published tarball is wired correctly: a fresh `npm install` + plain `node` spawn + spec-compliant MCP handshake produces a server that surfaces exactly the 7 `agent_tree_*` tools, and the JSON-RPC response stream is clean of stderr noise. Plugin marketplace installation will register the same MCP server and tools after the cache is refreshed as described in `RELEASING.md` Step 8.
 
 ## What this does NOT prove
 

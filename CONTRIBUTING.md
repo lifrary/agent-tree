@@ -87,9 +87,10 @@ retain output redaction, and never execute commands from a transcript.
 ### Keep the public contracts aligned
 
 - Update CLI validation and MCP schemas together where capabilities overlap.
-  There are six tools: `agent_tree_sessions`, `agent_tree_list`,
-  `agent_tree_snapshot`, `agent_tree_picks`, `agent_tree_diff`, and
-  `agent_tree_unstar`. All per-session tools accept `file` or `sessionId`,
+  There are seven tools: `agent_tree_sessions`, `agent_tree_list`,
+  `agent_tree_snapshot`, `agent_tree_picks`, `agent_tree_diff`,
+  `agent_tree_unstar`, and `agent_tree_search`. No tool starts an agent
+  session. All per-session tools accept `file` or `sessionId`,
   never both. All tools accept optional `source`; picks can filter by source
   or list both. MCP remains heuristic-only.
 - Cover portable exports, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, regular-file
