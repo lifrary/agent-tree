@@ -26,7 +26,7 @@ import {
   runTuiMode,
   runUnstarMode,
 } from './cli/modes.js';
-import { runOpenMode } from './cli/open.js';
+import { preflightOpen, runOpenMode } from './cli/open.js';
 import { runSearchMode } from './cli/search.js';
 import { loadConfig } from './config/loader.js';
 import { createLoggerSync, type LogLevel } from './utils/logger.js';
@@ -133,6 +133,13 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   // user's chat / TUI stays clean — they don't need ingestion telemetry.
   const quiet =
     (mode.list || mode.snapshot || mode.tui || mode.open) && !opts.verbose && !opts.trace;
+
+  // --open refusals that need no analysis run first, so a refused launch never
+  // pays for parsing or LLM labeling.
+  if (mode.open) {
+    const preflight = await preflightOpen(opts.agent ?? match.source);
+    if (!preflight.ok) return preflight.status;
+  }
 
   const result = await runPipeline({ match, opts, config, logger, quiet });
   // Exported files need not be named after the embedded session UUID.

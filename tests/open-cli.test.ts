@@ -1,5 +1,5 @@
 import { execFile, spawnSync } from 'node:child_process';
-import { mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
+import { appendFile, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
@@ -335,6 +335,17 @@ describe('--open outside a terminal', () => {
 
     const json = await cli(['--file', file, '--no-llm', '--open', '1', '--json']);
     expect(json.code).toBe(2);
+    await expectNothingRan();
+  }, 60_000);
+
+  it('refuses before the session is parsed, so a refusal never pays for analysis', async () => {
+    const file = await session('minimal-session', project, 'plain prompt');
+    await appendFile(file, 'not json\n');
+    // Parsing first would fail this strict run with exit 1; the refusal must come first.
+    const refused = await cli(['--file', file, '--strict', '--no-llm', '--open', '1']);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr).toContain('interactive terminal');
+    expect(refused.stderr).not.toContain('jsonl error');
     await expectNothingRan();
   }, 60_000);
 });

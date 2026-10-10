@@ -30904,6 +30904,10 @@ async function main(argv = process.argv) {
   });
   const mode = resolveMode(opts, !!process.stdout.isTTY && !!process.stdin.isTTY);
   const quiet = (mode.list || mode.snapshot || mode.tui || mode.open) && !opts.verbose && !opts.trace;
+  if (mode.open) {
+    const preflight = await preflightOpen(opts.agent ?? match.source);
+    if (!preflight.ok) return preflight.status;
+  }
   const result = await runPipeline({ match, opts, config: config2, logger, quiet });
   if (result.graph.meta.sessionId) match.sessionId = result.graph.meta.sessionId;
   if (result.isEmpty && !opts.json) {
