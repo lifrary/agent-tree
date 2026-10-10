@@ -30761,7 +30761,7 @@ function fieldsOf(items, state) {
   const fields = [];
   for (const item of items) {
     if (item.kind === "text") {
-      if (item.field === "user" && looksLikeSystemNoise2(item.text)) continue;
+      if (item.field === "user" && looksLikeSystemNoise(item.text)) continue;
       fields.push({ field: item.field, text: item.text });
     } else if (item.kind === "tool_use") {
       const leaves = stringLeaves(item.input);
@@ -30798,15 +30798,6 @@ function outputTexts(content) {
     else if (isRecord5(block) && typeof block.text === "string") texts.push(block.text);
   }
   return texts;
-}
-function looksLikeSystemNoise2(text) {
-  const t = text.trim();
-  if (!t) return true;
-  if (t.startsWith("<") || t.startsWith("[SYSTEM")) return true;
-  if (t.startsWith("Stop hook ")) return true;
-  if (t.startsWith("Base directory for this skill:")) return true;
-  if (/^[❯>$#] /.test(t)) return true;
-  return false;
 }
 
 // src/search/map.ts

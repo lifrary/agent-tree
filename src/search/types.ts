@@ -39,6 +39,7 @@ export interface SearchReport {
     /** True when --limit was reached before every session in scope was scanned. */
     stopped_early: boolean;
   };
+  /** Sessions found; an MCP reply trimmed to its size budget may list fewer. */
   total_sessions: number;
   results: SessionResult[];
 }

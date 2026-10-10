@@ -43526,6 +43526,35 @@ function safely(handler) {
 import { stat } from "node:fs/promises";
 import { resolve as resolve6 } from "node:path";
 
+// src/search/bound.ts
+function boundReport(report, maxBytes) {
+  const results = report.results.map((result) => ({ ...result, hits: [...result.hits] }));
+  const bounded = { ...report, results };
+  let size = jsonBytes(bounded);
+  while (size > maxBytes && results.length > 0) {
+    const fullest = mostHits(results);
+    const hit = fullest?.hits.pop();
+    if (fullest && hit) {
+      fullest.more_hits += 1;
+      size -= jsonBytes(hit) + 1;
+    } else {
+      size -= jsonBytes(results.pop()) + 1;
+    }
+    if (size <= maxBytes) size = jsonBytes(bounded);
+  }
+  return bounded;
+}
+function mostHits(results) {
+  let best;
+  for (const result of results) {
+    if (result.hits.length > 1 && (!best || result.hits.length >= best.hits.length)) best = result;
+  }
+  return best;
+}
+function jsonBytes(value) {
+  return Buffer.byteLength(JSON.stringify(value) ?? "");
+}
+
 // src/search/snippet.ts
 var SNIPPET_CONTEXT = 60;
 var CONTROLS = "\\p{Cc}\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069";
@@ -43765,7 +43794,7 @@ function fieldsOf(items, state) {
   const fields = [];
   for (const item of items) {
     if (item.kind === "text") {
-      if (item.field === "user" && looksLikeSystemNoise2(item.text)) continue;
+      if (item.field === "user" && looksLikeSystemNoise(item.text)) continue;
       fields.push({ field: item.field, text: item.text });
     } else if (item.kind === "tool_use") {
       const leaves = stringLeaves(item.input);
@@ -43802,15 +43831,6 @@ function outputTexts(content) {
     else if (isRecord5(block) && typeof block.text === "string") texts.push(block.text);
   }
   return texts;
-}
-function looksLikeSystemNoise2(text2) {
-  const t = text2.trim();
-  if (!t) return true;
-  if (t.startsWith("<") || t.startsWith("[SYSTEM")) return true;
-  if (t.startsWith("Stop hook ")) return true;
-  if (t.startsWith("Base directory for this skill:")) return true;
-  if (/^[❯>$#] /.test(t)) return true;
-  return false;
 }
 
 // src/search/map.ts
@@ -44130,6 +44150,7 @@ function shortestUniqueId(result, known) {
 
 // src/mcp/search.ts
 var MAX_SEARCH_TEXT_BYTES = 20 * 1024;
+var MAX_SEARCH_JSON_BYTES = 20 * 1024;
 var logger = createLoggerSync("warn");
 var searchInput = {
   query: external_exports.string().min(1).max(MAX_SEARCH_LENGTH).describe("Literal text; all lowercase matches any case, any capital makes it case-sensitive."),
@@ -44164,27 +44185,28 @@ function registerSearchTool(server) {
         config: config2,
         cwd: input2.cwd
       });
-      const blocks = formatSessionBlocks(outcome.report, { commandId: outcome.commandId });
+      const report = boundReport(outcome.report, MAX_SEARCH_JSON_BYTES);
+      const blocks = formatSessionBlocks(report, { commandId: outcome.commandId });
       return {
-        ...text(searchText(blocks, formatSummary(outcome.report, input2.limit))),
-        structuredContent: outcome.report
+        ...text(searchText(blocks, report.total_sessions, formatSummary(report, input2.limit))),
+        structuredContent: report
       };
     })
   );
 }
-function searchText(blocks, summary) {
+function searchText(blocks, totalSessions, summary) {
   const parts = [];
   let bytes = Buffer.byteLength(summary) + 200;
   for (const block of blocks) {
     bytes += Buffer.byteLength(block) + 2;
-    if (bytes > MAX_SEARCH_TEXT_BYTES) {
-      const rest = blocks.length - parts.length;
-      parts.push(
-        `(${rest} more session${rest === 1 ? "" : "s"} in structuredContent; text is capped at 20 KB)`
-      );
-      break;
-    }
+    if (bytes > MAX_SEARCH_TEXT_BYTES) break;
     parts.push(block);
+  }
+  const rest = totalSessions - parts.length;
+  if (rest > 0) {
+    parts.push(
+      `(${rest} more session${rest === 1 ? "" : "s"} not shown: replies are capped at 20 KB; narrow the search with scope, sinceDays, source or limit)`
+    );
   }
   parts.push(summary);
   return parts.join("\n\n");

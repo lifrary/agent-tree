@@ -4,10 +4,14 @@
  * Codex reasoning, system and developer instructions, attachments, hook output,
  * compaction summaries and account data (`rate_limits`) are never projected.
  *
+ * User prompts follow the tree builder's noise rule (`looksLikeSystemNoise`).
+ *
  * Two entry points must agree record for record: `eventItems` reads parsed
  * events (both sources) and raw Claude records, which share the event shape;
  * `codexRecordItems` reads raw Codex records the way `readCodex` normalizes them.
  */
+
+import { looksLikeSystemNoise } from '../tree/builder.js';
 
 export type SearchField = 'user' | 'assistant' | 'tool_name' | 'tool_input' | 'tool_output';
 
@@ -220,19 +224,4 @@ function outputTexts(content: unknown): string[] {
     else if (isRecord(block) && typeof block.text === 'string') texts.push(block.text);
   }
   return texts;
-}
-
-/**
- * The tree builder's rule for user-shaped text that no person typed (hook
- * output, skill bootstrap, environment blocks, shell pastes); kept identical to
- * `looksLikeSystemNoise` in src/tree/builder.ts.
- */
-export function looksLikeSystemNoise(text: string): boolean {
-  const t = text.trim();
-  if (!t) return true;
-  if (t.startsWith('<') || t.startsWith('[SYSTEM')) return true;
-  if (t.startsWith('Stop hook ')) return true;
-  if (t.startsWith('Base directory for this skill:')) return true;
-  if (/^[❯>$#] /.test(t)) return true;
-  return false;
 }

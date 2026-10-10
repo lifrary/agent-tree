@@ -10,9 +10,10 @@ import {
   fieldsOf,
   type FieldText,
 } from '../src/search/project.js';
+import { boundReport } from '../src/search/bound.js';
 import { formatSessionBlocks } from '../src/search/format.js';
 import { scanFile } from '../src/search/scan.js';
-import type { SearchReport } from '../src/search/types.js';
+import type { SearchReport, SessionResult } from '../src/search/types.js';
 import { matchField, snippetAround } from '../src/search/snippet.js';
 import { defaultRedactor } from '../src/utils/redact.js';
 
@@ -417,5 +418,62 @@ describe('search text output', () => {
     expect(scoped.split('\n').at(-1)).toBe(
       "  open: agent-tree --source claude --cwd '/tmp/it'\\''s here' aaaa1111 --snapshot 3 --mode continue",
     );
+  });
+});
+
+describe('bounding the MCP report', () => {
+  const session = (id: string, hits: number): SessionResult => ({
+    source: 'claude',
+    session_id: id,
+    project_dir: '/p',
+    mtime: '2026-10-01T10:00:00.000Z',
+    hits: Array.from({ length: hits }, (_, index) => ({
+      step: index + 1,
+      node_id: `n_00${index + 1}`,
+      field: 'user',
+      timestamp: '2026-10-01T10:00:00.000Z',
+      snippet: 'x'.repeat(100),
+      matches_in_step: 1,
+    })),
+    more_hits: 0,
+  });
+  const report = (results: SessionResult[], total = results.length): SearchReport => ({
+    query: 'x',
+    case_sensitive: false,
+    scope: { sources: ['claude'], project: null, since_days: null, include_tool_output: false },
+    scanned: { sessions: total, bytes: 1, seconds: 0.1, stopped_early: false },
+    total_sessions: total,
+    results,
+  });
+  const bytes = (value: unknown) => Buffer.byteLength(JSON.stringify(value));
+
+  it('leaves a report within the budget unchanged', () => {
+    const input = report([session('a', 3)]);
+    expect(boundReport(input, bytes(input))).toEqual(input);
+  });
+
+  it('drops hits from the fullest sessions first, the older on a tie, and counts them', () => {
+    const input = report([session('a', 2), session('b', 6), session('c', 6)]);
+    const before = JSON.stringify(input);
+    const one = boundReport(input, bytes(input) - 100);
+    expect(JSON.stringify(input)).toBe(before);
+    expect(bytes(one)).toBeLessThanOrEqual(bytes(input) - 100);
+    expect(one.results.map((result) => [result.hits.length, result.more_hits])).toEqual([
+      [2, 0],
+      [6, 0],
+      [5, 1],
+    ]);
+    const two = boundReport(input, bytes(input) - 300);
+    expect(two.results.map((result) => [result.hits.length, result.more_hits])).toEqual([
+      [2, 0],
+      [5, 1],
+      [5, 1],
+    ]);
+  });
+
+  it('keeps one hit per session, then drops the oldest sessions', () => {
+    const expected = report([{ ...session('a', 1), more_hits: 2 }], 2);
+    const bounded = boundReport(report([session('a', 3), session('b', 3)]), bytes(expected));
+    expect(bounded).toEqual(expected);
   });
 });

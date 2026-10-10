@@ -492,12 +492,50 @@ describe('agent_tree_search (MCP)', () => {
     expect(badLimit.isError).toBe(true);
   });
 
-  it('caps the text block at 20 KB and points to structuredContent', () => {
+  it('caps the text block at 20 KB and says how many sessions it left out', () => {
     const blocks = Array.from({ length: 100 }, (_, index) => `block ${index} ${'x'.repeat(400)}`);
-    const text = searchText(blocks, 'summary.');
+    const text = searchText(blocks, 100, 'summary.');
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(20 * 1024);
+    const shown = text.split('\n\n').filter((part) => part.startsWith('block ')).length;
+    expect(shown).toBeGreaterThan(0);
     expect(text).toMatch(
-      /\(\d+ more sessions in structuredContent; text is capped at 20 KB\)\n\nsummary\.$/,
+      new RegExp(
+        `\\(${100 - shown} more sessions not shown: replies are capped at 20 KB; .+\\)\\n\\nsummary\\.$`,
+      ),
     );
   });
+
+  it('keeps the structured reply within 20 KB on a large corpus, counting what it drops', async () => {
+    const sessionIds = Array.from(
+      { length: 50 },
+      (_, n) => `${n.toString(16).padStart(8, '0')}-2222-4333-8444-555566667777`,
+    );
+    for (const [n, id] of sessionIds.entries()) {
+      const turns = Array.from({ length: 12 }, (_, t) => ({
+        prompt: `Turn ${t}: ${'가'.repeat(70)} HERON ${'나'.repeat(70)}`,
+      }));
+      await claudeSession(id, project, turns, n / 100);
+    }
+    const result = await call({ query: 'heron', limit: 50 });
+    expect(result.isError).not.toBe(true);
+    const report = result.structuredContent as {
+      total_sessions: number;
+      results: Array<{ session_id: string; hits: unknown[]; more_hits: number }>;
+    };
+    expect(Buffer.byteLength(JSON.stringify(report))).toBeLessThanOrEqual(20 * 1024);
+    expect(report.total_sessions).toBe(50);
+    expect(report.results.length).toBeGreaterThan(0);
+    expect(report.results.length).toBeLessThan(50);
+    // The newest sessions stay, each still accounting for all twelve matching steps.
+    expect(report.results.map((entry) => entry.session_id)).toEqual(
+      sessionIds.slice(0, report.results.length),
+    );
+    for (const entry of report.results) {
+      expect(entry.hits.length).toBeGreaterThanOrEqual(1);
+      expect(entry.hits.length + entry.more_hits).toBe(12);
+    }
+    const text = textOf(result);
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(20 * 1024);
+    expect(text).toContain(`${50 - report.results.length} more sessions not shown`);
+  }, 60_000);
 });
