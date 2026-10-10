@@ -66,6 +66,10 @@ describe('CLI argument validation', () => {
     ['--agent', 'codex'],
     ['--open-dir', '/tmp'],
     ['--snapshot', '1', '--agent', 'codex'],
+    ['--open', ''],
+    ['--open', ' '],
+    ['--sessions', '--no-color'],
+    ['--search', 'x', '--no-group'],
   ])('rejects invalid or conflicting arguments %j', (...args) => {
     expect(parse(...args)).toEqual({ ok: false, exitCode: 2 });
   });
@@ -137,6 +141,7 @@ describe('CLI argument validation', () => {
       },
     });
     expect(parse('--search', 'x'.repeat(200))).toMatchObject({ ok: true });
+    expect(parse('--search', 'x', '--no-color')).toMatchObject({ ok: true, opts: { color: false } });
   });
 
   it.each([['--list'], ['--json'], ['--phases-only'], ['--tui'], []])(

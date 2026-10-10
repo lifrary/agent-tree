@@ -6767,7 +6767,7 @@ function parseCliArgs(argv) {
   program2.name("agent-tree").description(
     "Navigate Claude Code or Codex sessions as numbered trees and generate resume prompts."
   ).version(VERSION, "-V, --version", "print agent-tree version").argument("[session-id]", "session UUID or short prefix (e.g. 69c2f35e)").option("--latest", "use the most recently modified session").option("--pick", "interactive picker over recent sessions").option("--file <path>", "read a Claude Code or Codex JSONL file (auto-detected)").addOption(
-    new Option("--source <source>", "session source (discovery: claude; file: auto)").choices([
+    new Option("--source <source>", "session source (discovery: claude; search: both; file: auto)").choices([
       "claude",
       "codex"
     ])
@@ -6811,6 +6811,7 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
     if (queryProblem) fail(`--search ${queryProblem}`);
     if ((opts.since !== void 0 || opts.includeToolOutput) && !searching)
       fail("--since and --include-tool-output require --search");
+    if (opts.open !== void 0 && !opts.open.trim()) fail("--open needs a step number");
     if ((opts.agent || opts.openDir !== void 0) && opts.open === void 0)
       fail("--agent and --open-dir require --open");
     if (opts.open !== void 0 && (opts.json || opts.dumpJson || opts.dryRun))
@@ -6846,7 +6847,8 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
       "dropSidechains",
       "redactDryrun",
       "group",
-      "color"
+      // Search highlights matches on a TTY, so --no-color applies to it.
+      ...searching ? [] : ["color"]
     ].some((option) => program2.getOptionValueSource(option) === "cli")) {
       fail("--sessions, --picks and --search do not support LLM, sidechain or tree display options");
     }
@@ -30611,7 +30613,8 @@ async function main(argv = process.argv) {
   const projectCwd = opts.cwd ? resolve7(opts.cwd) : void 0;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
-  if (!(await stat(cwd)).isDirectory()) {
+  const cwdInfo = await stat(cwd).catch(() => null);
+  if (!cwdInfo?.isDirectory()) {
     console.error("error: --cwd must name a directory");
     return 2;
   }
@@ -30662,7 +30665,7 @@ async function main(argv = process.argv) {
     jsonl: match.jsonlPath
   });
   const mode = resolveMode(opts, !!process.stdout.isTTY && !!process.stdin.isTTY);
-  const quiet = (mode.list || mode.snapshot || mode.tui) && !opts.verbose && !opts.trace;
+  const quiet = (mode.list || mode.snapshot || mode.tui || mode.open) && !opts.verbose && !opts.trace;
   const result = await runPipeline({ match, opts, config: config2, logger, quiet });
   if (result.graph.meta.sessionId) match.sessionId = result.graph.meta.sessionId;
   if (result.isEmpty && !opts.json) {

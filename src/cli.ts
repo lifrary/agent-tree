@@ -55,7 +55,8 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   const projectCwd = opts.cwd ? resolve(opts.cwd) : undefined;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
-  if (!(await stat(cwd)).isDirectory()) {
+  const cwdInfo = await stat(cwd).catch(() => null);
+  if (!cwdInfo?.isDirectory()) {
     console.error('error: --cwd must name a directory');
     return 2;
   }
@@ -130,7 +131,8 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   // Quiet the [N/5] progress lines for skill-friendly + interactive modes.
   // Only the explicit `--verbose` / `--trace` flags reveal them. Otherwise the
   // user's chat / TUI stays clean — they don't need ingestion telemetry.
-  const quiet = (mode.list || mode.snapshot || mode.tui) && !opts.verbose && !opts.trace;
+  const quiet =
+    (mode.list || mode.snapshot || mode.tui || mode.open) && !opts.verbose && !opts.trace;
 
   const result = await runPipeline({ match, opts, config, logger, quiet });
   // Exported files need not be named after the embedded session UUID.

@@ -69,7 +69,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     .option('--pick', 'interactive picker over recent sessions')
     .option('--file <path>', 'read a Claude Code or Codex JSONL file (auto-detected)')
     .addOption(
-      new Option('--source <source>', 'session source (discovery: claude; file: auto)').choices([
+      new Option('--source <source>', 'session source (discovery: claude; search: both; file: auto)').choices([
         'claude',
         'codex',
       ]),
@@ -150,6 +150,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     if (queryProblem) fail(`--search ${queryProblem}`);
     if ((opts.since !== undefined || opts.includeToolOutput) && !searching)
       fail('--since and --include-tool-output require --search');
+    if (opts.open !== undefined && !opts.open.trim()) fail('--open needs a step number');
     if ((opts.agent || opts.openDir !== undefined) && opts.open === undefined)
       fail('--agent and --open-dir require --open');
     if (opts.open !== undefined && (opts.json || opts.dumpJson || opts.dryRun))
@@ -197,7 +198,8 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
         'dropSidechains',
         'redactDryrun',
         'group',
-        'color',
+        // Search highlights matches on a TTY, so --no-color applies to it.
+        ...(searching ? [] : ['color']),
       ].some((option) => program.getOptionValueSource(option) === 'cli')
     ) {
       fail('--sessions, --picks and --search do not support LLM, sidechain or tree display options');

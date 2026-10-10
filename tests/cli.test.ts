@@ -236,6 +236,10 @@ describe('portable CLI workflows', () => {
     ).rejects.toMatchObject({ code: 2 });
     await expect(cli('--tui')).rejects.toMatchObject({ code: 2 });
     await expect(cli('--pick')).rejects.toMatchObject({ code: 2 });
+    await expect(cli('--sessions', '--cwd', join(root, 'missing'))).rejects.toMatchObject({
+      code: 2,
+      stderr: expect.stringContaining('--cwd must name a directory'),
+    });
   });
 
   it('dry-run emits no JSON, dump artifacts or verbose caches', async () => {

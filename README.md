@@ -366,7 +366,7 @@ Use the absolute path of your own install; after `npm install -g`, it is `$(npm 
 | "show my starred steps" / "remove that star" | `agent_tree_picks({})` / `agent_tree_unstar({ cwd, nodeId })` |
 | "where did we fix the redactor?"             | `agent_tree_search({ cwd, query: "redactor" })`, then a snapshot |
 
-On the command line, the same requests map to `--sessions`, `--list`, `--snapshot <n> --mode <mode>`, `--diff <a> <b>`, `--picks` and `--unstar <n>`.
+On the command line, the same requests map to `--sessions`, `--list`, `--snapshot <n> --mode <mode>`, `--diff <a> <b>`, `--picks`, `--unstar <n>` and `--search <text>`.
 
 ### Rules
 
@@ -411,7 +411,7 @@ On the command line, the same requests map to `--sessions`, `--list`, `--snapsho
   "limit": 10, "sinceDays": "number?", "includeToolOutput": "boolean?" } // limit: integer 1–50
 ```
 
-Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", "text": "…" }] }`; failure adds `"isError": true`. Catalog results also carry `structuredContent: { sessions: [...] }`, JSON list results carry `structuredContent: { mindmap: {...} }`, and search results carry `structuredContent: { query, scope, scanned, results: [...] }` with redacted snippets. Per-session tools take `sessionId` or `file`, never both, and fall back to the latest session in `cwd`, then the latest overall. `format: "json"` rejects a nonempty `filter` and `phasesOnly: true`. The canonical definitions live in [`src/mcp/server.ts`](./src/mcp/server.ts), and the skill Claude Code loads with the plugin is [`skills/agent-tree/SKILL.md`](./skills/agent-tree/SKILL.md).
+Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", "text": "…" }] }`; failure adds `"isError": true`. Catalog results also carry `structuredContent: { sessions: [...] }`, JSON list results carry `structuredContent: { mindmap: {...} }`, and search results carry `structuredContent: { query, case_sensitive, scope, scanned, total_sessions, results: [...] }` with redacted snippets. Per-session tools take `sessionId` or `file`, never both, and fall back to the latest session in `cwd`, then the latest overall. `format: "json"` rejects a nonempty `filter` and `phasesOnly: true`. The canonical definitions live in [`src/mcp/server.ts`](./src/mcp/server.ts) and [`src/mcp/search.ts`](./src/mcp/search.ts), and the skill Claude Code loads with the plugin is [`skills/agent-tree/SKILL.md`](./skills/agent-tree/SKILL.md).
 
 </details>
 

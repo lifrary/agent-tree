@@ -265,6 +265,12 @@ try {
   }
   assert.deepEqual(schemas.agent_tree_list.properties.format.enum, ['text', 'json']);
   assert.equal(schemas.agent_tree_list.properties.format.default, 'text');
+  const search = schemas.agent_tree_search;
+  assert.deepEqual([...search.required].sort(), ['cwd', 'query']);
+  assert.equal(search.properties.limit.default, 10);
+  assert.equal(search.properties.limit.minimum, 1);
+  assert.equal(search.properties.limit.maximum, 50);
+  assert.deepEqual(search.properties.scope.enum, ['all', 'project']);
   console.log('PASS: version and all 7 MCP tools/schemas match');
 } finally {
   clearTimeout(timer);
