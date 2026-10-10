@@ -41349,7 +41349,7 @@ async function readJsonl(path, opts = {}) {
       sessionId: first?.sessionId ?? "",
       permissionMode: "default"
     };
-    logger2?.warn(`no permission-mode meta line; synthesized from first event`);
+    logger2?.debug(`no permission-mode meta line; synthesized from first event`);
   }
   return { meta: meta3, events, malformedCount, skippedMetaCount };
 }

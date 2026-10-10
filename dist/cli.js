@@ -8120,7 +8120,7 @@ async function readJsonl(path2, opts = {}) {
       sessionId: first?.sessionId ?? "",
       permissionMode: "default"
     };
-    logger?.warn(`no permission-mode meta line; synthesized from first event`);
+    logger?.debug(`no permission-mode meta line; synthesized from first event`);
   }
   return { meta: meta3, events, malformedCount, skippedMetaCount };
 }

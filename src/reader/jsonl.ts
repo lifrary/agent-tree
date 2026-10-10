@@ -126,7 +126,8 @@ export async function readJsonl(
       sessionId: first?.sessionId ?? '',
       permissionMode: 'default',
     };
-    logger?.warn(`no permission-mode meta line; synthesized from first event`);
+    // Current Claude Code omits this line in many valid sessions; the default is correct.
+    logger?.debug(`no permission-mode meta line; synthesized from first event`);
   }
 
   return { meta, events, malformedCount, skippedMetaCount };

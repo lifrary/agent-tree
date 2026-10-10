@@ -215,6 +215,18 @@ describe('portable CLI workflows', () => {
     expect(first.session_id).toBe(second.session_id);
   });
 
+  it('reads a valid session without a permission-mode line silently', async () => {
+    const lines = (await readFile(fixture, 'utf8'))
+      .trim()
+      .split('\n')
+      .filter((line) => JSON.parse(line).type !== 'permission-mode');
+    const file = join(root, 'no-permission-mode.jsonl');
+    await writeFile(file, lines.join('\n') + '\n');
+    const { stdout, stderr } = await cli('--file', file, '--json', '--strict');
+    expect(JSON.parse(stdout).source).toBe('claude');
+    expect(stderr).toBe('');
+  });
+
   it('strict mode rejects malformed input without echoing its contents', async () => {
     const file = join(project, 'broken.jsonl');
     await writeFile(file, (await readFile(fixture, 'utf8')) + '\n{"private":"sensitive-value"');
