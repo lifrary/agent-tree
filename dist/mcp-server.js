@@ -43364,6 +43364,12 @@ function toSessionMatch(entry) {
   };
 }
 
+// src/launch/command.ts
+function formatOpenCommand(input2) {
+  const selector = input2.file ? `--file '${input2.file.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
+  return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
+}
+
 // src/utils/picks.ts
 import { randomBytes } from "node:crypto";
 import { appendFile, lstat as lstat3, mkdir as mkdir2, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
@@ -43706,7 +43712,22 @@ ${tree.text}${footer}`
       await recordPick(match.sessionId, node2.id, input2.mode, { source: match.source }).catch(
         (error62) => logger.warn("pick history write failed", { error: redactor.apply(String(error62)) })
       );
-      return text(redactor.apply(markdown));
+      const openCommand = formatOpenCommand({
+        source: match.source,
+        sessionId: match.sessionId,
+        file: input2.file ? match.jsonlPath : void 0,
+        step: renderTextTree(mindmap).idToNumber.get(node2.id) ?? node2.id,
+        mode: input2.mode
+      });
+      return text(
+        redactor.apply(
+          `${markdown.trimEnd()}
+
+To start a new session with this prompt, run in a terminal:
+${openCommand}
+`
+        )
+      );
     })
   );
   server.registerTool(

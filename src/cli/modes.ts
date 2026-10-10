@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 
 import { graphToDump } from '../reader/graph.js';
 import { lookupSnapshot, renderTextTree } from '../render/text.js';
-import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
+import type { MindMap, MindMapNode, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { redactDeep, type Redactor } from '../utils/redact.js';
 import type { SessionMatch } from '../utils/session_path.js';
@@ -17,6 +17,7 @@ import type { SessionSourceId } from '../sources/types.js';
 import type { CliOptions } from './options.js';
 import type { ResolvedConfig } from './pipeline.js';
 import { runTui } from './tui.js';
+import { formatOpenCommand } from '../launch/command.js';
 import { copyToClipboard } from '../utils/clipboard.js';
 import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
 import { safeGitCwd } from '../utils/safe_path.js';
@@ -76,14 +77,71 @@ export async function runListMode(ctx: ModeContext): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
-  const tree = renderTextTree(ctx.mindmap);
-  const node = lookupSnapshot(ctx.mindmap, ctx.opts.snapshot!, tree);
-  if (!node) {
+  const mode = ctx.opts.mode ?? 'continue';
+  const prompt = await buildSnapshotPrompt(ctx, ctx.opts.snapshot!, mode);
+  if (!prompt) {
     console.error(`error: no node matches "${ctx.opts.snapshot}". Run --list to see numbers.`);
     return 2;
   }
-  const wantFork = (ctx.opts.mode ?? 'continue') === 'fork';
-  const baseSnap = wantFork ? node.context_snapshot_fork : node.context_snapshot_continue;
+  const { node, markdown: finalMarkdown } = prompt;
+  const wantFork = mode === 'fork';
+
+  process.stdout.write(finalMarkdown);
+
+  // Record this pick so future --list / --tui can mark visited nodes.
+  // Best-effort — swallow errors so a busted cache dir never blocks output.
+  await recordPick(ctx.match.sessionId, node.id, mode, {
+    source: ctx.match.source,
+  }).catch((err) => ctx.logger.warn?.('pick history write failed', { error: String(err) }));
+
+  // TTY-only: also push to system clipboard so the user can immediately paste
+  // into a new `claude` session without remembering `| pbcopy`. When piped or
+  // redirected, skip — caller is presumably orchestrating themselves.
+  if (process.stdout.isTTY && process.stderr.isTTY) {
+    const openHint = ctx.redactor.apply(
+      `  start it directly: ${formatOpenCommand({
+        source: ctx.match.source,
+        sessionId: ctx.match.sessionId,
+        file: ctx.opts.file ? ctx.match.jsonlPath : undefined,
+        step: prompt.step,
+        mode,
+      })}`,
+    );
+    const result = await copyToClipboard(finalMarkdown);
+    if (result.ok) {
+      console.error(
+        `\n✓ ${wantFork ? 'fork' : 'continue'} snapshot for ${node.id} copied via ${result.command}.\n` +
+          `  Paste into a new \`claude\` session to resume.\n` +
+          openHint,
+      );
+    } else {
+      console.error(
+        `\n(snapshot above is also on stdout — pipe it: agent-tree ... --snapshot ${node.id} | pbcopy)\n` +
+          openHint,
+      );
+    }
+  }
+  return 0;
+}
+
+export interface SnapshotPrompt {
+  node: MindMapNode;
+  /** Display number from the numbered tree; the raw id if the tree has none. */
+  step: number | string;
+  /** Redacted markdown, git context included: what --snapshot prints and --open passes. */
+  markdown: string;
+}
+
+/** Build the resume prompt for one node, or null when no node matches `ref`. */
+export async function buildSnapshotPrompt(
+  ctx: ModeContext,
+  ref: string,
+  mode: 'continue' | 'fork',
+): Promise<SnapshotPrompt | null> {
+  const tree = renderTextTree(ctx.mindmap);
+  const node = lookupSnapshot(ctx.mindmap, ref, tree);
+  if (!node) return null;
+  const baseSnap = mode === 'fork' ? node.context_snapshot_fork : node.context_snapshot_continue;
 
   // Probe git for the source cwd at snapshot time — it's cheap (~50ms) and
   // gives the new session a concrete code-state anchor to work against.
@@ -95,35 +153,10 @@ export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
     ? await getGitContext(sourceCwd)
     : { available: false as const, cwd: '' };
   const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
-  const finalMarkdown = ctx.redactor.apply(
+  const markdown = ctx.redactor.apply(
     gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown,
   );
-
-  process.stdout.write(finalMarkdown);
-
-  // Record this pick so future --list / --tui can mark visited nodes.
-  // Best-effort — swallow errors so a busted cache dir never blocks output.
-  await recordPick(ctx.match.sessionId, node.id, wantFork ? 'fork' : 'continue', {
-    source: ctx.match.source,
-  }).catch((err) => ctx.logger.warn?.('pick history write failed', { error: String(err) }));
-
-  // TTY-only: also push to system clipboard so the user can immediately paste
-  // into a new `claude` session without remembering `| pbcopy`. When piped or
-  // redirected, skip — caller is presumably orchestrating themselves.
-  if (process.stdout.isTTY && process.stderr.isTTY) {
-    const result = await copyToClipboard(finalMarkdown);
-    if (result.ok) {
-      console.error(
-        `\n✓ ${wantFork ? 'fork' : 'continue'} snapshot for ${node.id} copied via ${result.command}.\n` +
-          `  Paste into a new \`claude\` session to resume.`,
-      );
-    } else {
-      console.error(
-        `\n(snapshot above is also on stdout — pipe it: agent-tree ... --snapshot ${node.id} | pbcopy)`,
-      );
-    }
-  }
-  return 0;
+  return { node, step: tree.idToNumber.get(node.id) ?? node.id, markdown };
 }
 
 /**
