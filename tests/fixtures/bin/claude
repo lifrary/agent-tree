@@ -1,0 +1,11 @@
+#!/bin/sh
+# Test stand-in for an agent CLI: records how agent-tree started it, never runs an agent.
+out="${AGENT_TREE_STUB_OUT:?AGENT_TREE_STUB_OUT is not set}"
+pwd -P > "$out.cwd"
+basename "$0" > "$out.name"
+for arg in "$@"; do printf '%s' "$arg"; printf '\000'; done > "$out.argv"
+if [ -n "$AGENT_TREE_STUB_WAIT" ]; then
+  echo STUB-READY
+  exec sleep 30
+fi
+exit "${AGENT_TREE_STUB_EXIT:-0}"
