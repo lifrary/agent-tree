@@ -420,11 +420,11 @@ var require_codegen = __commonJS({
         const rhs = this.rhs === void 0 ? "" : ` = ${this.rhs}`;
         return `${varKind} ${this.name}${rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (!names[this.name.str])
           return;
         if (this.rhs)
-          this.rhs = optimizeExpr(this.rhs, names, constants2);
+          this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -441,10 +441,10 @@ var require_codegen = __commonJS({
       render({ _n }) {
         return `${this.lhs} = ${this.rhs};` + _n;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         if (this.lhs instanceof code_1.Name && !names[this.lhs.str] && !this.sideEffects)
           return;
-        this.rhs = optimizeExpr(this.rhs, names, constants2);
+        this.rhs = optimizeExpr(this.rhs, names, constants3);
         return this;
       }
       get names() {
@@ -505,8 +505,8 @@ var require_codegen = __commonJS({
       optimizeNodes() {
         return `${this.code}` ? this : void 0;
       }
-      optimizeNames(names, constants2) {
-        this.code = optimizeExpr(this.code, names, constants2);
+      optimizeNames(names, constants3) {
+        this.code = optimizeExpr(this.code, names, constants3);
         return this;
       }
       get names() {
@@ -535,12 +535,12 @@ var require_codegen = __commonJS({
         }
         return nodes.length > 0 ? this : void 0;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         const { nodes } = this;
         let i = nodes.length;
         while (i--) {
           const n = nodes[i];
-          if (n.optimizeNames(names, constants2))
+          if (n.optimizeNames(names, constants3))
             continue;
           subtractNames(names, n.names);
           nodes.splice(i, 1);
@@ -593,12 +593,12 @@ var require_codegen = __commonJS({
           return void 0;
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3;
-        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        if (!(super.optimizeNames(names, constants2) || this.else))
+        this.else = (_a3 = this.else) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        if (!(super.optimizeNames(names, constants3) || this.else))
           return;
-        this.condition = optimizeExpr(this.condition, names, constants2);
+        this.condition = optimizeExpr(this.condition, names, constants3);
         return this;
       }
       get names() {
@@ -621,10 +621,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.iteration})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iteration = optimizeExpr(this.iteration, names, constants2);
+        this.iteration = optimizeExpr(this.iteration, names, constants3);
         return this;
       }
       get names() {
@@ -660,10 +660,10 @@ var require_codegen = __commonJS({
       render(opts) {
         return `for(${this.varKind} ${this.name} ${this.loop} ${this.iterable})` + super.render(opts);
       }
-      optimizeNames(names, constants2) {
-        if (!super.optimizeNames(names, constants2))
+      optimizeNames(names, constants3) {
+        if (!super.optimizeNames(names, constants3))
           return;
-        this.iterable = optimizeExpr(this.iterable, names, constants2);
+        this.iterable = optimizeExpr(this.iterable, names, constants3);
         return this;
       }
       get names() {
@@ -705,11 +705,11 @@ var require_codegen = __commonJS({
         (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNodes();
         return this;
       }
-      optimizeNames(names, constants2) {
+      optimizeNames(names, constants3) {
         var _a3, _b;
-        super.optimizeNames(names, constants2);
-        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants2);
-        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants2);
+        super.optimizeNames(names, constants3);
+        (_a3 = this.catch) === null || _a3 === void 0 ? void 0 : _a3.optimizeNames(names, constants3);
+        (_b = this.finally) === null || _b === void 0 ? void 0 : _b.optimizeNames(names, constants3);
         return this;
       }
       get names() {
@@ -1010,7 +1010,7 @@ var require_codegen = __commonJS({
     function addExprNames(names, from) {
       return from instanceof code_1._CodeOrName ? addNames(names, from.names) : names;
     }
-    function optimizeExpr(expr, names, constants2) {
+    function optimizeExpr(expr, names, constants3) {
       if (expr instanceof code_1.Name)
         return replaceName(expr);
       if (!canOptimize(expr))
@@ -1025,14 +1025,14 @@ var require_codegen = __commonJS({
         return items;
       }, []));
       function replaceName(n) {
-        const c = constants2[n.str];
+        const c = constants3[n.str];
         if (c === void 0 || names[n.str] !== 1)
           return n;
         delete names[n.str];
         return c;
       }
       function canOptimize(e) {
-        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants2[c.str] !== void 0);
+        return e instanceof code_1._Code && e._items.some((c) => c instanceof code_1.Name && names[c.str] === 1 && constants3[c.str] !== void 0);
       }
     }
     function subtractNames(names, from) {
@@ -2230,20 +2230,20 @@ var require_resolve = __commonJS({
       return false;
     }
     function countKeys(schema) {
-      let count = 0;
+      let count2 = 0;
       for (const key in schema) {
         if (key === "$ref")
           return Infinity;
-        count++;
+        count2++;
         if (SIMPLE_INLINED.has(key))
           continue;
         if (typeof schema[key] == "object") {
-          (0, util_1.eachItem)(schema[key], (sch) => count += countKeys(sch));
+          (0, util_1.eachItem)(schema[key], (sch) => count2 += countKeys(sch));
         }
-        if (count === Infinity)
+        if (count2 === Infinity)
           return Infinity;
       }
-      return count;
+      return count2;
     }
     function getFullPath(resolver, id = "", normalize) {
       if (normalize !== false)
@@ -5725,8 +5725,8 @@ var require_contains = __commonJS({
         cxt.result(valid, () => cxt.reset());
         function validateItemsWithCount() {
           const schValid = gen.name("_valid");
-          const count = gen.let("count", 0);
-          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count)));
+          const count2 = gen.let("count", 0);
+          validateItems(schValid, () => gen.if(schValid, () => checkLimits(count2)));
         }
         function validateItems(_valid, block) {
           gen.forRange("i", 0, len, (i) => {
@@ -5739,16 +5739,16 @@ var require_contains = __commonJS({
             block();
           });
         }
-        function checkLimits(count) {
-          gen.code((0, codegen_1._)`${count}++`);
+        function checkLimits(count2) {
+          gen.code((0, codegen_1._)`${count2}++`);
           if (max === void 0) {
-            gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true).break());
+            gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true).break());
           } else {
-            gen.if((0, codegen_1._)`${count} > ${max}`, () => gen.assign(valid, false).break());
+            gen.if((0, codegen_1._)`${count2} > ${max}`, () => gen.assign(valid, false).break());
             if (min === 1)
               gen.assign(valid, true);
             else
-              gen.if((0, codegen_1._)`${count} >= ${min}`, () => gen.assign(valid, true));
+              gen.if((0, codegen_1._)`${count2} >= ${min}`, () => gen.assign(valid, true));
           }
         }
       }
@@ -7699,9 +7699,9 @@ function skipFoldedBreaks(input2, position, end) {
     breaks
   };
 }
-function foldedBreaks(count) {
-  if (count === 1) return " ";
-  return "\n".repeat(count - 1);
+function foldedBreaks(count2) {
+  if (count2 === 1) return " ";
+  return "\n".repeat(count2 - 1);
 }
 function getPlainValue(input2, start, end) {
   let result = "";
@@ -15379,14 +15379,14 @@ function codePointLength(str) {
   const units = str.length;
   if (!highSurrogate.test(str))
     return units;
-  let count = units;
+  let count2 = units;
   for (let i = 0; i < units - 1; i++) {
     if ((str.charCodeAt(i) & 64512) === 55296 && (str.charCodeAt(i + 1) & 64512) === 56320) {
-      count--;
+      count2--;
       i++;
     }
   }
-  return count;
+  return count2;
 }
 function getLengthableOrigin(input2) {
   if (Array.isArray(input2))
@@ -19741,8 +19741,8 @@ function az_default() {
 }
 
 // node_modules/zod/v4/locales/be.js
-function getBelarusianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getBelarusianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -22389,8 +22389,8 @@ function hu_default() {
 }
 
 // node_modules/zod/v4/locales/hy.js
-function getArmenianPlural(count, one, many) {
-  return Math.abs(count) === 1 ? one : many;
+function getArmenianPlural(count2, one, many) {
+  return Math.abs(count2) === 1 ? one : many;
 }
 function withDefiniteArticle(word) {
   if (!word)
@@ -25128,8 +25128,8 @@ function ro_default() {
 }
 
 // node_modules/zod/v4/locales/ru.js
-function getRussianPlural(count, one, few, many) {
-  const absCount = Math.abs(count);
+function getRussianPlural(count2, one, few, many) {
+  const absCount = Math.abs(count2);
   const lastDigit = absCount % 10;
   const lastTwoDigits = absCount % 100;
   if (lastTwoDigits >= 11 && lastTwoDigits <= 19) {
@@ -38937,7 +38937,7 @@ var ExperimentalMcpServerTasks = class {
 
 // node_modules/@modelcontextprotocol/sdk/dist/esm/server/mcp.js
 function toolInputElementCount(value, max) {
-  let count = 0;
+  let count2 = 0;
   const stack = [value];
   while (stack.length > 0) {
     const node2 = stack.pop();
@@ -38945,8 +38945,8 @@ function toolInputElementCount(value, max) {
       continue;
     if (Array.isArray(node2)) {
       for (const child of node2) {
-        if (++count > max)
-          return count;
+        if (++count2 > max)
+          return count2;
         if (child !== null && typeof child === "object")
           stack.push(child);
       }
@@ -38954,15 +38954,15 @@ function toolInputElementCount(value, max) {
       for (const key in node2) {
         if (!Object.prototype.hasOwnProperty.call(node2, key))
           continue;
-        if (++count > max)
-          return count;
+        if (++count2 > max)
+          return count2;
         const child = node2[key];
         if (child !== null && typeof child === "object")
           stack.push(child);
       }
     }
   }
-  return count;
+  return count2;
 }
 function resolveMaxToolInputElements(value) {
   if (value === void 0 || value === Infinity)
@@ -40569,11 +40569,11 @@ function buildLabelRequest(inp) {
 }
 async function countSegmentInputTokens(inp) {
   try {
-    const count = await inp.client.messages.countTokens(buildLabelRequest(inp));
-    if (!Number.isSafeInteger(count.input_tokens) || count.input_tokens < 0) {
+    const count2 = await inp.client.messages.countTokens(buildLabelRequest(inp));
+    if (!Number.isSafeInteger(count2.input_tokens) || count2.input_tokens < 0) {
       return { ok: false, reason: "invalid input token count" };
     }
-    return { ok: true, inputTokens: count.input_tokens };
+    return { ok: true, inputTokens: count2.input_tokens };
   } catch (err) {
     return { ok: false, reason: `token count failed (${errMsg(err)})` };
   }
@@ -41156,20 +41156,20 @@ async function labelMindMap(mindmap, graph, segments, opts) {
           }
           const entry = nodesToLabel[idx];
           const input2 = prepareLabelInput(entry, opts);
-          const count = await countSegmentInputTokens(input2);
-          if (!count.ok) {
+          const count2 = await countSegmentInputTokens(input2);
+          if (!count2.ok) {
             stats.segments_attempted += 1;
-            applyResult(entry, count, graph, opts.jsonlPath, opts.redactor, stats, opts.logger);
+            applyResult(entry, count2, graph, opts.jsonlPath, opts.redactor, stats, opts.logger);
             continue;
           }
-          if (stats.reserved_input_tokens >= maxInput || count.inputTokens > maxInput - stats.reserved_input_tokens) {
+          if (stats.reserved_input_tokens >= maxInput || count2.inputTokens > maxInput - stats.reserved_input_tokens) {
             opts.logger?.warn?.(
               `input token budget cannot fit ${entry.segment.id}, keeping heuristic label`,
-              { limit: maxInput, inputTokens: count.inputTokens }
+              { limit: maxInput, inputTokens: count2.inputTokens }
             );
             continue;
           }
-          stats.reserved_input_tokens += count.inputTokens;
+          stats.reserved_input_tokens += count2.inputTokens;
           stats.segments_attempted += 1;
           const res = await callSegmentLabel(input2);
           applyResult(entry, res, graph, opts.jsonlPath, opts.redactor, stats, opts.logger);
@@ -41628,7 +41628,147 @@ import { join as join4, resolve as resolve4 } from "node:path";
 import { createHash as createHash2 } from "node:crypto";
 import { createReadStream as createReadStream3 } from "node:fs";
 import { createInterface as createInterface2 } from "node:readline";
+
+// src/usage/normalize.ts
 function isRecord3(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function count(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+function optionalCount(value) {
+  return value === void 0 || value === null ? 0 : count(value);
+}
+function claudeCallTokens(usage) {
+  if (!isRecord3(usage)) return null;
+  const input2 = count(usage.input_tokens);
+  const output2 = count(usage.output_tokens);
+  const cacheWrite = optionalCount(usage.cache_creation_input_tokens);
+  const cacheRead = optionalCount(usage.cache_read_input_tokens);
+  const details = usage.output_tokens_details;
+  const thinking = optionalCount(isRecord3(details) ? details.thinking_tokens : void 0);
+  if (input2 === null || output2 === null || cacheWrite === null || cacheRead === null) return null;
+  if (thinking === null) return null;
+  return {
+    prompt_tokens: input2 + cacheWrite + cacheRead,
+    cache_read_tokens: cacheRead,
+    cache_write_tokens: cacheWrite,
+    output_tokens: output2,
+    reasoning_tokens: thinking
+  };
+}
+function codexCallTokens(usage) {
+  if (!isRecord3(usage)) return null;
+  const input2 = count(usage.input_tokens);
+  const output2 = count(usage.output_tokens);
+  const cached2 = optionalCount(usage.cached_input_tokens);
+  const cacheWrite = optionalCount(usage.cache_write_input_tokens);
+  const reasoning = optionalCount(usage.reasoning_output_tokens);
+  if (input2 === null || output2 === null || cached2 === null) return null;
+  if (cacheWrite === null || reasoning === null) return null;
+  return {
+    prompt_tokens: input2,
+    cache_read_tokens: cached2,
+    cache_write_tokens: cacheWrite,
+    output_tokens: output2,
+    reasoning_tokens: reasoning
+  };
+}
+function codexTotalKey(total) {
+  if (!isRecord3(total)) return null;
+  const fields = [
+    "input_tokens",
+    "cached_input_tokens",
+    "cache_write_input_tokens",
+    "output_tokens",
+    "reasoning_output_tokens",
+    "total_tokens"
+  ].map((key) => total[key] === void 0 ? null : count(total[key]));
+  return fields.every((field) => field === null) ? null : fields.join(",");
+}
+function contextWindow(value) {
+  const window = count(value);
+  return window !== null && window > 0 ? window : null;
+}
+
+// src/usage/codex.ts
+function createCodexUsageCollector() {
+  const records = [];
+  const counts = [];
+  const responses = /* @__PURE__ */ new Set();
+  let awaitingWindow = [];
+  let latestWindow = null;
+  let previousTotal = null;
+  let unrecognized = 0;
+  return {
+    get unrecognized() {
+      return unrecognized;
+    },
+    tokenUsageRecord(payload, timestamp, after) {
+      if (!isRecord3(payload)) {
+        unrecognized += 1;
+        return;
+      }
+      const responseId = typeof payload.response_id === "string" ? payload.response_id : "";
+      if (responseId && responses.has(responseId)) return;
+      const tokens = codexCallTokens(payload.usage);
+      if (!tokens) {
+        unrecognized += 1;
+        return;
+      }
+      if (responseId) responses.add(responseId);
+      const sample = { ...tokens, timestamp, context_window: latestWindow, after };
+      records.push(sample);
+      awaitingWindow.push(sample);
+    },
+    tokenCount(payload, timestamp, after) {
+      const info = payload.info;
+      if (info === null || info === void 0) return;
+      if (!isRecord3(info)) {
+        unrecognized += 1;
+        return;
+      }
+      const window = contextWindow(info.model_context_window);
+      if (window !== null) {
+        latestWindow = window;
+        for (const sample of awaitingWindow) sample.context_window = window;
+        awaitingWindow = [];
+      }
+      const total = codexTotalKey(info.total_token_usage);
+      if (total !== null && total === previousTotal) return;
+      if (total !== null) previousTotal = total;
+      const tokens = codexCallTokens(info.last_token_usage);
+      if (!tokens) {
+        unrecognized += 1;
+        return;
+      }
+      counts.push({ ...tokens, timestamp, context_window: window ?? latestWindow, after });
+    },
+    finish(eventAt) {
+      return (records.length > 0 ? records : counts).map(({ after, ...sample }) => ({
+        ...sample,
+        eventUuid: eventAt(after)
+      }));
+    }
+  };
+}
+function codexCompactions(events) {
+  const compactions = [];
+  for (const event of events) {
+    if (event.type === "system" && event.payload.type === "compaction") {
+      compactions.push({
+        eventUuid: event.uuid,
+        pre_tokens: null,
+        post_tokens: null,
+        trigger: "unknown"
+      });
+    }
+  }
+  return compactions;
+}
+
+// src/reader/codex.ts
+function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 function textField(obj, key, invalid, required2 = true) {
@@ -41652,7 +41792,7 @@ function publicText(value, allowed, invalid) {
   }
   const blocks = [];
   for (const block of value) {
-    if (!isRecord3(block) || typeof block.type !== "string" || !block.type.trim()) {
+    if (!isRecord4(block) || typeof block.type !== "string" || !block.type.trim()) {
       invalid("content blocks require a nonempty string type");
       continue;
     }
@@ -41667,7 +41807,7 @@ function blockText(blocks) {
 }
 function patchInput(name, input2) {
   if (name.split(".").at(-1) !== "apply_patch") return input2;
-  const object3 = isRecord3(input2) ? input2 : void 0;
+  const object3 = isRecord4(input2) ? input2 : void 0;
   const patch = typeof input2 === "string" ? input2 : object3?.input ?? object3?.patch;
   if (typeof patch !== "string") return input2;
   const paths = /* @__PURE__ */ new Set();
@@ -41701,7 +41841,7 @@ function toolCall(payload, invalid) {
 }
 function localShell(payload, invalid) {
   const id = identifier(payload, payload.call_id === void 0 ? "id" : "call_id", invalid);
-  if (!isRecord3(payload.action)) {
+  if (!isRecord4(payload.action)) {
     invalid("action must be an object");
     return null;
   }
@@ -41809,6 +41949,7 @@ async function readCodex(path, opts = {}) {
   const meta3 = { sessionId: "", permissionMode: "" };
   const context = { cwd: "", gitBranch: "", version: "", entrypoint: "", isSidechain: false };
   const candidates = [];
+  const usage = createCodexUsageCollector();
   let turnId = "";
   let boundary = 0;
   let malformedCount = 0;
@@ -41835,11 +41976,14 @@ async function readCodex(path, opts = {}) {
       let timestamp = "";
       let metadata = true;
       if (parsed !== void 0) {
-        if (!isRecord3(parsed)) {
+        if (!isRecord4(parsed)) {
           invalid("expected an object");
         } else {
           const type = identifier(parsed, "type", invalid);
-          if (type && ["session_meta", "turn_context", "response_item", "event_msg", "compacted"].includes(
+          if (type === "token_usage_record") {
+            const recordTime = typeof parsed.timestamp === "string" ? parsed.timestamp : "";
+            usage.tokenUsageRecord(parsed.payload, recordTime, candidates.length - 1);
+          } else if (type && ["session_meta", "turn_context", "response_item", "event_msg", "compacted"].includes(
             type
           )) {
             timestamp = textField(parsed, "timestamp", invalid) ?? "";
@@ -41849,7 +41993,7 @@ async function readCodex(path, opts = {}) {
             if (parsed.ordinal !== void 0 && (typeof parsed.ordinal !== "number" || !Number.isSafeInteger(parsed.ordinal) || parsed.ordinal < 0)) {
               invalid("ordinal must be a nonnegative safe integer");
             }
-            if (!isRecord3(parsed.payload)) {
+            if (!isRecord4(parsed.payload)) {
               invalid("payload must be an object");
             } else {
               const payload = parsed.payload;
@@ -41872,14 +42016,14 @@ async function readCodex(path, opts = {}) {
                   const version2 = textField(payload, "cli_version", invalid, false);
                   if (version2 !== void 0) context.version = version2;
                   if (payload.git !== void 0 && payload.git !== null) {
-                    if (!isRecord3(payload.git)) invalid("git must be an object");
+                    if (!isRecord4(payload.git)) invalid("git must be an object");
                     else if (payload.git.branch !== null) {
                       const branch = textField(payload.git, "branch", invalid, false);
                       if (branch !== void 0) context.gitBranch = branch;
                     }
                   }
                   context.entrypoint = typeof payload.source === "string" ? payload.source : "";
-                  context.isSidechain = payload.source === "subagent" || isRecord3(payload.source) && Object.hasOwn(payload.source, "subagent");
+                  context.isSidechain = payload.source === "subagent" || isRecord4(payload.source) && Object.hasOwn(payload.source, "subagent");
                   const permission = permissionMode(payload, invalid);
                   if (permission !== void 0) meta3.permissionMode = permission;
                   metadata = sawMeta;
@@ -41918,7 +42062,9 @@ async function readCodex(path, opts = {}) {
                   if (payload.call_id !== void 0) boundary += 1;
                   if (payload.turn_id !== void 0 && typeof payload.turn_id === "string")
                     turnId = payload.turn_id;
-                  if (eventType === "user_message" || eventType === "agent_message") {
+                  if (eventType === "token_count") {
+                    usage.tokenCount(payload, timestamp, candidates.length - 1);
+                  } else if (eventType === "user_message" || eventType === "agent_message") {
                     const text2 = textField(payload, "message", invalid);
                     if (text2 !== void 0) {
                       const role = eventType === "user_message" ? "user" : "assistant";
@@ -41970,21 +42116,36 @@ async function readCodex(path, opts = {}) {
   }
   skippedMetaCount += suppressFallbacks(candidates);
   const events = [];
+  const survivors = [];
   let parentUuid = null;
   for (const candidate of candidates) {
-    if (candidate.suppressed) continue;
-    candidate.event.parentUuid = parentUuid;
-    events.push(candidate.event);
-    parentUuid = candidate.event.uuid;
+    if (!candidate.suppressed) {
+      candidate.event.parentUuid = parentUuid;
+      events.push(candidate.event);
+      parentUuid = candidate.event.uuid;
+    }
+    survivors.push(parentUuid);
   }
-  return { meta: meta3, events, malformedCount, skippedMetaCount };
+  const samples = usage.finish((after) => after < 0 ? null : survivors[after]);
+  if (usage.unrecognized > 0) {
+    logger2?.debug("skipped codex usage records with an unrecognized shape", {
+      count: usage.unrecognized
+    });
+  }
+  return {
+    meta: meta3,
+    events,
+    malformedCount,
+    skippedMetaCount,
+    ...samples.length > 0 ? { usage: samples } : {}
+  };
 }
 
 // src/sources/codex.ts
 var ROLLOUT_NAME = /^rollout-\d{4}-\d{2}-\d{2}T\d{2}-\d{2}-\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}-\d{2})?-([0-9a-fA-F-]{36})\.jsonl$/;
 var DATE_DIRECTORIES = [/^\d{4}$/, /^(?:0[1-9]|1[0-2])$/, /^(?:0[1-9]|[12]\d|3[01])$/];
 var HEADER_LIMIT = 1024 * 1024;
-function isRecord4(value) {
+function isRecord5(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 async function sessionEntry(jsonlPath, filenameId) {
@@ -42024,7 +42185,7 @@ async function sessionEntry(jsonlPath, filenameId) {
     } catch {
       return null;
     }
-    if (!isRecord4(header) || header.type !== "session_meta" || !isRecord4(header.payload))
+    if (!isRecord5(header) || header.type !== "session_meta" || !isRecord5(header.payload))
       return null;
     const meta3 = header.payload;
     const id = meta3.id;
@@ -42033,7 +42194,7 @@ async function sessionEntry(jsonlPath, filenameId) {
     if (meta3.session_id !== void 0 && (typeof meta3.session_id !== "string" || !isFullUuid(meta3.session_id)))
       return null;
     if (typeof meta3.cwd !== "string" || !meta3.cwd.trim()) return null;
-    if (meta3.source === "subagent" || isRecord4(meta3.source) && Object.hasOwn(meta3.source, "subagent"))
+    if (meta3.source === "subagent" || isRecord5(meta3.source) && Object.hasOwn(meta3.source, "subagent"))
       return null;
     const current = await lstatIfPresent(jsonlPath);
     if (!current?.isFile() || current.dev !== info.dev || current.ino !== info.ino) return null;
@@ -42086,7 +42247,7 @@ var codexSource = {
   discover: discover2,
   accepts: (record2) => typeof record2.type === "string" && ["session_meta", "turn_context", "response_item", "event_msg", "compacted"].includes(
     record2.type
-  ) && isRecord4(record2.payload),
+  ) && isRecord5(record2.payload),
   read: readCodex
 };
 
@@ -42528,6 +42689,659 @@ var IdAllocator = class {
   }
 };
 
+// src/usage/sum.ts
+function emptyUsage(withSubagents) {
+  return {
+    calls: 0,
+    prompt_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    output_tokens: 0,
+    reasoning_tokens: 0,
+    context_peak: 0,
+    context_window: null,
+    compactions: [],
+    ...withSubagents ? { subagents: { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 } } : {}
+  };
+}
+function addUsage(a, b) {
+  const sum = {
+    calls: a.calls + b.calls,
+    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
+    cache_read_tokens: a.cache_read_tokens + b.cache_read_tokens,
+    cache_write_tokens: a.cache_write_tokens + b.cache_write_tokens,
+    output_tokens: a.output_tokens + b.output_tokens,
+    reasoning_tokens: a.reasoning_tokens + b.reasoning_tokens,
+    context_peak: Math.max(a.context_peak, b.context_peak),
+    context_window: b.context_window ?? a.context_window,
+    compactions: [...a.compactions, ...b.compactions]
+  };
+  if (a.subagents || b.subagents) {
+    const x = a.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
+    const y = b.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
+    sum.subagents = {
+      count: x.count + y.count,
+      calls: x.calls + y.calls,
+      prompt_tokens: x.prompt_tokens + y.prompt_tokens,
+      output_tokens: x.output_tokens + y.output_tokens
+    };
+  }
+  return sum;
+}
+
+// src/usage/format.ts
+function formatTokens(n) {
+  if (n < 1e3) return String(n);
+  if (n < 9950) return `${(n / 1e3).toFixed(1)}k`;
+  if (n < 999500) return `${Math.round(n / 1e3)}k`;
+  if (n < 995e4) return `${(n / 1e6).toFixed(1)}M`;
+  if (n < 9995e5) return `${Math.round(n / 1e6)}M`;
+  if (n < 995e7) return `${(n / 1e9).toFixed(1)}B`;
+  return `${Math.round(n / 1e9)}B`;
+}
+function ownCompactions(node2) {
+  const key = (c) => JSON.stringify([c.pre_tokens, c.post_tokens, c.trigger]);
+  const inChildren = /* @__PURE__ */ new Map();
+  for (const child of node2.children) {
+    for (const c of child.usage?.compactions ?? []) {
+      inChildren.set(key(c), (inChildren.get(key(c)) ?? 0) + 1);
+    }
+  }
+  return (node2.usage?.compactions ?? []).filter((c) => {
+    const left = inChildren.get(key(c)) ?? 0;
+    if (left === 0) return true;
+    inChildren.set(key(c), left - 1);
+    return false;
+  });
+}
+function rowUsage(node2, childrenHidden) {
+  if (!node2.usage) return void 0;
+  return {
+    usage: node2.usage,
+    compactions: childrenHidden ? node2.usage.compactions : ownCompactions(node2)
+  };
+}
+function sumRowUsage(rows) {
+  const present2 = rows.filter((row) => row !== void 0);
+  if (present2.length === 0) return void 0;
+  return {
+    usage: present2.map((row) => row.usage).reduce((a, b) => addUsage(a, b)),
+    compactions: present2.flatMap((row) => row.compactions)
+  };
+}
+function formatUsage(row) {
+  if (!row) return "";
+  const { usage, compactions } = row;
+  const parts = [];
+  if (usage.calls > 0) {
+    const window = usage.context_window === null ? "" : `/${formatTokens(usage.context_window)}`;
+    parts.push(
+      `prompt ${formatTokens(usage.prompt_tokens)} \xB7 out ${formatTokens(usage.output_tokens)} \xB7 ctx ${formatTokens(usage.context_peak)}${window}`
+    );
+  }
+  for (const c of compactions) {
+    parts.push(
+      c.pre_tokens === null || c.post_tokens === null ? "compacted" : `compacted ${formatTokens(c.pre_tokens)} \u2192 ${formatTokens(c.post_tokens)}`
+    );
+  }
+  const agents = usage.subagents;
+  if (agents && agents.calls > 0) {
+    parts.push(
+      `${agents.count} agent${agents.count === 1 ? "" : "s"} prompt ${formatTokens(agents.prompt_tokens)} \xB7 out ${formatTokens(agents.output_tokens)}`
+    );
+  }
+  return parts.join("  ");
+}
+
+// src/render/text.ts
+var DEFAULT_MAX_WIDTH = 90;
+function detectTerminalWidth() {
+  const cols = process.stdout?.columns;
+  if (typeof cols !== "number" || !Number.isFinite(cols) || cols <= 0) {
+    return DEFAULT_MAX_WIDTH;
+  }
+  return Math.max(60, Math.min(cols, 200));
+}
+function displayWidth(s) {
+  let w = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0);
+    if (cp >= 4352 && cp <= 4447) w += 2;
+    else if (cp >= 11904 && cp <= 12350) w += 2;
+    else if (cp >= 12353 && cp <= 13311) w += 2;
+    else if (cp >= 13312 && cp <= 19903) w += 2;
+    else if (cp >= 19968 && cp <= 40959) w += 2;
+    else if (cp >= 40960 && cp <= 42191) w += 2;
+    else if (cp >= 44032 && cp <= 55203) w += 2;
+    else if (cp >= 63744 && cp <= 64255) w += 2;
+    else if (cp >= 65072 && cp <= 65103) w += 2;
+    else if (cp >= 65280 && cp <= 65376) w += 2;
+    else if (cp >= 65504 && cp <= 65510) w += 2;
+    else if (cp === 8205) w += 0;
+    else if (cp >= 65024 && cp <= 65039) w += 0;
+    else if (cp >= 917760 && cp <= 917999) w += 0;
+    else if (cp >= 65536)
+      w += 2;
+    else w += 1;
+  }
+  return w;
+}
+var ANSI = {
+  reset: "\x1B[0m",
+  dim: "\x1B[2m",
+  cyan: "\x1B[36m",
+  green: "\x1B[32m",
+  yellow: "\x1B[33m",
+  red: "\x1B[31m",
+  brightBlack: "\x1B[90m"
+};
+var wrap = (on, code, s) => on ? `${code}${s}${ANSI.reset}` : s;
+function renderTextTree(mindmap, opts = {}) {
+  const maxWidth = opts.maxWidth ?? detectTerminalWidth();
+  const showRange = opts.showRange !== false;
+  const filterKw = opts.filter?.toLowerCase().trim();
+  const groupConsecutive = opts.groupConsecutive ?? true;
+  const color = opts.color === true;
+  const numbered = [];
+  const allRows = [];
+  walk(mindmap.root, 0, [], true);
+  const padWidth = String(numbered.length || 1).length;
+  const numberToId = /* @__PURE__ */ new Map();
+  const idToNumber = /* @__PURE__ */ new Map();
+  for (const n of numbered) {
+    numberToId.set(n.number, n.id);
+    idToNumber.set(n.id, n.number);
+  }
+  let visibleRows = allRows;
+  if (filterKw) {
+    visibleRows = allRows.filter((r) => {
+      const haystack = `${r.label} ${r.time} ${r.range} ${r.id}`.toLowerCase();
+      return haystack.includes(filterKw);
+    });
+  }
+  if (groupConsecutive) {
+    visibleRows = collapseRuns(visibleRows);
+  }
+  const labelCol = Math.min(maxWidth, 70);
+  let maxLabelWidth = 0;
+  for (const r of visibleRows) {
+    const w = displayWidth(r.label);
+    if (w > maxLabelWidth) maxLabelWidth = w;
+  }
+  const targetCol = Math.min(maxLabelWidth, labelCol);
+  const lines = [];
+  const stats = mindmap.stats;
+  const headerParts = [
+    `agent-tree`,
+    `session ${shortId2(mindmap.session_id)}`,
+    `${stats.total_events} events`,
+    `${stats.total_turns} turns`,
+    `${stats.total_nodes} nodes`
+  ];
+  if (stats.duration_minutes > 0) headerParts.push(`${stats.duration_minutes} min`);
+  if (stats.sidechain_count > 0) headerParts.push(`${stats.sidechain_count} sidechain`);
+  lines.push(wrap(color, ANSI.dim, headerParts.join(" \xB7 ")));
+  if (filterKw) {
+    lines.push(
+      wrap(
+        color,
+        ANSI.dim,
+        `(filter: "${filterKw}" \u2014 ${visibleRows.length}/${allRows.length} rows)`
+      )
+    );
+  }
+  lines.push("");
+  for (const row of visibleRows) {
+    const numStr = wrap(color, ANSI.brightBlack, String(row.number).padStart(padWidth, " "));
+    const prefix = wrap(color, ANSI.brightBlack, row.prefix);
+    const pickMark = pickMarker(row);
+    const labelColored = colorizeLabel(row, color);
+    const rawWidth = displayWidth(pickMark + row.label);
+    const padding = rawWidth < targetCol ? " ".repeat(targetCol - rawWidth) : " ";
+    const time3 = wrap(color, ANSI.brightBlack, row.time);
+    const range = wrap(color, ANSI.brightBlack, row.range);
+    const usageText = formatUsage(row.usage);
+    const usage = usageText ? wrap(color, ANSI.brightBlack, usageText) : "";
+    const trailing = [time3, range, usage].filter((s) => s.length > 0).join("  ");
+    lines.push(`${numStr}. ${prefix}${pickMark}${labelColored}${padding}${trailing}`);
+  }
+  return {
+    text: lines.join("\n"),
+    nodes: numbered,
+    numberToId,
+    idToNumber
+  };
+  function walk(node2, depth, ancestorLastFlags, isLast) {
+    const number4 = numbered.length + 1;
+    numbered.push({ number: number4, id: node2.id, depth });
+    if (typeof opts.maxDepth === "number" && depth > opts.maxDepth) {
+      node2.children.forEach((child, index) => {
+        walk(child, depth + 1, [], index === node2.children.length - 1);
+      });
+      return;
+    }
+    let prefix = "";
+    for (const ancestorLast of ancestorLastFlags) {
+      prefix += ancestorLast ? "   " : "\u2502  ";
+    }
+    if (depth > 0) prefix += isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
+    const sidechainTag = node2.is_sidechain && node2.type !== "root" ? "[sidechain] " : "";
+    const meta3 = node2.phase_meta ? `  (${node2.phase_meta})` : "";
+    const label = `${sidechainTag}${node2.label}${meta3}`;
+    const time3 = typeof node2.time_offset_ms === "number" ? formatRelative(node2.time_offset_ms) : "";
+    const range = showRange ? `events ${node2.index_range[0]}\u2013${node2.index_range[1]}` : "";
+    const isUserText = label.startsWith('"');
+    const fileToolKey = isUserText ? null : extractFileKey(label);
+    const modes = opts.picks?.get(node2.id);
+    allRows.push({
+      number: number4,
+      id: node2.id,
+      prefix,
+      label,
+      time: time3,
+      range,
+      isUserText,
+      fileToolKey,
+      color: node2.color,
+      pickedContinue: !!modes?.has("continue"),
+      pickedFork: !!modes?.has("fork"),
+      ...opts.usage ? { usage: rowUsage(node2, typeof opts.maxDepth === "number" && depth >= opts.maxDepth) } : {}
+    });
+    const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
+    node2.children.forEach((c, i) => {
+      walk(c, depth + 1, nextAncestors, i === node2.children.length - 1);
+    });
+  }
+}
+function collapseRuns(rows) {
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    const head = rows[i];
+    if (!head.fileToolKey) {
+      out.push(head);
+      i += 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < rows.length && rows[j].fileToolKey === head.fileToolKey && rows[j].prefix === head.prefix) {
+      j += 1;
+    }
+    const runLen = j - i;
+    if (runLen >= 3) {
+      const last = rows[j - 1];
+      const collapsed = {
+        ...head,
+        label: `${head.fileToolKey} \xD7${runLen}`,
+        time: head.time && last.time ? `${head.time} \u2192 ${last.time}` : head.time || last.time,
+        range: head.range && last.range ? `events ${head.range.replace(/^events\s/, "").split("\u2013")[0]}\u2013${last.range.replace(/^events\s/, "").split("\u2013")[1]} (#${head.number}-#${last.number})` : head.range,
+        usage: sumRowUsage(rows.slice(i, j).map((row) => row.usage))
+      };
+      out.push(collapsed);
+    } else {
+      for (let k = i; k < j; k += 1) out.push(rows[k]);
+    }
+    i = j;
+  }
+  return out;
+}
+function extractFileKey(label) {
+  const m = label.match(/^([\w.\-/]+\.[A-Za-z0-9]+)\s+\(/);
+  return m ? m[1] : null;
+}
+function pickMarker(row) {
+  return row.pickedContinue || row.pickedFork ? "\u2B50 " : "";
+}
+function colorizeLabel(row, color) {
+  if (!color) return row.label;
+  let base;
+  if (row.isUserText) base = wrap(true, ANSI.cyan, row.label);
+  else if (row.color === "red") base = wrap(true, ANSI.red, row.label);
+  else if (row.color === "yellow") base = wrap(true, ANSI.yellow, row.label);
+  else if (row.color === "green") base = wrap(true, ANSI.green, row.label);
+  else base = wrap(true, ANSI.dim, row.label);
+  if (row.pickedContinue || row.pickedFork) {
+    return `\x1B[1m${base}\x1B[22m`;
+  }
+  return base;
+}
+function shortId2(id) {
+  return id.slice(0, 8);
+}
+function formatRelative(deltaMs) {
+  if (deltaMs < 1e3) return "T0";
+  const totalSec = Math.floor(deltaMs / 1e3);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor(totalSec % 3600 / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `T+${h}h ${m}m`;
+  if (m > 0) return `T+${m}m`;
+  return `T+${s}s`;
+}
+function lookupSnapshot(mindmap, numberOrId, result) {
+  const asNumber = Number(numberOrId);
+  if (Number.isInteger(asNumber) && asNumber > 0) {
+    const id = result.numberToId.get(asNumber);
+    if (id) return findNodeById(mindmap.root, id);
+  }
+  const idCandidate = numberOrId.startsWith("n_") ? numberOrId : `n_${String(numberOrId).padStart(3, "0")}`;
+  return findNodeById(mindmap.root, idCandidate);
+}
+function findNodeById(node2, id) {
+  if (node2.id === id) return node2;
+  for (const c of node2.children) {
+    const hit = findNodeById(c, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// src/tree/steps.ts
+function buildStepIndex(mindmap) {
+  const { numberToId, idToNumber } = renderTextTree(mindmap);
+  const nodes = /* @__PURE__ */ new Map();
+  const deepest = /* @__PURE__ */ new Map();
+  const visit3 = (node2, depth) => {
+    nodes.set(node2.id, node2);
+    const step = idToNumber.get(node2.id);
+    if (step !== void 0) {
+      for (const uuid3 of node2.event_uuids) {
+        const current = deepest.get(uuid3);
+        if (!current || depth > current.depth) deepest.set(uuid3, { step, depth });
+      }
+    }
+    for (const child of node2.children) visit3(child, depth + 1);
+  };
+  visit3(mindmap.root, 0);
+  return {
+    stepOfEvent: (uuid3) => deepest.get(uuid3)?.step,
+    nodeOfStep: (step) => {
+      const id = numberToId.get(step);
+      return id === void 0 ? void 0 : nodes.get(id);
+    },
+    stepOfNode: (id) => idToNumber.get(id)
+  };
+}
+
+// src/usage/claude.ts
+function claudeCall(record2, seen) {
+  if (record2.type !== "assistant" || !isRecord3(record2.message)) return null;
+  const message = record2.message;
+  if (message.model === "<synthetic>") return null;
+  const tokens = claudeCallTokens(message.usage);
+  if (!tokens) return null;
+  const key = nonEmpty(message.id) ?? nonEmpty(record2.requestId) ?? nonEmpty(record2.uuid) ?? void 0;
+  if (key === void 0 || seen.has(key)) return null;
+  seen.add(key);
+  const timestamp = typeof record2.timestamp === "string" ? record2.timestamp : "";
+  return { key, tokens, timestamp };
+}
+function nonEmpty(value) {
+  return typeof value === "string" && value.trim() ? value : null;
+}
+function claudeMainUsage(events, seen) {
+  const samples = [];
+  const compactions = [];
+  const sidechains = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (event.type === "system") {
+      const compaction = compactBoundary(event.payload);
+      if (compaction) compactions.push({ eventUuid: event.uuid, ...compaction });
+      continue;
+    }
+    const call = claudeCall(event, seen);
+    if (!call) continue;
+    if (event.isSidechain) {
+      const record2 = event;
+      const agentId = nonEmpty(record2.agentId) ?? "sidechain";
+      const agent = sidechains.get(agentId) ?? {
+        agentId,
+        eventUuid: event.uuid,
+        calls: 0,
+        prompt_tokens: 0,
+        output_tokens: 0
+      };
+      agent.calls += 1;
+      agent.prompt_tokens += call.tokens.prompt_tokens;
+      agent.output_tokens += call.tokens.output_tokens;
+      sidechains.set(agentId, agent);
+      continue;
+    }
+    samples.push({
+      eventUuid: event.uuid,
+      timestamp: call.timestamp,
+      ...call.tokens,
+      context_window: null
+    });
+  }
+  return { samples, compactions, sidechains: [...sidechains.values()] };
+}
+function compactBoundary(payload) {
+  if (payload.subtype !== "compact_boundary") return null;
+  const meta3 = isRecord3(payload.compactMetadata) ? payload.compactMetadata : {};
+  return {
+    pre_tokens: tokenCount(meta3.preTokens),
+    post_tokens: tokenCount(meta3.postTokens),
+    trigger: typeof meta3.trigger === "string" && meta3.trigger ? meta3.trigger : "unknown"
+  };
+}
+function tokenCount(value) {
+  return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
+}
+
+// src/usage/subagents.ts
+import { constants as constants2 } from "node:fs";
+import { open as open4 } from "node:fs/promises";
+import { basename as basename2, dirname, join as join5 } from "node:path";
+var AGENT_FILE = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/;
+var META_LIMIT = 1024 * 1024;
+var CHUNK_BYTES = 1024 * 1024;
+var NEWLINE = 10;
+var USAGE_KEY = Buffer.from('"usage"');
+async function readClaudeSubagents(jsonlPath, events, seen, logger2) {
+  const directory = join5(dirname(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+  let names;
+  try {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return void 0;
+    names = (await readDirectory(directory)).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+  } catch (error62) {
+    logger2?.debug("skipped an unreadable subagent folder", {
+      code: error62?.code
+    });
+    return void 0;
+  }
+  const agents = [];
+  for (const name of names) {
+    const match = AGENT_FILE.exec(name);
+    if (!match) continue;
+    try {
+      const totals = await readAgentUsage(join5(directory, name), seen);
+      if (!totals) continue;
+      const meta3 = await readAgentMeta(join5(directory, `agent-${match[1]}.meta.json`));
+      agents.push({ id: match[1], ...totals, ...meta3 });
+    } catch (error62) {
+      if (!isMissingPath(error62)) {
+        logger2?.debug("skipped an unreadable subagent transcript", {
+          code: error62?.code
+        });
+      }
+    }
+  }
+  if (agents.length === 0) return void 0;
+  const link = linker(events, agents);
+  return agents.map((agent) => ({
+    agentId: agent.id,
+    eventUuid: link(agent.id),
+    calls: agent.calls,
+    prompt_tokens: agent.prompt_tokens,
+    output_tokens: agent.output_tokens
+  }));
+}
+async function openRegular(path) {
+  const handle = await open4(path, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+  const info = await handle.stat();
+  if (!info.isFile()) {
+    await handle.close();
+    return null;
+  }
+  return { handle, info };
+}
+async function readAgentUsage(path, seen) {
+  const opened = await openRegular(path);
+  if (!opened) return null;
+  const totals = { calls: 0, prompt_tokens: 0, output_tokens: 0 };
+  try {
+    for await (const line of linesContaining(opened.handle, USAGE_KEY)) {
+      let record2;
+      try {
+        record2 = JSON.parse(line);
+      } catch {
+        continue;
+      }
+      if (!isRecord3(record2)) continue;
+      const call = claudeCall(record2, seen);
+      if (!call) continue;
+      totals.calls += 1;
+      totals.prompt_tokens += call.tokens.prompt_tokens;
+      totals.output_tokens += call.tokens.output_tokens;
+    }
+  } finally {
+    await opened.handle.close().catch(() => void 0);
+  }
+  return totals;
+}
+async function* linesContaining(handle, needle) {
+  const chunk = Buffer.allocUnsafe(CHUNK_BYTES);
+  let carry = Buffer.alloc(0);
+  for (; ; ) {
+    const { bytesRead } = await handle.read(chunk, 0, chunk.length, null);
+    const finished = bytesRead === 0;
+    const data = finished ? carry : Buffer.concat([carry, chunk.subarray(0, bytesRead)]);
+    const end = finished ? data.length : data.lastIndexOf(NEWLINE) + 1;
+    let at = data.indexOf(needle);
+    while (at !== -1 && at < end) {
+      const start = data.lastIndexOf(NEWLINE, at) + 1;
+      const stop = data.indexOf(NEWLINE, at);
+      const lineEnd = stop === -1 || stop >= end ? end : stop;
+      yield data.toString("utf8", start, lineEnd);
+      at = data.indexOf(needle, lineEnd);
+    }
+    if (finished) return;
+    carry = Buffer.from(data.subarray(end));
+  }
+}
+async function readAgentMeta(path) {
+  const none = { toolUseId: null, parentAgentId: null };
+  let opened = null;
+  try {
+    opened = await openRegular(path);
+    if (!opened || opened.info.size > META_LIMIT) return none;
+    const meta3 = JSON.parse(await opened.handle.readFile({ encoding: "utf8" }));
+    if (!isRecord3(meta3)) return none;
+    return {
+      toolUseId: typeof meta3.toolUseId === "string" && meta3.toolUseId ? meta3.toolUseId : null,
+      parentAgentId: typeof meta3.parentAgentId === "string" && meta3.parentAgentId ? meta3.parentAgentId : null
+    };
+  } catch {
+    return none;
+  } finally {
+    await opened?.handle.close().catch(() => void 0);
+  }
+}
+function linker(events, agents) {
+  const toolUseEvent = /* @__PURE__ */ new Map();
+  const resultEvent = /* @__PURE__ */ new Map();
+  for (const event of events) {
+    if (event.type === "assistant" && Array.isArray(event.message.content)) {
+      for (const block of event.message.content) {
+        if (block.type === "tool_use" && typeof block.id === "string" && !toolUseEvent.has(block.id))
+          toolUseEvent.set(block.id, event.uuid);
+      }
+    } else if (event.type === "user") {
+      const result = event.toolUseResult;
+      if (isRecord3(result) && typeof result.agentId === "string" && !resultEvent.has(result.agentId))
+        resultEvent.set(result.agentId, event.uuid);
+    }
+  }
+  const byId = new Map(agents.map((agent) => [agent.id, agent]));
+  const resolve8 = (id, visiting) => {
+    const agent = byId.get(id);
+    if (agent?.toolUseId && toolUseEvent.has(agent.toolUseId))
+      return toolUseEvent.get(agent.toolUseId);
+    if (agent?.parentAgentId && !visiting.has(id)) {
+      visiting.add(id);
+      const parent = resolve8(agent.parentAgentId, visiting);
+      if (parent !== null) return parent;
+    }
+    return resultEvent.get(id) ?? null;
+  };
+  return (id) => resolve8(id, /* @__PURE__ */ new Set());
+}
+
+// src/usage/attach.ts
+async function collectSessionUsage(input2) {
+  if (input2.source === "codex") {
+    return { calls: input2.samples ?? [], compactions: codexCompactions(input2.events) };
+  }
+  const seen = /* @__PURE__ */ new Set();
+  const main = claudeMainUsage(input2.events, seen);
+  const files = await readClaudeSubagents(input2.jsonlPath, input2.events, seen, input2.logger);
+  const subagents = files === void 0 && main.sidechains.length === 0 ? void 0 : [...main.sidechains, ...files ?? []];
+  return { calls: main.samples, compactions: main.compactions, subagents };
+}
+async function attachSessionUsage(mindmap, input2) {
+  attachUsage(mindmap, await collectSessionUsage(input2));
+}
+function attachUsage(mindmap, usage) {
+  const subagentCalls = usage.subagents?.reduce((sum, agent) => sum + agent.calls, 0) ?? 0;
+  if (usage.calls.length === 0 && subagentCalls === 0) return;
+  const index = buildStepIndex(mindmap);
+  const ownerOf = (uuid3) => {
+    if (uuid3 === null) return mindmap.root;
+    const step = index.stepOfEvent(uuid3);
+    return (step === void 0 ? void 0 : index.nodeOfStep(step)) ?? mindmap.root;
+  };
+  const withSubagents = usage.subagents !== void 0;
+  const own2 = /* @__PURE__ */ new Map();
+  const ownUsage = (node2) => {
+    let entry = own2.get(node2);
+    if (!entry) {
+      entry = emptyUsage(withSubagents);
+      own2.set(node2, entry);
+    }
+    return entry;
+  };
+  for (const call of usage.calls) {
+    const entry = ownUsage(ownerOf(call.eventUuid));
+    entry.calls += 1;
+    entry.prompt_tokens += call.prompt_tokens;
+    entry.cache_read_tokens += call.cache_read_tokens;
+    entry.cache_write_tokens += call.cache_write_tokens;
+    entry.output_tokens += call.output_tokens;
+    entry.reasoning_tokens += call.reasoning_tokens;
+    entry.context_peak = Math.max(entry.context_peak, call.prompt_tokens);
+    if (call.context_window !== null) entry.context_window = call.context_window;
+  }
+  for (const { eventUuid, ...compaction } of usage.compactions) {
+    ownUsage(ownerOf(eventUuid)).compactions.push(compaction);
+  }
+  for (const agent of usage.subagents ?? []) {
+    const subagents = ownUsage(ownerOf(agent.eventUuid)).subagents;
+    subagents.count += 1;
+    subagents.calls += agent.calls;
+    subagents.prompt_tokens += agent.prompt_tokens;
+    subagents.output_tokens += agent.output_tokens;
+  }
+  const inclusive = (node2) => {
+    let total = own2.get(node2) ?? emptyUsage(withSubagents);
+    for (const child of node2.children) total = addUsage(total, inclusive(child));
+    node2.usage = total;
+    return total;
+  };
+  mindmap.stats.usage = structuredClone(inclusive(mindmap.root));
+}
+
 // src/utils/redact.ts
 var DEFAULT_PATTERNS = [
   {
@@ -42790,7 +43604,7 @@ async function runPipeline(deps) {
     specVersion: SPEC_VERSION
   });
   progress("[1/5] Parsing JSONL...       ");
-  const { meta: meta3, events, malformedCount, skippedMetaCount } = await getSessionSource(
+  const { meta: meta3, events, malformedCount, skippedMetaCount, usage } = await getSessionSource(
     match.source
   ).read(match.jsonlPath, {
     logger: logger2,
@@ -42870,6 +43684,13 @@ async function runPipeline(deps) {
   });
   progress(`\u2714 ${pl(mindmap.stats.total_nodes, "node")} across depth ${treeDepth(mindmap)}
 `);
+  await attachSessionUsage(mindmap, {
+    source: match.source,
+    jsonlPath: match.jsonlPath,
+    events: graph.events,
+    samples: usage,
+    logger: logger2
+  });
   const llmEnabled = opts.llm !== false && config2.llm.enabled;
   if (!llmEnabled) {
     logger2.debug("LLM labeling disabled (flag or config).");
@@ -43016,245 +43837,6 @@ _(no events were parsed.)_
   };
 }
 
-// src/render/text.ts
-var DEFAULT_MAX_WIDTH = 90;
-function detectTerminalWidth() {
-  const cols = process.stdout?.columns;
-  if (typeof cols !== "number" || !Number.isFinite(cols) || cols <= 0) {
-    return DEFAULT_MAX_WIDTH;
-  }
-  return Math.max(60, Math.min(cols, 200));
-}
-function displayWidth(s) {
-  let w = 0;
-  for (const ch of s) {
-    const cp = ch.codePointAt(0);
-    if (cp >= 4352 && cp <= 4447) w += 2;
-    else if (cp >= 11904 && cp <= 12350) w += 2;
-    else if (cp >= 12353 && cp <= 13311) w += 2;
-    else if (cp >= 13312 && cp <= 19903) w += 2;
-    else if (cp >= 19968 && cp <= 40959) w += 2;
-    else if (cp >= 40960 && cp <= 42191) w += 2;
-    else if (cp >= 44032 && cp <= 55203) w += 2;
-    else if (cp >= 63744 && cp <= 64255) w += 2;
-    else if (cp >= 65072 && cp <= 65103) w += 2;
-    else if (cp >= 65280 && cp <= 65376) w += 2;
-    else if (cp >= 65504 && cp <= 65510) w += 2;
-    else if (cp === 8205) w += 0;
-    else if (cp >= 65024 && cp <= 65039) w += 0;
-    else if (cp >= 917760 && cp <= 917999) w += 0;
-    else if (cp >= 65536)
-      w += 2;
-    else w += 1;
-  }
-  return w;
-}
-var ANSI = {
-  reset: "\x1B[0m",
-  dim: "\x1B[2m",
-  cyan: "\x1B[36m",
-  green: "\x1B[32m",
-  yellow: "\x1B[33m",
-  red: "\x1B[31m",
-  brightBlack: "\x1B[90m"
-};
-var wrap = (on, code, s) => on ? `${code}${s}${ANSI.reset}` : s;
-function renderTextTree(mindmap, opts = {}) {
-  const maxWidth = opts.maxWidth ?? detectTerminalWidth();
-  const showRange = opts.showRange !== false;
-  const filterKw = opts.filter?.toLowerCase().trim();
-  const groupConsecutive = opts.groupConsecutive ?? true;
-  const color = opts.color === true;
-  const numbered = [];
-  const allRows = [];
-  walk(mindmap.root, 0, [], true);
-  const padWidth = String(numbered.length || 1).length;
-  const numberToId = /* @__PURE__ */ new Map();
-  const idToNumber = /* @__PURE__ */ new Map();
-  for (const n of numbered) {
-    numberToId.set(n.number, n.id);
-    idToNumber.set(n.id, n.number);
-  }
-  let visibleRows = allRows;
-  if (filterKw) {
-    visibleRows = allRows.filter((r) => {
-      const haystack = `${r.label} ${r.time} ${r.range} ${r.id}`.toLowerCase();
-      return haystack.includes(filterKw);
-    });
-  }
-  if (groupConsecutive) {
-    visibleRows = collapseRuns(visibleRows);
-  }
-  const labelCol = Math.min(maxWidth, 70);
-  let maxLabelWidth = 0;
-  for (const r of visibleRows) {
-    const w = displayWidth(r.label);
-    if (w > maxLabelWidth) maxLabelWidth = w;
-  }
-  const targetCol = Math.min(maxLabelWidth, labelCol);
-  const lines = [];
-  const stats = mindmap.stats;
-  const headerParts = [
-    `agent-tree`,
-    `session ${shortId2(mindmap.session_id)}`,
-    `${stats.total_events} events`,
-    `${stats.total_turns} turns`,
-    `${stats.total_nodes} nodes`
-  ];
-  if (stats.duration_minutes > 0) headerParts.push(`${stats.duration_minutes} min`);
-  if (stats.sidechain_count > 0) headerParts.push(`${stats.sidechain_count} sidechain`);
-  lines.push(wrap(color, ANSI.dim, headerParts.join(" \xB7 ")));
-  if (filterKw) {
-    lines.push(
-      wrap(
-        color,
-        ANSI.dim,
-        `(filter: "${filterKw}" \u2014 ${visibleRows.length}/${allRows.length} rows)`
-      )
-    );
-  }
-  lines.push("");
-  for (const row of visibleRows) {
-    const numStr = wrap(color, ANSI.brightBlack, String(row.number).padStart(padWidth, " "));
-    const prefix = wrap(color, ANSI.brightBlack, row.prefix);
-    const pickMark = pickMarker(row);
-    const labelColored = colorizeLabel(row, color);
-    const rawWidth = displayWidth(pickMark + row.label);
-    const padding = rawWidth < targetCol ? " ".repeat(targetCol - rawWidth) : " ";
-    const time3 = wrap(color, ANSI.brightBlack, row.time);
-    const range = wrap(color, ANSI.brightBlack, row.range);
-    const trailing = [time3, range].filter((s) => s.length > 0).join("  ");
-    lines.push(`${numStr}. ${prefix}${pickMark}${labelColored}${padding}${trailing}`);
-  }
-  return {
-    text: lines.join("\n"),
-    nodes: numbered,
-    numberToId,
-    idToNumber
-  };
-  function walk(node2, depth, ancestorLastFlags, isLast) {
-    const number4 = numbered.length + 1;
-    numbered.push({ number: number4, id: node2.id, depth });
-    if (typeof opts.maxDepth === "number" && depth > opts.maxDepth) {
-      node2.children.forEach((child, index) => {
-        walk(child, depth + 1, [], index === node2.children.length - 1);
-      });
-      return;
-    }
-    let prefix = "";
-    for (const ancestorLast of ancestorLastFlags) {
-      prefix += ancestorLast ? "   " : "\u2502  ";
-    }
-    if (depth > 0) prefix += isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
-    const sidechainTag = node2.is_sidechain && node2.type !== "root" ? "[sidechain] " : "";
-    const meta3 = node2.phase_meta ? `  (${node2.phase_meta})` : "";
-    const label = `${sidechainTag}${node2.label}${meta3}`;
-    const time3 = typeof node2.time_offset_ms === "number" ? formatRelative(node2.time_offset_ms) : "";
-    const range = showRange ? `events ${node2.index_range[0]}\u2013${node2.index_range[1]}` : "";
-    const isUserText = label.startsWith('"');
-    const fileToolKey = isUserText ? null : extractFileKey(label);
-    const modes = opts.picks?.get(node2.id);
-    allRows.push({
-      number: number4,
-      id: node2.id,
-      prefix,
-      label,
-      time: time3,
-      range,
-      isUserText,
-      fileToolKey,
-      color: node2.color,
-      pickedContinue: !!modes?.has("continue"),
-      pickedFork: !!modes?.has("fork")
-    });
-    const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
-    node2.children.forEach((c, i) => {
-      walk(c, depth + 1, nextAncestors, i === node2.children.length - 1);
-    });
-  }
-}
-function collapseRuns(rows) {
-  const out = [];
-  let i = 0;
-  while (i < rows.length) {
-    const head = rows[i];
-    if (!head.fileToolKey) {
-      out.push(head);
-      i += 1;
-      continue;
-    }
-    let j = i + 1;
-    while (j < rows.length && rows[j].fileToolKey === head.fileToolKey && rows[j].prefix === head.prefix) {
-      j += 1;
-    }
-    const runLen = j - i;
-    if (runLen >= 3) {
-      const last = rows[j - 1];
-      const collapsed = {
-        ...head,
-        label: `${head.fileToolKey} \xD7${runLen}`,
-        time: head.time && last.time ? `${head.time} \u2192 ${last.time}` : head.time || last.time,
-        range: head.range && last.range ? `events ${head.range.replace(/^events\s/, "").split("\u2013")[0]}\u2013${last.range.replace(/^events\s/, "").split("\u2013")[1]} (#${head.number}-#${last.number})` : head.range
-      };
-      out.push(collapsed);
-    } else {
-      for (let k = i; k < j; k += 1) out.push(rows[k]);
-    }
-    i = j;
-  }
-  return out;
-}
-function extractFileKey(label) {
-  const m = label.match(/^([\w.\-/]+\.[A-Za-z0-9]+)\s+\(/);
-  return m ? m[1] : null;
-}
-function pickMarker(row) {
-  return row.pickedContinue || row.pickedFork ? "\u2B50 " : "";
-}
-function colorizeLabel(row, color) {
-  if (!color) return row.label;
-  let base;
-  if (row.isUserText) base = wrap(true, ANSI.cyan, row.label);
-  else if (row.color === "red") base = wrap(true, ANSI.red, row.label);
-  else if (row.color === "yellow") base = wrap(true, ANSI.yellow, row.label);
-  else if (row.color === "green") base = wrap(true, ANSI.green, row.label);
-  else base = wrap(true, ANSI.dim, row.label);
-  if (row.pickedContinue || row.pickedFork) {
-    return `\x1B[1m${base}\x1B[22m`;
-  }
-  return base;
-}
-function shortId2(id) {
-  return id.slice(0, 8);
-}
-function formatRelative(deltaMs) {
-  if (deltaMs < 1e3) return "T0";
-  const totalSec = Math.floor(deltaMs / 1e3);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor(totalSec % 3600 / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `T+${h}h ${m}m`;
-  if (m > 0) return `T+${m}m`;
-  return `T+${s}s`;
-}
-function lookupSnapshot(mindmap, numberOrId, result) {
-  const asNumber = Number(numberOrId);
-  if (Number.isInteger(asNumber) && asNumber > 0) {
-    const id = result.numberToId.get(asNumber);
-    if (id) return findNodeById(mindmap.root, id);
-  }
-  const idCandidate = numberOrId.startsWith("n_") ? numberOrId : `n_${String(numberOrId).padStart(3, "0")}`;
-  return findNodeById(mindmap.root, idCandidate);
-}
-function findNodeById(node2, id) {
-  if (node2.id === id) return node2;
-  for (const c of node2.children) {
-    const hit = findNodeById(c, id);
-    if (hit) return hit;
-  }
-  return null;
-}
-
 // src/utils/logger.ts
 var LEVEL_RANK = {
   trace: 10,
@@ -43305,7 +43887,7 @@ async function safeGitCwd(eventsCwd, callerCwd) {
 
 // src/utils/session_path.ts
 import { lstat as lstat2, realpath as realpath2 } from "node:fs/promises";
-import { basename as basename2, dirname, extname, resolve as resolve5 } from "node:path";
+import { basename as basename3, dirname as dirname2, extname, resolve as resolve5 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
     throw new RangeError("session limit must be a nonnegative safe integer");
@@ -43322,8 +43904,8 @@ async function sessionFromFile(filePath, source) {
   if (!info.isFile()) throw new Error("session file must be a regular file");
   return {
     source: await detectSessionSource(jsonlPath, source),
-    sessionId: basename2(jsonlPath, ".jsonl"),
-    projectDir: basename2(dirname(jsonlPath)),
+    sessionId: basename3(jsonlPath, ".jsonl"),
+    projectDir: basename3(dirname2(jsonlPath)),
     jsonlPath
   };
 }
@@ -43365,9 +43947,9 @@ function toSessionMatch(entry) {
 }
 
 // src/launch/command.ts
-import { basename as basename3 } from "node:path";
+import { basename as basename4 } from "node:path";
 function formatOpenCommand(input2) {
-  const findable = basename3(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
+  const findable = basename4(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
   const selector = input2.byFile || !findable ? `--file '${input2.jsonlPath.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
   return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
 }
@@ -43376,8 +43958,8 @@ function formatOpenCommand(input2) {
 import { randomBytes } from "node:crypto";
 import { appendFile, lstat as lstat3, mkdir as mkdir2, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
 import { homedir as homedir5 } from "node:os";
-import { dirname as dirname2, join as join5 } from "node:path";
-var PICKS_ROOT = join5(homedir5(), ".cache", "agent-tree", "picks");
+import { dirname as dirname3, join as join6 } from "node:path";
+var PICKS_ROOT = join6(homedir5(), ".cache", "agent-tree", "picks");
 var PICK_SOURCES = ["claude", "codex"];
 var SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
 function validateSource(source) {
@@ -43390,11 +43972,11 @@ function picksFileFor(sessionId, root = PICKS_ROOT, source = "claude") {
   if (typeof sessionId !== "string" || !SESSION_ID_RE.test(sessionId)) {
     throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
   }
-  return join5(root, source, `${sessionId}.jsonl`);
+  return join6(root, source, `${sessionId}.jsonl`);
 }
 async function recordPick(sessionId, nodeId, mode, opts = {}) {
   const file2 = picksFileFor(sessionId, opts.root, opts.source);
-  await mkdir2(dirname2(file2), { recursive: true, mode: 448 });
+  await mkdir2(dirname3(file2), { recursive: true, mode: 448 });
   const entry = { node_id: nodeId, mode, ts: (/* @__PURE__ */ new Date()).toISOString() };
   await appendFile(file2, JSON.stringify(entry) + "\n", "utf8");
 }
@@ -43409,7 +43991,7 @@ async function listAllPicks(opts = {}) {
   }
   const out = [];
   for (const source of sources2) {
-    const directory = join5(root, source);
+    const directory = join6(root, source);
     let files;
     try {
       if (!(await lstat3(directory)).isDirectory()) continue;
@@ -43423,7 +44005,7 @@ async function listAllPicks(opts = {}) {
       if (!SESSION_ID_RE.test(sessionId)) continue;
       let raw;
       try {
-        raw = await readFile3(join5(directory, file2.name), "utf8");
+        raw = await readFile3(join6(directory, file2.name), "utf8");
       } catch {
         continue;
       }

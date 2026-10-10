@@ -17,6 +17,7 @@ import { labelMindMap } from '../llm/labeler.js';
 import { buildGraph } from '../reader/graph.js';
 import { getSessionSource } from '../sources/index.js';
 import { buildMindMap } from '../tree/builder.js';
+import { attachSessionUsage } from '../usage/attach.js';
 import type { MindMap, SessionGraph, TopicSegment } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { countRedactions, defaultRedactor, redactDeep, type Redactor } from '../utils/redact.js';
@@ -76,7 +77,7 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
 
   // [1/5] Parsing JSONL
   progress('[1/5] Parsing JSONL...       ');
-  const { meta, events, malformedCount, skippedMetaCount } = await getSessionSource(
+  const { meta, events, malformedCount, skippedMetaCount, usage } = await getSessionSource(
     match.source,
   ).read(match.jsonlPath, {
     logger,
@@ -162,6 +163,13 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     redactor,
   });
   progress(`✔ ${pl(mindmap.stats.total_nodes, 'node')} across depth ${treeDepth(mindmap)}\n`);
+  await attachSessionUsage(mindmap, {
+    source: match.source,
+    jsonlPath: match.jsonlPath,
+    events: graph.events,
+    samples: usage,
+    logger,
+  });
 
   // LLM labeling (optional)
   const llmEnabled = opts.llm !== false && config.llm.enabled;
