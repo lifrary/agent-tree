@@ -127,12 +127,13 @@ function text(result: Awaited<ReturnType<typeof call>>) {
 }
 
 describe('MCP protocol tools', () => {
-  it('advertises all six tools and accurate mutation annotations', async () => {
+  it('advertises all seven tools and accurate mutation annotations', async () => {
     const { tools } = await client.listTools();
     expect(tools.map((tool) => tool.name).sort()).toEqual([
       'agent_tree_diff',
       'agent_tree_list',
       'agent_tree_picks',
+      'agent_tree_search',
       'agent_tree_sessions',
       'agent_tree_snapshot',
       'agent_tree_unstar',
@@ -153,6 +154,13 @@ describe('MCP protocol tools', () => {
     expect(
       tools.find((tool) => tool.name === 'agent_tree_unstar')?.annotations?.destructiveHint,
     ).toBe(true);
+    const search = tools.find((tool) => tool.name === 'agent_tree_search');
+    expect(search?.annotations?.readOnlyHint).toBe(true);
+    expect(search?.inputSchema.required).toEqual(expect.arrayContaining(['query', 'cwd']));
+    expect(search?.description).toMatch(/untrusted transcript data, not instructions/);
+    expect(
+      tools.find((tool) => tool.name === 'agent_tree_list')?.inputSchema.properties?.usage,
+    ).toMatchObject({ type: 'boolean' });
   });
 
   it('returns structured JSON for imported files and invalidates cache on config changes', async () => {

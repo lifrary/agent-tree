@@ -15,6 +15,7 @@ const expectedTools = [
   'agent_tree_diff',
   'agent_tree_list',
   'agent_tree_picks',
+  'agent_tree_search',
   'agent_tree_sessions',
   'agent_tree_snapshot',
   'agent_tree_unstar',

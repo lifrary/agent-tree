@@ -50,6 +50,7 @@ export async function runListMode(ctx: ModeContext): Promise<number> {
     color: ctx.opts.color !== false && !!process.stdout.isTTY,
     picks: picks.modesByNode,
     maxDepth: ctx.opts.phasesOnly ? 1 : undefined,
+    usage: ctx.opts.usage,
   });
   process.stdout.write(tree.text + '\n\n');
   const selector = ctx.opts.file
@@ -262,6 +263,7 @@ export async function runTuiMode(ctx: ModeContext): Promise<number> {
       color: ctx.opts.color !== false && !!process.stderr.isTTY,
       picks: picks.modesByNode,
       maxDepth: ctx.opts.phasesOnly ? 1 : undefined,
+      usage: ctx.opts.usage,
     },
   });
   if (!result.selected) return 130;

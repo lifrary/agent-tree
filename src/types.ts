@@ -210,6 +210,29 @@ export interface MindMapNode {
    * phase head nodes (those that contain children other than the root).
    */
   phase_meta?: string;
+  /**
+   * Token usage of every model call in this node's subtree (inclusive; the root
+   * holds the session total). Absent when the source logged no usage.
+   */
+  usage?: StepUsage;
+}
+
+/** Token counts normalized across sources; Codex input already includes cache reads. */
+export interface StepUsage {
+  calls: number;
+  /** Full prompt size: uncached input plus cache reads and cache writes. */
+  prompt_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  /** Largest prompt of any call: how full the context got. */
+  context_peak: number;
+  /** Model context window when the source logs it (Codex); null for Claude Code. */
+  context_window: number | null;
+  compactions: Array<{ pre_tokens: number | null; post_tokens: number | null; trigger: string }>;
+  /** Subagent calls, reported beside the main numbers and never added into them. */
+  subagents?: { count: number; calls: number; prompt_tokens: number; output_tokens: number };
 }
 
 export interface MindMap {
@@ -227,5 +250,6 @@ export interface MindMap {
     total_files_touched: number;
     duration_minutes: number;
     sidechain_count: number;
+    usage?: StepUsage;
   };
 }

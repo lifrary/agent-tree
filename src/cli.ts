@@ -26,6 +26,8 @@ import {
   runTuiMode,
   runUnstarMode,
 } from './cli/modes.js';
+import { runOpenMode } from './cli/open.js';
+import { runSearchMode } from './cli/search.js';
 import { loadConfig } from './config/loader.js';
 import { createLoggerSync, type LogLevel } from './utils/logger.js';
 import { pickSession } from './utils/picker.js';
@@ -81,6 +83,16 @@ export async function main(argv: string[] = process.argv): Promise<number> {
             .join('\n') + '\n',
     );
     return 0;
+  }
+
+  if (opts.search !== undefined) {
+    return runSearchMode({
+      opts,
+      config,
+      logger,
+      projectCwd,
+      redactor: buildRedactor(opts, config, logger),
+    });
   }
 
   // --picks is session-independent (lists picks across every session); handle
@@ -156,6 +168,7 @@ export async function main(argv: string[] = process.argv): Promise<number> {
     cacheHash: result.cacheHash,
   };
 
+  if (mode.open) return runOpenMode(ctx);
   if (mode.unstar) return runUnstarMode(ctx);
   if (mode.diff) return runDiffMode(ctx);
   if (mode.list) return runListMode(ctx);

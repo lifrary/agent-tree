@@ -38,6 +38,8 @@ export interface TextRenderOptions {
    * see only the user-prompt headers.
    */
   maxDepth?: number;
+  /** Append each node's token usage (`--usage`); never changes numbering. */
+  usage?: boolean;
 }
 
 export interface NumberedNode {

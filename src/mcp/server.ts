@@ -3,7 +3,6 @@ import { stat } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import { z } from 'zod';
 
 import { loadConfig } from '../config/loader.js';
@@ -24,12 +23,10 @@ import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
 import { listAllPicks, readPicks, recordPick, removePicksForNode } from '../utils/picks.js';
 import { VERSION } from '../version.js';
 import type { SessionSourceId } from '../sources/types.js';
+import { readOnly, safely, sourceInput, text } from './common.js';
+import { registerSearchTool } from './search.js';
 
 const logger = createLoggerSync('warn');
-const sourceInput = z
-  .enum(['claude', 'codex'])
-  .optional()
-  .describe('Session source. Discovery defaults to claude; file imports auto-detect.');
 const sessionInput = {
   source: sourceInput,
   sessionId: z.string().optional().describe('UUID prefix; omit for the latest session in cwd.'),
@@ -44,24 +41,6 @@ const sessionInput = {
     .describe('Caller project directory for session selection and configuration.'),
 };
 type SessionInput = { sessionId?: string; file?: string; cwd: string; source?: SessionSourceId };
-const readOnly = { readOnlyHint: true, destructiveHint: false, openWorldHint: false };
-
-function text(value: string): CallToolResult {
-  return { content: [{ type: 'text', text: value }] };
-}
-
-function safely<T>(
-  handler: (args: T) => Promise<CallToolResult>,
-): (args: T) => Promise<CallToolResult> {
-  return async (args) => {
-    try {
-      return await handler(args);
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      return { ...text(defaultRedactor().apply(message)), isError: true };
-    }
-  };
-}
 
 async function resolveMatch({ sessionId, file, cwd, source }: SessionInput): Promise<SessionMatch> {
   if (file) {
@@ -163,6 +142,10 @@ export function createServer(): McpServer {
           .optional()
           .describe('Case-insensitive label, time or event-range filter.'),
         format: z.enum(['text', 'json']).default('text'),
+        usage: z
+          .boolean()
+          .optional()
+          .describe('Show token usage per step in the text tree; JSON always includes usage.'),
       },
       annotations: readOnly,
     },
@@ -183,6 +166,7 @@ export function createServer(): McpServer {
         color: false,
         picks: picks.modesByNode,
         maxDepth: input.phasesOnly ? 1 : undefined,
+        usage: input.usage,
       });
       const footer =
         picks.total > 0
@@ -338,6 +322,7 @@ export function createServer(): McpServer {
       );
     }),
   );
+  registerSearchTool(server);
   return server;
 }
 

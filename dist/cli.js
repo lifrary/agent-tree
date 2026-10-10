@@ -6751,6 +6751,16 @@ async function maybeShowStarHint(ctx) {
   return "show";
 }
 
+// src/search/query.ts
+var MAX_SEARCH_LENGTH = 200;
+function searchQueryProblem(query) {
+  if (!query.trim()) return "needs a non-empty query";
+  if (query.length > MAX_SEARCH_LENGTH)
+    return `queries are limited to ${MAX_SEARCH_LENGTH} characters`;
+  if (/[\r\n]/.test(query)) return "queries must be a single line";
+  return null;
+}
+
 // src/cli/options.ts
 function parseCliArgs(argv) {
   const program2 = new Command();
@@ -6761,13 +6771,22 @@ function parseCliArgs(argv) {
       "claude",
       "codex"
     ])
-  ).option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions without analyzing their contents").option("--limit <n>", "maximum sessions to list (default: 20)", positiveInteger).option("--json", "emit a redacted mindmap or session catalog as JSON").option("--strict", "reject malformed JSONL instead of skipping invalid lines").option("--no-llm", "skip LLM labeling and run heuristic-only").option(
+  ).option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions without analyzing their contents").option(
+    "--limit <n>",
+    "maximum sessions to list (default: 20) or report from --search (default: 10)",
+    positiveInteger
+  ).option("--json", "emit a redacted mindmap or session catalog as JSON").option("--strict", "reject malformed JSONL instead of skipping invalid lines").option("--no-llm", "skip LLM labeling and run heuristic-only").option(
     "--dump-json <dir>",
     "dump intermediate artifacts (raw events / graph / segments / tree) as JSON"
   ).option("-v, --verbose", "debug logging").option("--trace", "trace logging (implies --verbose)").option("--dry-run", "run the analysis pipeline but do not emit any output").option("--model <name>", "Anthropic model for LLM labeling").option("--max-llm-tokens <n>", "input token budget ceiling across segments", positiveInteger).option("--redact-strict", "add PII patterns (email/phone/SSN/RRN); card check is always on").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").addOption(new Option("--mode <mode>", "snapshot mode").choices(["continue", "fork"])).option("--tui", "interactive readline prompt with numbered selection").option(
     "--filter <kw>",
     "show only rows whose label/time/range matches keyword (case-insensitive)"
-  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").addHelpText("after", `
+  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").option("--search <text>", "find the sessions and steps where the text appears").option("--since <days>", "limit --search to sessions changed in the last N days", positiveInteger).option("--include-tool-output", "let --search also match tool results").option("--usage", "show token usage per step in the tree").option("--open <step>", "start a new agent session from a step (continue or fork prompt)").addOption(
+    new Option("--agent <agent>", "agent --open starts (default: the session source)").choices([
+      "claude",
+      "codex"
+    ])
+  ).option("--open-dir <dir>", "directory --open starts in (default: the step's directory)").addHelpText("after", `
 Docs and issues: ${REPOSITORY_URL}`).exitOverride();
   try {
     program2.parse(argv, { from: "node" });
@@ -6775,6 +6794,7 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
     const fail = (message) => program2.error(message, { exitCode: 2 });
     const selectors = [opts.latest, opts.pick, opts.file, program2.args[0]].filter(Boolean);
     if (selectors.length > 1) fail("use only one of session-id, --latest, --pick, or --file");
+    const searching = opts.search !== void 0;
     const modes = [
       opts.list,
       opts.snapshot,
@@ -6782,27 +6802,42 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
       opts.picks,
       opts.unstar,
       opts.diff,
-      opts.sessions
+      opts.sessions,
+      searching,
+      opts.open !== void 0
     ].filter(Boolean);
     if (modes.length > 1) fail("output modes are mutually exclusive");
+    const queryProblem = searching ? searchQueryProblem(opts.search) : null;
+    if (queryProblem) fail(`--search ${queryProblem}`);
+    if ((opts.since !== void 0 || opts.includeToolOutput) && !searching)
+      fail("--since and --include-tool-output require --search");
+    if ((opts.agent || opts.openDir !== void 0) && opts.open === void 0)
+      fail("--agent and --open-dir require --open");
+    if (opts.open !== void 0 && (opts.json || opts.dumpJson || opts.dryRun))
+      fail("--open does not support --json, --dump-json or --dry-run");
+    if (opts.usage && (opts.sessions || opts.picks || searching || opts.open !== void 0 || opts.snapshot || opts.unstar || opts.diff))
+      fail("--usage only applies to tree output (--list, --tui, --json)");
     if ([opts.includeSidechains, opts.flattenSidechains, opts.dropSidechains].filter(Boolean).length > 1) {
       fail("sidechain modes are mutually exclusive");
     }
     if (opts.diff && opts.diff.length !== 2) fail("--diff requires exactly two node ids");
-    if (opts.mode && !opts.snapshot) fail("--mode requires --snapshot");
-    if (opts.limit !== void 0 && !opts.sessions) fail("--limit requires --sessions");
-    if ((opts.sessions || opts.picks) && selectors.length)
-      fail("--sessions and --picks do not accept session selectors");
+    if (opts.mode && !opts.snapshot && opts.open === void 0)
+      fail("--mode requires --snapshot or --open");
+    if (opts.limit !== void 0 && !opts.sessions && !searching)
+      fail("--limit requires --sessions or --search");
+    const catalog = opts.sessions || opts.picks || searching;
+    if (catalog && selectors.length)
+      fail("--sessions, --picks and --search do not accept session selectors");
     if (opts.json && (opts.snapshot || opts.tui || opts.picks || opts.unstar || opts.diff)) {
-      fail("--json supports tree output and --sessions only");
+      fail("--json supports tree output, --sessions and --search only");
     }
     if (opts.json && (opts.filter || opts.phasesOnly || opts.group === false)) {
       fail("--json exports the complete tree; display filters are not supported");
     }
-    if ((opts.sessions || opts.picks) && (opts.dumpJson || opts.dryRun || opts.strict || opts.filter || opts.phasesOnly)) {
-      fail("--sessions and --picks do not support analysis or tree display options");
+    if (catalog && (opts.dumpJson || opts.dryRun || opts.strict || opts.filter || opts.phasesOnly)) {
+      fail("--sessions, --picks and --search do not support analysis or tree display options");
     }
-    if ((opts.sessions || opts.picks) && [
+    if (catalog && [
       "llm",
       "model",
       "maxLlmTokens",
@@ -6813,7 +6848,7 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
       "group",
       "color"
     ].some((option) => program2.getOptionValueSource(option) === "cli")) {
-      fail("--sessions and --picks do not support LLM, sidechain or tree display options");
+      fail("--sessions, --picks and --search do not support LLM, sidechain or tree display options");
     }
     return {
       ok: true,
@@ -6836,7 +6871,7 @@ function positiveInteger(value) {
   return number4;
 }
 function resolveMode(opts, isTty) {
-  const utilityFlag = !!opts.picks || !!opts.unstar || !!opts.diff?.length;
+  const utilityFlag = !!opts.picks || !!opts.unstar || !!opts.diff?.length || opts.open !== void 0;
   const flagSet = !!opts.list || !!opts.json || !!opts.snapshot || !!opts.tui || utilityFlag;
   return {
     list: !!opts.list || !!opts.json || !flagSet && !isTty,
@@ -6844,7 +6879,8 @@ function resolveMode(opts, isTty) {
     tui: !!opts.tui || !flagSet && isTty,
     picks: !!opts.picks,
     unstar: !!opts.unstar,
-    diff: !!opts.diff?.length
+    diff: !!opts.diff?.length,
+    open: opts.open !== void 0
   };
 }
 
@@ -30179,7 +30215,8 @@ async function runListMode(ctx) {
     groupConsecutive: ctx.opts.group !== false,
     color: ctx.opts.color !== false && !!process.stdout.isTTY,
     picks: picks.modesByNode,
-    maxDepth: ctx.opts.phasesOnly ? 1 : void 0
+    maxDepth: ctx.opts.phasesOnly ? 1 : void 0,
+    usage: ctx.opts.usage
   });
   process.stdout.write(tree.text + "\n\n");
   const selector = ctx.opts.file ? `--file '${ctx.match.jsonlPath.replace(/'/g, "'\\''")}'` : ctx.match.sessionId.slice(0, 8);
@@ -30343,7 +30380,8 @@ async function runTuiMode(ctx) {
       groupConsecutive: ctx.opts.group !== false,
       color: ctx.opts.color !== false && !!process.stderr.isTTY,
       picks: picks.modesByNode,
-      maxDepth: ctx.opts.phasesOnly ? 1 : void 0
+      maxDepth: ctx.opts.phasesOnly ? 1 : void 0,
+      usage: ctx.opts.usage
     }
   });
   if (!result.selected) return 130;
@@ -30394,6 +30432,18 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
     ),
     writeFile3(resolve5(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
   ]);
+}
+
+// src/cli/open.ts
+async function runOpenMode(_ctx) {
+  console.error("error: --open is not implemented yet");
+  return 1;
+}
+
+// src/cli/search.ts
+async function runSearchMode(_ctx) {
+  console.error("error: --search is not implemented yet");
+  return 1;
 }
 
 // src/utils/logger.ts
@@ -30584,6 +30634,15 @@ async function main(argv = process.argv) {
     );
     return 0;
   }
+  if (opts.search !== void 0) {
+    return runSearchMode({
+      opts,
+      config: config2,
+      logger,
+      projectCwd,
+      redactor: buildRedactor(opts, config2, logger)
+    });
+  }
   if (opts.picks) {
     return runPicksMode(buildRedactor(opts, config2, logger), opts.source);
   }
@@ -30635,6 +30694,7 @@ async function main(argv = process.argv) {
     redactor: result.redactor,
     cacheHash: result.cacheHash
   };
+  if (mode.open) return runOpenMode(ctx);
   if (mode.unstar) return runUnstarMode(ctx);
   if (mode.diff) return runDiffMode(ctx);
   if (mode.list) return runListMode(ctx);

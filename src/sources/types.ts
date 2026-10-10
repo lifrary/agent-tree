@@ -32,6 +32,21 @@ export interface ReadSessionResult {
   events: RawEvent[];
   malformedCount: number;
   skippedMetaCount: number;
+  /** Model calls logged outside the events (Codex token records); Claude usage stays on its events. */
+  usage?: UsageSample[];
+}
+
+/** One model call's token counts as the source logged them, before attribution to steps. */
+export interface UsageSample {
+  /** The event the call belongs to; for Codex, the last event emitted before it. */
+  eventUuid: string | null;
+  timestamp: string;
+  prompt_tokens: number;
+  cache_read_tokens: number;
+  cache_write_tokens: number;
+  output_tokens: number;
+  reasoning_tokens: number;
+  context_window: number | null;
 }
 
 /** Adapters normalize source logs; analysis and output remain source-independent. */

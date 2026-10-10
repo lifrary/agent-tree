@@ -8,6 +8,7 @@ import { Command, InvalidArgumentError, Option } from 'commander';
 import { VERSION } from '../version.js';
 import { REPOSITORY_URL } from '../utils/star_hint.js';
 import type { SessionSourceId } from '../sources/types.js';
+import { searchQueryProblem } from '../search/query.js';
 
 export interface CliOptions {
   latest?: boolean;
@@ -43,6 +44,13 @@ export interface CliOptions {
   picks?: boolean; // --picks lists every pick across every session
   unstar?: string; // --unstar <node-id-or-number> removes the ⭐
   diff?: string[]; // --diff <a> <b> compares two nodes
+  search?: string; // --search <text> finds steps across sessions
+  since?: number; // --since <days> limits --search to recent files
+  includeToolOutput?: boolean; // --include-tool-output also matches tool results
+  usage?: boolean; // --usage adds token columns to the tree
+  open?: string; // --open <step> starts an agent session with the resume prompt
+  agent?: SessionSourceId; // --agent picks the agent --open starts
+  openDir?: string; // --open-dir overrides the directory --open starts in
 }
 
 export type ParsedArgs =
@@ -68,7 +76,11 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     )
     .option('--cwd <dir>', 'project directory for session discovery and configuration')
     .option('--sessions', 'list recent sessions without analyzing their contents')
-    .option('--limit <n>', 'maximum sessions to list (default: 20)', positiveInteger)
+    .option(
+      '--limit <n>',
+      'maximum sessions to list (default: 20) or report from --search (default: 10)',
+      positiveInteger,
+    )
     .option('--json', 'emit a redacted mindmap or session catalog as JSON')
     .option('--strict', 'reject malformed JSONL instead of skipping invalid lines')
     .option('--no-llm', 'skip LLM labeling and run heuristic-only')
@@ -100,6 +112,18 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     .option('--picks', 'list every pick across every session (no session arg needed)')
     .option('--unstar <id>', 'remove the ⭐ from a previously-picked node')
     .option('--diff <ids...>', 'summarise what happened between two nodes (numbers or n_NNN ids)')
+    .option('--search <text>', 'find the sessions and steps where the text appears')
+    .option('--since <days>', 'limit --search to sessions changed in the last N days', positiveInteger)
+    .option('--include-tool-output', 'let --search also match tool results')
+    .option('--usage', 'show token usage per step in the tree')
+    .option('--open <step>', 'start a new agent session from a step (continue or fork prompt)')
+    .addOption(
+      new Option('--agent <agent>', 'agent --open starts (default: the session source)').choices([
+        'claude',
+        'codex',
+      ]),
+    )
+    .option('--open-dir <dir>', "directory --open starts in (default: the step's directory)")
     .addHelpText('after', `\nDocs and issues: ${REPOSITORY_URL}`)
     .exitOverride();
 
@@ -109,6 +133,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     const fail = (message: string) => program.error(message, { exitCode: 2 });
     const selectors = [opts.latest, opts.pick, opts.file, program.args[0]].filter(Boolean);
     if (selectors.length > 1) fail('use only one of session-id, --latest, --pick, or --file');
+    const searching = opts.search !== undefined;
     const modes = [
       opts.list,
       opts.snapshot,
@@ -117,8 +142,24 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       opts.unstar,
       opts.diff,
       opts.sessions,
+      searching,
+      opts.open !== undefined,
     ].filter(Boolean);
     if (modes.length > 1) fail('output modes are mutually exclusive');
+    const queryProblem = searching ? searchQueryProblem(opts.search!) : null;
+    if (queryProblem) fail(`--search ${queryProblem}`);
+    if ((opts.since !== undefined || opts.includeToolOutput) && !searching)
+      fail('--since and --include-tool-output require --search');
+    if ((opts.agent || opts.openDir !== undefined) && opts.open === undefined)
+      fail('--agent and --open-dir require --open');
+    if (opts.open !== undefined && (opts.json || opts.dumpJson || opts.dryRun))
+      fail('--open does not support --json, --dump-json or --dry-run');
+    if (
+      opts.usage &&
+      (opts.sessions || opts.picks || searching || opts.open !== undefined || opts.snapshot ||
+        opts.unstar || opts.diff)
+    )
+      fail('--usage only applies to tree output (--list, --tui, --json)');
     if (
       [opts.includeSidechains, opts.flattenSidechains, opts.dropSidechains].filter(Boolean).length >
       1
@@ -126,24 +167,27 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       fail('sidechain modes are mutually exclusive');
     }
     if (opts.diff && opts.diff.length !== 2) fail('--diff requires exactly two node ids');
-    if (opts.mode && !opts.snapshot) fail('--mode requires --snapshot');
-    if (opts.limit !== undefined && !opts.sessions) fail('--limit requires --sessions');
-    if ((opts.sessions || opts.picks) && selectors.length)
-      fail('--sessions and --picks do not accept session selectors');
+    if (opts.mode && !opts.snapshot && opts.open === undefined)
+      fail('--mode requires --snapshot or --open');
+    if (opts.limit !== undefined && !opts.sessions && !searching)
+      fail('--limit requires --sessions or --search');
+    const catalog = opts.sessions || opts.picks || searching;
+    if (catalog && selectors.length)
+      fail('--sessions, --picks and --search do not accept session selectors');
     if (opts.json && (opts.snapshot || opts.tui || opts.picks || opts.unstar || opts.diff)) {
-      fail('--json supports tree output and --sessions only');
+      fail('--json supports tree output, --sessions and --search only');
     }
     if (opts.json && (opts.filter || opts.phasesOnly || opts.group === false)) {
       fail('--json exports the complete tree; display filters are not supported');
     }
     if (
-      (opts.sessions || opts.picks) &&
+      catalog &&
       (opts.dumpJson || opts.dryRun || opts.strict || opts.filter || opts.phasesOnly)
     ) {
-      fail('--sessions and --picks do not support analysis or tree display options');
+      fail('--sessions, --picks and --search do not support analysis or tree display options');
     }
     if (
-      (opts.sessions || opts.picks) &&
+      catalog &&
       [
         'llm',
         'model',
@@ -156,7 +200,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
         'color',
       ].some((option) => program.getOptionValueSource(option) === 'cli')
     ) {
-      fail('--sessions and --picks do not support LLM, sidechain or tree display options');
+      fail('--sessions, --picks and --search do not support LLM, sidechain or tree display options');
     }
     return {
       ok: true,
@@ -185,7 +229,7 @@ function positiveInteger(value: string): number {
 
 /**
  * Resolve which output mode is active. Default rules:
- *   - --picks / --unstar / --diff are all session-utility modes
+ *   - --picks / --unstar / --diff / --open are all session-utility modes
  *   - --list / --snapshot / --tui explicit → that mode
  *   - none + TTY stdout → tui (interactive)
  *   - none + non-TTY → list (machine-readable for skill use)
@@ -197,10 +241,12 @@ export interface EffectiveMode {
   picks: boolean;
   unstar: boolean;
   diff: boolean;
+  open: boolean;
 }
 
 export function resolveMode(opts: CliOptions, isTty: boolean): EffectiveMode {
-  const utilityFlag = !!opts.picks || !!opts.unstar || !!opts.diff?.length;
+  const utilityFlag =
+    !!opts.picks || !!opts.unstar || !!opts.diff?.length || opts.open !== undefined;
   const flagSet = !!opts.list || !!opts.json || !!opts.snapshot || !!opts.tui || utilityFlag;
   return {
     list: !!opts.list || !!opts.json || (!flagSet && !isTty),
@@ -209,5 +255,6 @@ export function resolveMode(opts: CliOptions, isTty: boolean): EffectiveMode {
     picks: !!opts.picks,
     unstar: !!opts.unstar,
     diff: !!opts.diff?.length,
+    open: opts.open !== undefined,
   };
 }

@@ -36,6 +36,36 @@ describe('CLI argument validation', () => {
     ['--source', '../codex'],
     ['--source', ''],
     ['--unknown'],
+    ['--search', ''],
+    ['--search', '   '],
+    ['--search', 'x'.repeat(201)],
+    ['--search', 'a\nb'],
+    ['--search', 'x', '--list'],
+    ['--search', 'x', '--sessions'],
+    ['--search', 'x', 'aaaa'],
+    ['--search', 'x', '--latest'],
+    ['--search', 'x', '--file', 'export.jsonl'],
+    ['--search', 'x', '--dry-run'],
+    ['--search', 'x', '--strict'],
+    ['--search', 'x', '--no-llm'],
+    ['--search', 'x', '--phases-only'],
+    ['--search', 'x', '--since', '0'],
+    ['--since', '3'],
+    ['--include-tool-output'],
+    ['--list', '--include-tool-output'],
+    ['--search', 'x', '--usage'],
+    ['--sessions', '--usage'],
+    ['--snapshot', '1', '--usage'],
+    ['--diff', '1', '2', '--usage'],
+    ['--open', '1', '--usage'],
+    ['--open', '1', '--json'],
+    ['--open', '1', '--dump-json', 'out'],
+    ['--open', '1', '--dry-run'],
+    ['--open', '1', '--snapshot', '2'],
+    ['--open', '1', '--agent', 'gemini'],
+    ['--agent', 'codex'],
+    ['--open-dir', '/tmp'],
+    ['--snapshot', '1', '--agent', 'codex'],
   ])('rejects invalid or conflicting arguments %j', (...args) => {
     expect(parse(...args)).toEqual({ ok: false, exitCode: 2 });
   });
@@ -66,6 +96,8 @@ describe('CLI argument validation', () => {
       ['--file', 'export.jsonl', '--unstar', '1'],
       ['--file', 'export.jsonl', '--diff', '1', '2'],
       ['--pick'],
+      ['--search', 'redactor'],
+      ['--file', 'export.jsonl', '--open', '1'],
     ]) {
       expect(parse('--source', source, ...args)).toMatchObject({ ok: true, opts: { source } });
     }
@@ -77,6 +109,66 @@ describe('CLI argument validation', () => {
       expect(parsed.ok).toBe(true);
       if (parsed.ok) expect(parsed.opts.source).toBeUndefined();
     }
+  });
+
+  it('parses search with every scope option', () => {
+    const parsed = parse(
+      '--search',
+      'Redactor',
+      '--json',
+      '--limit',
+      '5',
+      '--since',
+      '7',
+      '--include-tool-output',
+      '--cwd',
+      '/tmp',
+      '--redact-strict',
+    );
+    expect(parsed).toMatchObject({
+      ok: true,
+      opts: {
+        search: 'Redactor',
+        json: true,
+        limit: 5,
+        since: 7,
+        includeToolOutput: true,
+        cwd: '/tmp',
+      },
+    });
+    expect(parse('--search', 'x'.repeat(200))).toMatchObject({ ok: true });
+  });
+
+  it.each([['--list'], ['--json'], ['--phases-only'], ['--tui'], []])(
+    'accepts --usage with tree output %j',
+    (...args) => {
+      expect(parse(...args, '--usage')).toMatchObject({ ok: true, opts: { usage: true } });
+    },
+  );
+
+  it('parses --open as its own mode', () => {
+    const parsed = parse(
+      'aaaa1111',
+      '--open',
+      '12',
+      '--mode',
+      'fork',
+      '--agent',
+      'codex',
+      '--open-dir',
+      '/tmp',
+    );
+    expect(parsed).toMatchObject({
+      ok: true,
+      opts: { open: '12', mode: 'fork', agent: 'codex', openDir: '/tmp' },
+    });
+    if (!parsed.ok) return;
+    expect(resolveMode(parsed.opts, true)).toMatchObject({
+      open: true,
+      tui: false,
+      list: false,
+      snapshot: false,
+    });
   });
 
   it('parses explicit budgets and portable JSON output', () => {
