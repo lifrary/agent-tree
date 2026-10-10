@@ -4,6 +4,39 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### Fixed
+
+- Output written to a pipe could be cut short. The CLI exited before an
+  asynchronous pipe drained, so `agent-tree --json | jq` or a large
+  `--sessions --json` catalog could receive only the first 64 KiB, or
+  another multiple of it (65536 of 378774 bytes in one export measured on
+  macOS; Linux showed the same for larger exports). The CLI now waits for
+  stdout and stderr to flush. A stdout reader that stops early (`| head`)
+  ends it with status 0 instead of an EPIPE error, and a closed stderr only
+  drops diagnostics instead of ending the export.
+
+### Added
+
+- `agent-tree --help` ends with the project's GitHub link.
+- After the first successful resume from the interactive tree, the CLI
+  prints a short note asking for a GitHub star, once per machine. It goes to
+  stderr only and stays silent for piped output, CI, Claude Code, `--json`
+  and `--dump-json`; `AGENT_TREE_NO_STAR_HINT=1` turns it off. A marker under
+  `~/.cache/agent-tree/` records that it was shown. The MCP server never
+  prints it.
+
+### Docs
+
+- The README is reorganized around the supported agents, features, a
+  first-class "For AI agents" section (identity, isolated install and
+  self-test, MCP wiring for any client, tools, recipes and rules) and a new
+  roadmap: search across sessions, token usage per step, and opening a
+  session from any step. The npm page now shows 0.2.1 and 0.3.0 as published
+  instead of "publication pending".
+- `RELEASING.md` records the npm web 2FA path for scripted publishes, that a
+  prebuilt-tarball publish skips `prepublishOnly`, and that a new tarball can
+  return 404 for minutes after `npm view` lists the version.
+
 ## [v0.3.0] — 2026-10-09
 
 ### Added
