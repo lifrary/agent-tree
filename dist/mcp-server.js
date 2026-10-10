@@ -40400,7 +40400,7 @@ function topN(counts, n) {
 }
 
 // src/cli/pipeline.ts
-import { createHash as createHash3 } from "node:crypto";
+import { createHash as createHash4 } from "node:crypto";
 
 // src/cache/disk.ts
 import { createHash } from "node:crypto";
@@ -43130,16 +43130,36 @@ function tokenCount(value) {
 }
 
 // src/usage/subagents.ts
+import { createHash as createHash3 } from "node:crypto";
 import { constants as constants2 } from "node:fs";
 import { open as open4 } from "node:fs/promises";
 import { basename as basename2, dirname, join as join5 } from "node:path";
 var AGENT_FILE = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/;
+function subagentFolder(jsonlPath) {
+  return join5(dirname(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+}
+async function subagentSignature(jsonlPath) {
+  const directory = subagentFolder(jsonlPath);
+  try {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return "";
+    const hash2 = createHash3("sha256");
+    const names = (await readDirectory(directory)).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+    for (const name of names) {
+      const file2 = await lstatIfPresent(join5(directory, name));
+      if (file2) hash2.update(`${name}\0${file2.size}\0${file2.mtimeMs}\0`);
+    }
+    return hash2.digest("hex");
+  } catch {
+    return "unreadable";
+  }
+}
 var META_LIMIT = 1024 * 1024;
 var CHUNK_BYTES = 1024 * 1024;
 var NEWLINE = 10;
 var USAGE_KEY = Buffer.from('"usage"');
 async function readClaudeSubagents(jsonlPath, events, seen, logger3) {
-  const directory = join5(dirname(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+  const directory = subagentFolder(jsonlPath);
   let names;
   try {
     const info = await lstatIfPresent(directory);
@@ -43611,7 +43631,7 @@ async function runPipeline(deps) {
     strict: opts.strict
   });
   if (!isFullUuid(meta3.sessionId)) {
-    meta3.sessionId = createHash3("sha256").update(match.jsonlPath).digest("hex").slice(0, 32);
+    meta3.sessionId = createHash4("sha256").update(match.jsonlPath).digest("hex").slice(0, 32);
   }
   progress(`\u2714 ${events.length} events`);
   if (malformedCount > 0) progress(`  (${malformedCount} malformed)`);
@@ -44815,6 +44835,8 @@ function createServer() {
       info.mtimeMs,
       info.ctimeMs,
       info.size,
+      // Usage also reads Claude subagent transcripts, which grow on their own.
+      match.source === "claude" ? await subagentSignature(match.jsonlPath) : "",
       input2.cwd,
       config2
     ]);

@@ -1,4 +1,4 @@
-import { cpSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+import { appendFileSync, cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -89,6 +89,28 @@ describe('agent_tree_list usage', () => {
           },
         },
       },
+    });
+  });
+
+  it('notices a subagent that keeps writing while the main transcript stays the same', async () => {
+    const args = { cwd: project, file, format: 'json' };
+    const subagents = (result: Awaited<ReturnType<Client['callTool']>>) =>
+      (result.structuredContent as { mindmap: { stats: { usage: { subagents: { calls: number } } } } })
+        .mindmap.stats.usage.subagents;
+    expect(subagents(await client.callTool({ name: 'agent_tree_list', arguments: args }))).toMatchObject({
+      calls: 3,
+    });
+    const agent = join(project, 'session', 'subagents', 'agent-a1.jsonl');
+    const call = readFileSync(agent, 'utf8')
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line))
+      .find((record) => record.type === 'assistant');
+    call.uuid = 'feedface-0000-4000-8000-000000000001';
+    call.message.id = 'msg_appended_while_running';
+    appendFileSync(agent, JSON.stringify(call) + '\n');
+    expect(subagents(await client.callTool({ name: 'agent_tree_list', arguments: args }))).toMatchObject({
+      calls: 4,
     });
   });
 });

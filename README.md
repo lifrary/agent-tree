@@ -202,7 +202,9 @@ claude  cccc1111  /tmp/usage-proj  2026-10-10 14:48
   snapshot: agent-tree --source claude cccc1111 --snapshot 2 --mode continue
 ```
 
-It reads every project and both agents unless you narrow it with `--cwd`, `--source` or `--since <days>`. It matches your prompts, the agent's replies and the commands and paths it used; add `--include-tool-output` to match tool results too. A lowercase query ignores case, and any capital letter makes it exact. `--json` prints the results for scripts, and Claude gets the same search as the `agent_tree_search` tool.
+It reads every project and both agents unless you narrow it with `--cwd`, `--source` or `--since <days>`. It matches your prompts, the agent's replies and the commands and paths it used; add `--include-tool-output` to match tool results too. A lowercase query ignores the case of ASCII letters, and any capital letter makes it exact; letters outside ASCII, such as `é`, match only as typed. `--json` prints the results for scripts, and Claude gets the same search as the `agent_tree_search` tool.
+
+Search reads the main Claude Code transcripts and Codex sessions that `--sessions` lists. It does not read Claude Code subagent transcripts or Codex sessions archived under `~/.codex/session_archives/`. It skips its own `agent-tree --search` commands and `agent_tree_search` calls, but anything else that quotes the query, such as a message about it, is a real match, so a fresh search can find the session it was typed in.
 
 ### Token usage per step
 
@@ -215,7 +217,7 @@ $ agent-tree --list --usage
 3. └─ "Now write the tests for the parser please"  (0 actions · 1 file · 0min) T+20m  events 7–13  prompt 3.6k · out 49 · ctx 3.1k
 ```
 
-`prompt` counts every token the model read, cached or not, and `out` what it wrote. `ctx` is the largest prompt in the step, so you can see where the context filled up; Codex rows also show the model's window (`ctx 179k/258k`). A step that compacted the context shows it (Codex logs no counts, so its rows say only `compacted`), and subagent work appears beside the main numbers instead of inside them. `--json` includes this usage whenever the session logged it.
+`prompt` counts every token the model read, cached or not, and `out` what it wrote. `ctx` is the largest prompt in the step, so you can see where the context filled up; Codex rows also show the model's window (`ctx 179k/258k`). A step that compacted the context shows it (Codex logs no counts, so its rows say only `compacted`), and subagent work appears beside the main numbers instead of inside them. Claude Code does not log the model's context window, so its rows show the context size without a limit, and Codex subagent sessions are not yet counted toward the step that started them. `--json` includes this usage whenever the session logged it.
 
 ### Open a session from any step
 

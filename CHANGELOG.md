@@ -55,6 +55,18 @@ All notable changes to this project are documented here. The format follows [Kee
   `~/.cache/agent-tree/` records that it was shown. The MCP server never
   prints it.
 
+### Known limits
+
+- Search reads main transcripts only: not Claude Code subagent transcripts
+  or Codex sessions archived under `~/.codex/session_archives/`. Case
+  folding covers ASCII letters only. Search skips its own `agent-tree
+  --search` commands and `agent_tree_search` calls, but other text that
+  quotes the query still matches.
+- Claude Code logs no context window, so Claude rows show context size
+  without a limit. Codex subagent sessions are not counted toward a step.
+- `--open` runs on macOS and Linux, and its prompt is a command-line
+  argument that other local users can see in `ps`.
+
 ### Changed
 
 - `--cwd` naming a missing directory exits 2, like other usage errors,

@@ -11,6 +11,7 @@
  * names the agent. An agent nothing links stays session-level (null).
  */
 
+import { createHash } from 'node:crypto';
 import { constants, type Stats } from 'node:fs';
 import { open, type FileHandle } from 'node:fs/promises';
 import { basename, dirname, join } from 'node:path';
@@ -22,6 +23,37 @@ import { isRecord } from './normalize.js';
 import type { SubagentUsageAt } from './types.js';
 
 const AGENT_FILE = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/;
+
+/** Where Claude Code keeps a session's subagent transcripts. */
+export function subagentFolder(jsonlPath: string): string {
+  return join(dirname(jsonlPath), basename(jsonlPath, '.jsonl'), 'subagents');
+}
+
+/**
+ * A hash of the subagent folder's file names, sizes and modification times,
+ * so a cache keyed on the main transcript also notices a subagent that is
+ * still writing. One directory listing and one lstat per file; '' when there
+ * is no folder.
+ */
+export async function subagentSignature(jsonlPath: string): Promise<string> {
+  const directory = subagentFolder(jsonlPath);
+  try {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return '';
+    const hash = createHash('sha256');
+    const names = (await readDirectory(directory))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+    for (const name of names) {
+      const file = await lstatIfPresent(join(directory, name));
+      if (file) hash.update(`${name}\0${file.size}\0${file.mtimeMs}\0`);
+    }
+    return hash.digest('hex');
+  } catch {
+    return 'unreadable';
+  }
+}
 const META_LIMIT = 1024 * 1024;
 const CHUNK_BYTES = 1024 * 1024;
 const NEWLINE = 0x0a;
@@ -47,7 +79,7 @@ export async function readClaudeSubagents(
   seen: Set<string>,
   logger?: Logger,
 ): Promise<SubagentUsageAt[] | undefined> {
-  const directory = join(dirname(jsonlPath), basename(jsonlPath, '.jsonl'), 'subagents');
+  const directory = subagentFolder(jsonlPath);
   let names: string[];
   try {
     const info = await lstatIfPresent(directory);

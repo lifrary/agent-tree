@@ -9925,12 +9925,15 @@ import { constants as constants2 } from "node:fs";
 import { open as open3 } from "node:fs/promises";
 import { basename as basename2, dirname as dirname2, join as join5 } from "node:path";
 var AGENT_FILE = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/;
+function subagentFolder(jsonlPath) {
+  return join5(dirname2(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+}
 var META_LIMIT = 1024 * 1024;
 var CHUNK_BYTES = 1024 * 1024;
 var NEWLINE = 10;
 var USAGE_KEY = Buffer.from('"usage"');
 async function readClaudeSubagents(jsonlPath, events, seen, logger) {
-  const directory = join5(dirname2(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+  const directory = subagentFolder(jsonlPath);
   let names;
   try {
     const info = await lstatIfPresent(directory);

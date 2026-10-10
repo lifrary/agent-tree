@@ -26,6 +26,7 @@ import { VERSION } from '../version.js';
 import type { SessionSourceId } from '../sources/types.js';
 import { readOnly, safely, sourceInput, text } from './common.js';
 import { registerSearchTool } from './search.js';
+import { subagentSignature } from '../usage/subagents.js';
 
 const logger = createLoggerSync('warn');
 const sessionInput = {
@@ -78,6 +79,8 @@ export function createServer(): McpServer {
       info.mtimeMs,
       info.ctimeMs,
       info.size,
+      // Usage also reads Claude subagent transcripts, which grow on their own.
+      match.source === 'claude' ? await subagentSignature(match.jsonlPath) : '',
       input.cwd,
       config,
     ]);
