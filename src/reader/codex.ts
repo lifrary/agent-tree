@@ -4,6 +4,7 @@ import { createInterface } from 'node:readline';
 import { isFullUuid } from '../sources/files.js';
 import type { ReadSessionOptions, ReadSessionResult } from '../sources/types.js';
 import type { EventEnvelope, MessageContentBlock, RawEvent, SessionMeta } from '../types.js';
+import { createCodexUsageCollector } from '../usage/codex.js';
 
 type Invalid = (reason: string) => void;
 type EventPayload<Event = RawEvent> = Event extends RawEvent
@@ -276,6 +277,7 @@ export async function readCodex(
   const meta: SessionMeta = { sessionId: '', permissionMode: '' };
   const context = { cwd: '', gitBranch: '', version: '', entrypoint: '', isSidechain: false };
   const candidates: Candidate[] = [];
+  const usage = createCodexUsageCollector();
   let turnId = '';
   let boundary = 0;
   let malformedCount = 0;
@@ -307,7 +309,12 @@ export async function readCodex(
           invalid('expected an object');
         } else {
           const type = identifier(parsed, 'type', invalid);
-          if (
+          if (type === 'token_usage_record') {
+            // Metadata for the event stream; never a strict-mode error, so a
+            // future shape degrades to "no data" instead of rejecting the file.
+            const recordTime = typeof parsed.timestamp === 'string' ? parsed.timestamp : '';
+            usage.tokenUsageRecord(parsed.payload, recordTime, candidates.length - 1);
+          } else if (
             type &&
             ['session_meta', 'turn_context', 'response_item', 'event_msg', 'compacted'].includes(
               type,
@@ -406,7 +413,9 @@ export async function readCodex(
                   if (payload.call_id !== undefined) boundary += 1;
                   if (payload.turn_id !== undefined && typeof payload.turn_id === 'string')
                     turnId = payload.turn_id;
-                  if (eventType === 'user_message' || eventType === 'agent_message') {
+                  if (eventType === 'token_count') {
+                    usage.tokenCount(payload, timestamp, candidates.length - 1);
+                  } else if (eventType === 'user_message' || eventType === 'agent_message') {
                     const text = textField(payload, 'message', invalid);
                     if (text !== undefined) {
                       const role = eventType === 'user_message' ? 'user' : 'assistant';
@@ -459,12 +468,28 @@ export async function readCodex(
 
   skippedMetaCount += suppressFallbacks(candidates);
   const events: RawEvent[] = [];
+  // survivors[i]: the last event at or before candidate i that is emitted.
+  const survivors: Array<string | null> = [];
   let parentUuid: string | null = null;
   for (const candidate of candidates) {
-    if (candidate.suppressed) continue;
-    candidate.event.parentUuid = parentUuid;
-    events.push(candidate.event);
-    parentUuid = candidate.event.uuid;
+    if (!candidate.suppressed) {
+      candidate.event.parentUuid = parentUuid;
+      events.push(candidate.event);
+      parentUuid = candidate.event.uuid;
+    }
+    survivors.push(parentUuid);
   }
-  return { meta, events, malformedCount, skippedMetaCount };
+  const samples = usage.finish((after) => (after < 0 ? null : survivors[after]));
+  if (usage.unrecognized > 0) {
+    logger?.debug('skipped codex usage records with an unrecognized shape', {
+      count: usage.unrecognized,
+    });
+  }
+  return {
+    meta,
+    events,
+    malformedCount,
+    skippedMetaCount,
+    ...(samples.length > 0 ? { usage: samples } : {}),
+  };
 }

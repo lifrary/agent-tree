@@ -14,6 +14,7 @@
  */
 
 import type { MindMap, MindMapNode } from '../types.js';
+import { formatUsage, rowUsage, sumRowUsage, type RowUsage } from '../usage/format.js';
 
 export interface TextRenderOptions {
   /** Maximum display width of the description column (auto-detect from TTY). */
@@ -144,6 +145,8 @@ interface Row {
   color: 'green' | 'yellow' | 'red' | undefined;
   pickedContinue: boolean;
   pickedFork: boolean;
+  /** Present only under `--usage`. */
+  usage?: RowUsage;
 }
 
 export function renderTextTree(mindmap: MindMap, opts: TextRenderOptions = {}): TextRenderResult {
@@ -230,7 +233,10 @@ export function renderTextTree(mindmap: MindMap, opts: TextRenderOptions = {}): 
     const padding = rawWidth < targetCol ? ' '.repeat(targetCol - rawWidth) : ' ';
     const time = wrap(color, ANSI.brightBlack, row.time);
     const range = wrap(color, ANSI.brightBlack, row.range);
-    const trailing = [time, range].filter((s) => s.length > 0).join('  ');
+    // Wrapping an empty column would leave bare ANSI codes in rows without usage.
+    const usageText = formatUsage(row.usage);
+    const usage = usageText ? wrap(color, ANSI.brightBlack, usageText) : '';
+    const trailing = [time, range, usage].filter((s) => s.length > 0).join('  ');
     lines.push(`${numStr}. ${prefix}${pickMark}${labelColored}${padding}${trailing}`);
   }
 
@@ -289,6 +295,7 @@ export function renderTextTree(mindmap: MindMap, opts: TextRenderOptions = {}): 
       color: node.color,
       pickedContinue: !!modes?.has('continue'),
       pickedFork: !!modes?.has('fork'),
+      ...(opts.usage ? { usage: rowUsage(node) } : {}),
     });
 
     const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
@@ -327,6 +334,7 @@ function collapseRuns(rows: Row[]): Row[] {
           head.range && last.range
             ? `events ${head.range.replace(/^events\s/, '').split('–')[0]}–${last.range.replace(/^events\s/, '').split('–')[1]} (#${head.number}-#${last.number})`
             : head.range,
+        usage: sumRowUsage(rows.slice(i, j).map((row) => row.usage)),
       };
       out.push(collapsed);
     } else {
