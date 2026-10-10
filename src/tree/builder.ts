@@ -414,7 +414,7 @@ function deriveSegmentLabel(seg: TopicSegment, events: RawEvent[], redactor?: Re
  *   - `Base directory for this skill: …` (skill bootstrap context)
  *   - shell prompt paste (`❯ …`, `> …`, `$ …`, `# …`)
  */
-function looksLikeSystemNoise(text: string): boolean {
+export function looksLikeSystemNoise(text: string): boolean {
   const t = text.trim();
   if (!t) return true;
   if (t.startsWith('<') || t.startsWith('[SYSTEM')) return true;
