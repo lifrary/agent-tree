@@ -20,6 +20,7 @@ import {
   type SessionMatch,
 } from '../utils/session_path.js';
 import { formatGitContextMarkdown, getGitContext } from '../utils/git.js';
+import { formatOpenCommand } from '../launch/command.js';
 import { listAllPicks, readPicks, recordPick, removePicksForNode } from '../utils/picks.js';
 import { VERSION } from '../version.js';
 import type { SessionSourceId } from '../sources/types.js';
@@ -214,7 +215,20 @@ export function createServer(): McpServer {
         (error) =>
           logger.warn('pick history write failed', { error: redactor.apply(String(error)) }),
       );
-      return text(redactor.apply(markdown));
+      // No tool starts an agent: the user runs this in their own terminal.
+      const openCommand = formatOpenCommand({
+        source: match.source,
+        sessionId: match.sessionId,
+        jsonlPath: match.jsonlPath,
+        byFile: !!input.file,
+        step: renderTextTree(mindmap).idToNumber.get(node.id) ?? node.id,
+        mode: input.mode,
+      });
+      return text(
+        redactor.apply(
+          `${markdown.trimEnd()}\n\nTo start a new session with this prompt, run in a terminal:\n${openCommand}\n`,
+        ),
+      );
     }),
   );
 

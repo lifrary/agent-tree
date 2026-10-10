@@ -3337,8 +3337,8 @@ var init_js_yaml = __esm({
 });
 
 // src/cli.ts
-import { resolve as resolve7 } from "node:path";
-import { stat } from "node:fs/promises";
+import { resolve as resolve8 } from "node:path";
+import { stat as stat4 } from "node:fs/promises";
 
 // node_modules/commander/lib/error.js
 var CommanderError = class extends Error {
@@ -7463,7 +7463,7 @@ function errMsg(err) {
   return status === null ? "network or client error" : `HTTP ${status}`;
 }
 function defaultSleep(ms) {
-  return new Promise((resolve8) => setTimeout(resolve8, ms));
+  return new Promise((resolve9) => setTimeout(resolve9, ms));
 }
 
 // src/utils/git.ts
@@ -7492,7 +7492,7 @@ async function getGitContext(cwd) {
   };
 }
 function runGit(cwd, args) {
-  return new Promise((resolve8) => {
+  return new Promise((resolve9) => {
     let settled = false;
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
@@ -7504,7 +7504,7 @@ function runGit(cwd, args) {
         child.kill();
       } catch {
       }
-      resolve8({ ok: false, stdout: "" });
+      resolve9({ ok: false, stdout: "" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => {
       if (capped) return;
@@ -7522,13 +7522,13 @@ function runGit(cwd, args) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve8({ ok: false, stdout: "" });
+      resolve9({ ok: false, stdout: "" });
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve8({ ok: capped || code === 0, stdout });
+      resolve9({ ok: capped || code === 0, stdout });
     });
   });
 }
@@ -11540,8 +11540,8 @@ function emoji() {
 }
 var ipv4 = /^(?:(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(?:25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])$/;
 var ipv6 = /^(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:))$/;
-var mac = (delimiter) => {
-  const escapedDelim = escapeRegex(delimiter ?? ":");
+var mac = (delimiter2) => {
+  const escapedDelim = escapeRegex(delimiter2 ?? ":");
   return new RegExp(`^(?:[0-9A-F]{2}${escapedDelim}){5}[0-9A-F]{2}$|^(?:[0-9a-f]{2}${escapedDelim}){5}[0-9a-f]{2}$`);
 };
 var cidrv4 = /^((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9][0-9]|[0-9])\/([0-9]|[1-2][0-9]|3[0-2])$/;
@@ -14569,7 +14569,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve8) {
+function isRecursive(inst, stack, resolve9) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -14579,7 +14579,7 @@ function isRecursive(inst, stack, resolve8) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve8);
+      const answer = isRecursive(child, stack, resolve9);
       if (answer > result)
         result = answer;
     }
@@ -14590,7 +14590,7 @@ function isRecursive(inst, stack, resolve8) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve8) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve9) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -14654,7 +14654,7 @@ function isRecursive(inst, stack, resolve8) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve8 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve9 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -30012,25 +30012,60 @@ function notSelected() {
   return { selected: false, nodeId: null, mode: null };
 }
 
+// src/launch/command.ts
+import { basename as basename2 } from "node:path";
+var MAX_PROMPT_BYTES = 1e5;
+function planLaunch(agent, binary, dir, prompt) {
+  const bytes = Buffer.byteLength(prompt, "utf8");
+  if (bytes > MAX_PROMPT_BYTES) {
+    return {
+      ok: false,
+      message: `the prompt is ${bytes.toLocaleString("en-US")} bytes, over the ${MAX_PROMPT_BYTES.toLocaleString("en-US")}-byte limit for one command-line argument; use --snapshot to copy it instead`
+    };
+  }
+  if (prompt.startsWith("-")) {
+    return {
+      ok: false,
+      message: 'internal error: the prompt starts with "-" and would read as an option'
+    };
+  }
+  if (prompt.includes("\0")) {
+    return {
+      ok: false,
+      message: "the prompt contains a NUL byte, which no argument can carry; use --snapshot instead"
+    };
+  }
+  const args = agent === "codex" ? ["-C", dir, "--", prompt] : [prompt];
+  return {
+    ok: true,
+    plan: { command: binary, args, options: { cwd: dir, stdio: "inherit", shell: false } }
+  };
+}
+function formatOpenCommand(input2) {
+  const findable = basename2(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
+  const selector = input2.byFile || !findable ? `--file '${input2.jsonlPath.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
+  return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
+}
+
 // src/utils/clipboard.ts
 import { spawn as spawn2 } from "node:child_process";
 import { platform } from "node:os";
 function copyToClipboard(text) {
   const cmd = pickCommand();
   if (!cmd) return Promise.resolve({ ok: false, reason: "no clipboard tool detected" });
-  return new Promise((resolve8) => {
+  return new Promise((resolve9) => {
     try {
       const child = spawn2(cmd.command, cmd.args, { stdio: ["pipe", "ignore", "ignore"] });
       child.on("error", (err) => {
-        resolve8({ ok: false, command: cmd.command, reason: err.message });
+        resolve9({ ok: false, command: cmd.command, reason: err.message });
       });
       child.on("exit", (code) => {
-        if (code === 0) resolve8({ ok: true, command: cmd.command });
-        else resolve8({ ok: false, command: cmd.command, reason: `exit ${code}` });
+        if (code === 0) resolve9({ ok: true, command: cmd.command });
+        else resolve9({ ok: false, command: cmd.command, reason: `exit ${code}` });
       });
       child.stdin?.end(text, "utf8");
     } catch (err) {
-      resolve8({
+      resolve9({
         ok: false,
         command: cmd.command,
         reason: err instanceof Error ? err.message : String(err)
@@ -30239,40 +30274,59 @@ async function runListMode(ctx) {
   return 0;
 }
 async function runSnapshotMode(ctx) {
-  const tree = renderTextTree(ctx.mindmap);
-  const node2 = lookupSnapshot(ctx.mindmap, ctx.opts.snapshot, tree);
-  if (!node2) {
+  const mode = ctx.opts.mode ?? "continue";
+  const prompt = await buildSnapshotPrompt(ctx, ctx.opts.snapshot, mode);
+  if (!prompt) {
     console.error(`error: no node matches "${ctx.opts.snapshot}". Run --list to see numbers.`);
     return 2;
   }
-  const wantFork = (ctx.opts.mode ?? "continue") === "fork";
-  const baseSnap = wantFork ? node2.context_snapshot_fork : node2.context_snapshot_continue;
-  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, ctx.opts.cwd ?? process.cwd());
-  const gitCtx = sourceCwd ? await getGitContext(sourceCwd) : { available: false, cwd: "" };
-  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
-  const finalMarkdown = ctx.redactor.apply(
-    gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown
-  );
+  const { node: node2, markdown: finalMarkdown } = prompt;
+  const wantFork = mode === "fork";
   process.stdout.write(finalMarkdown);
-  await recordPick(ctx.match.sessionId, node2.id, wantFork ? "fork" : "continue", {
+  await recordPick(ctx.match.sessionId, node2.id, mode, {
     source: ctx.match.source
   }).catch((err) => ctx.logger.warn?.("pick history write failed", { error: String(err) }));
   if (process.stdout.isTTY && process.stderr.isTTY) {
+    const openHint = ctx.redactor.apply(
+      `  start it directly: ${formatOpenCommand({
+        source: ctx.match.source,
+        sessionId: ctx.match.sessionId,
+        jsonlPath: ctx.match.jsonlPath,
+        byFile: !!ctx.opts.file,
+        step: prompt.step,
+        mode
+      })}`
+    );
     const result = await copyToClipboard(finalMarkdown);
     if (result.ok) {
       console.error(
         `
 \u2713 ${wantFork ? "fork" : "continue"} snapshot for ${node2.id} copied via ${result.command}.
-  Paste into a new \`claude\` session to resume.`
+  Paste into a new \`claude\` session to resume.
+` + openHint
       );
     } else {
       console.error(
         `
-(snapshot above is also on stdout \u2014 pipe it: agent-tree ... --snapshot ${node2.id} | pbcopy)`
+(snapshot above is also on stdout \u2014 pipe it: agent-tree ... --snapshot ${node2.id} | pbcopy)
+` + openHint
       );
     }
   }
   return 0;
+}
+async function buildSnapshotPrompt(ctx, ref, mode) {
+  const tree = renderTextTree(ctx.mindmap);
+  const node2 = lookupSnapshot(ctx.mindmap, ref, tree);
+  if (!node2) return null;
+  const baseSnap = mode === "fork" ? node2.context_snapshot_fork : node2.context_snapshot_continue;
+  const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, ctx.opts.cwd ?? process.cwd());
+  const gitCtx = sourceCwd ? await getGitContext(sourceCwd) : { available: false, cwd: "" };
+  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
+  const markdown = ctx.redactor.apply(
+    gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown
+  );
+  return { node: node2, step: tree.idToNumber.get(node2.id) ?? node2.id, markdown };
 }
 function appendGitSection(snapshotMd, gitMd) {
   const fullRefIdx = snapshotMd.indexOf("## Full session reference");
@@ -30437,9 +30491,193 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
 }
 
 // src/cli/open.ts
-async function runOpenMode(_ctx) {
-  console.error("error: --open is not implemented yet");
-  return 1;
+import { stat as stat3 } from "node:fs/promises";
+import { isatty } from "node:tty";
+
+// src/launch/directory.ts
+import { stat } from "node:fs/promises";
+import { resolve as resolve6 } from "node:path";
+async function resolveLaunchDir(graph, node2, openDir) {
+  if (openDir !== void 0) {
+    const wanted = resolve6(openDir);
+    const dir2 = await existingDirectory(wanted);
+    return dir2 ? { ok: true, dir: dir2 } : {
+      ok: false,
+      message: `--open-dir is not an existing directory: ${JSON.stringify(wanted)}`
+    };
+  }
+  const recorded = stepCwd(graph, node2) ?? graph.events[0]?.cwd;
+  if (!recorded) {
+    return {
+      ok: false,
+      message: "the session records no working directory; choose one with --open-dir <dir>"
+    };
+  }
+  const dir = await existingDirectory(recorded);
+  if (!dir) {
+    return {
+      ok: false,
+      message: `the step's directory no longer exists: ${JSON.stringify(recorded)}; choose one with --open-dir <dir>`
+    };
+  }
+  return { ok: true, dir };
+}
+function stepCwd(graph, node2) {
+  const members2 = new Set(node2.event_uuids);
+  for (let i = graph.events.length - 1; i >= 0; i--) {
+    const event = graph.events[i];
+    if (members2.has(event.uuid) && event.cwd) return event.cwd;
+  }
+  return void 0;
+}
+async function existingDirectory(path2) {
+  const real = await safeGitCwd(path2, "");
+  if (!real) return null;
+  try {
+    return (await stat(real)).isDirectory() ? real : null;
+  } catch {
+    return null;
+  }
+}
+
+// src/launch/path.ts
+import { constants as constants2 } from "node:fs";
+import { access, stat as stat2 } from "node:fs/promises";
+import { delimiter, isAbsolute as isAbsolute2, join as join7 } from "node:path";
+async function findOnPath(name, pathEnv) {
+  for (const dir of (pathEnv ?? "").split(delimiter)) {
+    if (!dir || !isAbsolute2(dir)) continue;
+    const candidate = join7(dir, name);
+    try {
+      if (!(await stat2(candidate)).isFile()) continue;
+      await access(candidate, constants2.X_OK);
+      return candidate;
+    } catch {
+    }
+  }
+  return null;
+}
+
+// src/launch/run.ts
+import { spawn as nodeSpawn } from "node:child_process";
+import { constants as constants3 } from "node:os";
+var ignoreSigint = () => {
+};
+function runAgent(plan, hooks = {}) {
+  const signals = hooks.signals ?? process;
+  signals.on("SIGINT", ignoreSigint);
+  return new Promise((resolve9) => {
+    let started = Promise.resolve();
+    let settled = false;
+    const settle2 = (outcome) => {
+      if (settled) return;
+      settled = true;
+      void started.then(() => resolve9(outcome));
+    };
+    let child;
+    try {
+      child = (hooks.spawn ?? nodeSpawn)(plan.command, plan.args, plan.options);
+    } catch (error62) {
+      settle2({ started: false, error: error62 });
+      return;
+    }
+    child.once("spawn", () => {
+      started = Promise.resolve().then(hooks.onStart).catch(() => {
+      });
+    });
+    child.once("error", (error62) => {
+      if (child.pid === void 0) settle2({ started: false, error: error62 });
+    });
+    child.once("exit", (code, signal) => {
+      settle2({ started: true, status: exitStatus(code, signal) });
+    });
+  }).finally(() => signals.removeListener("SIGINT", ignoreSigint));
+}
+function exitStatus(code, signal) {
+  if (code !== null) return code;
+  const number4 = signal ? constants3.signals[signal] : void 0;
+  return number4 === void 0 ? 1 : 128 + number4;
+}
+
+// src/cli/open.ts
+var defaultDeps = {
+  env: process.env,
+  interactive: () => isatty(0) && isatty(1)
+};
+async function preflightOpen(agent, deps = defaultDeps) {
+  const binary = await findOnPath(agent, deps.env.PATH);
+  if (!binary) {
+    console.error(
+      `error: ${agent} not found on PATH; install it or use --snapshot to copy the prompt`
+    );
+    return { ok: false, status: 127 };
+  }
+  if (deps.env.CLAUDECODE === "1") {
+    console.error(
+      "error: --open refuses to run inside an agent session (CLAUDECODE=1), where nobody is at the keyboard of the new agent; run it from your own terminal, or use --snapshot"
+    );
+    return { ok: false, status: 2 };
+  }
+  if (!deps.interactive()) {
+    console.error(
+      "error: --open needs an interactive terminal on stdin and stdout; use --snapshot to print the prompt instead"
+    );
+    return { ok: false, status: 2 };
+  }
+  return { ok: true, binary };
+}
+async function runOpenMode(ctx, deps = defaultDeps) {
+  const agent = ctx.opts.agent ?? ctx.match.source;
+  const preflight = await preflightOpen(agent, deps);
+  if (!preflight.ok) return preflight.status;
+  const { binary } = preflight;
+  const mode = ctx.opts.mode ?? "continue";
+  const prompt = await buildSnapshotPrompt(ctx, ctx.opts.open, mode);
+  if (!prompt) {
+    console.error(`error: no node matches "${ctx.opts.open}". Run --list to see numbers.`);
+    return 2;
+  }
+  const directory = await resolveLaunchDir(ctx.graph, prompt.node, ctx.opts.openDir);
+  if (!directory.ok) {
+    console.error(ctx.redactor.apply(`error: ${directory.message}`));
+    return 2;
+  }
+  const planned = planLaunch(agent, binary, directory.dir, prompt.markdown);
+  if (!planned.ok) {
+    console.error(`error: ${planned.message}`);
+    return 2;
+  }
+  console.error(
+    ctx.redactor.apply(
+      `Starting ${agent} in ${directory.dir} with the ${mode} prompt for step ${prompt.step} (${prompt.node.id}).`
+    )
+  );
+  const outcome = await runAgent(planned.plan, {
+    spawn: deps.spawn,
+    onStart: () => recordPick(ctx.match.sessionId, prompt.node.id, mode, { source: ctx.match.source }).catch(
+      (err) => ctx.logger.warn?.("pick history write failed", { error: String(err) })
+    )
+  });
+  if (!outcome.started) {
+    if (outcome.error.code === "ENOENT" && !await isDirectory(directory.dir)) {
+      console.error(
+        ctx.redactor.apply(
+          `error: the directory disappeared before ${agent} started: ${directory.dir}`
+        )
+      );
+      return 2;
+    }
+    console.error(`error: could not start ${binary}: ${outcome.error.message}`);
+    return outcome.error.code === "ENOENT" ? 127 : 126;
+  }
+  return outcome.status;
+}
+async function isDirectory(path2) {
+  try {
+    return (await stat3(path2)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 // src/cli/search.ts
@@ -30484,7 +30722,7 @@ import { createInterface as createInterface4 } from "node:readline/promises";
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname3, extname, resolve as resolve6 } from "node:path";
+import { basename as basename3, dirname as dirname3, extname, resolve as resolve7 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
     throw new RangeError("session limit must be a nonnegative safe integer");
@@ -30495,14 +30733,14 @@ async function listSessions(opts = {}) {
   return opts.limit === void 0 ? sessions : sessions.slice(0, opts.limit);
 }
 async function sessionFromFile(filePath, source) {
-  const jsonlPath = await realpath2(resolve6(filePath));
+  const jsonlPath = await realpath2(resolve7(filePath));
   if (extname(jsonlPath) !== ".jsonl") throw new Error("session file must have a .jsonl extension");
   const info = await lstat3(jsonlPath);
   if (!info.isFile()) throw new Error("session file must be a regular file");
   return {
     source: await detectSessionSource(jsonlPath, source),
-    sessionId: basename2(jsonlPath, ".jsonl"),
-    projectDir: basename2(dirname3(jsonlPath)),
+    sessionId: basename3(jsonlPath, ".jsonl"),
+    projectDir: basename3(dirname3(jsonlPath)),
     jsonlPath
   };
 }
@@ -30610,10 +30848,10 @@ async function main(argv = process.argv) {
     console.error("error: --tui requires interactive input; use --list or --json instead");
     return 2;
   }
-  const projectCwd = opts.cwd ? resolve7(opts.cwd) : void 0;
+  const projectCwd = opts.cwd ? resolve8(opts.cwd) : void 0;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
-  const cwdInfo = await stat(cwd).catch(() => null);
+  const cwdInfo = await stat4(cwd).catch(() => null);
   if (!cwdInfo?.isDirectory()) {
     console.error("error: --cwd must name a directory");
     return 2;
@@ -30680,7 +30918,7 @@ async function main(argv = process.argv) {
       result.mindmap,
       result.redactor
     );
-    logger.info(`dumped JSON artifacts`, { dir: resolve7(opts.dumpJson) });
+    logger.info(`dumped JSON artifacts`, { dir: resolve8(opts.dumpJson) });
   }
   if (opts.dryRun) {
     process.stderr.write("Dry-run \u2014 analysis complete, no output written.\n");
