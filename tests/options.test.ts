@@ -67,6 +67,8 @@ describe('CLI argument validation', () => {
     ['--open-dir', '/tmp'],
     ['--snapshot', '1', '--agent', 'codex'],
     ['--open', ''],
+    ['--yes'],
+    ['--list', '--yes'],
     ['--open', ' '],
     ['--sessions', '--no-color'],
     ['--search', 'x', '--no-group'],
@@ -166,6 +168,10 @@ describe('CLI argument validation', () => {
     expect(parsed).toMatchObject({
       ok: true,
       opts: { open: '12', mode: 'fork', agent: 'codex', openDir: '/tmp' },
+    });
+    expect(parse('--file', 'x.jsonl', '--open', '1', '--yes')).toMatchObject({
+      ok: true,
+      opts: { yes: true },
     });
     if (!parsed.ok) return;
     expect(resolveMode(parsed.opts, true)).toMatchObject({

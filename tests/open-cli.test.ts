@@ -6,6 +6,8 @@ import { delimiter, join, resolve } from 'node:path';
 import { promisify } from 'node:util';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
+import { encodeProjectPath } from '../src/sources/claude.js';
+
 const exec = promisify(execFile);
 const entry = resolve('src/cli.ts');
 const stubBin = resolve('tests/fixtures/bin');
@@ -22,7 +24,7 @@ pid, fd = pty.fork()
 if pid == 0:
     os.chdir(spec['cwd'])
     os.execve(spec['argv'][0], spec['argv'], spec['env'])
-out, sent, status = b'', False, None
+out, sent, replied, status = b'', False, False, None
 deadline = time.monotonic() + spec['timeout']
 while status is None and time.monotonic() < deadline:
     if select.select([fd], [], [], 0.1)[0]:
@@ -34,6 +36,10 @@ while status is None and time.monotonic() < deadline:
         if marker and not sent and marker.encode() in out:
             os.write(fd, b'\x03')
             sent = True
+        reply_on = spec.get('replyOn')
+        if reply_on and not replied and reply_on.encode() in out:
+            os.write(fd, spec['reply'].encode())
+            replied = True
     done, st = os.waitpid(pid, os.WNOHANG)
     if done:
         status = st
@@ -134,6 +140,7 @@ async function underPty(
   args: string[],
   extra: Record<string, string> = {},
   interruptOn?: string,
+  reply?: { on: string; text: string },
 ): Promise<PtyResult> {
   const spec = {
     cwd: process.cwd(),
@@ -141,6 +148,8 @@ async function underPty(
     env: env(extra),
     timeout: 40,
     interruptOn,
+    replyOn: reply?.on,
+    reply: reply?.text,
   };
   const { stdout } = await exec('python3', ['-c', PTY_RUNNER, JSON.stringify(spec)], {
     timeout: 60_000,
@@ -206,7 +215,7 @@ describe.skipIf(!hasPty)(
         expect(expected).toContain(part);
       }
 
-      const run = await underPty(['--file', file, '--no-llm', '--open', '1']);
+      const run = await underPty(['--file', file, '--no-llm', '--open', '1', '--yes']);
       expect(run).toMatchObject({ code: 0 });
       const argv = await stubArgv();
       expect(argv).toHaveLength(1);
@@ -242,6 +251,7 @@ describe.skipIf(!hasPty)(
           'fork',
           '--open-dir',
           other,
+          '--yes',
         ],
         { AGENT_TREE_STUB_EXIT: '7' },
       );
@@ -272,10 +282,41 @@ describe.skipIf(!hasPty)(
       expect(existsSync(`${stubOut}.argv`)).toBe(false);
     }, 90_000);
 
+    it('asks before starting a session file: Enter starts it, Ctrl-C starts nothing', async () => {
+      const file = await session('minimal-session', project, 'plain prompt');
+      const question = 'Press Enter to start';
+
+      const cancelled = await underPty(['--file', file, '--no-llm', '--open', '1'], {}, question);
+      expect(cancelled).toMatchObject({ code: 130 });
+      expect(cancelled.output).toContain(`About to start claude in ${project}`);
+      expect(cancelled.output).toContain('# Continuing from: ');
+      expect(cancelled.output).toContain('Cancelled; nothing was started.');
+      await expectNothingRan();
+
+      const started = await underPty(['--file', file, '--no-llm', '--open', '1'], {}, undefined, {
+        on: question,
+        text: '\r',
+      });
+      expect(started).toMatchObject({ code: 0 });
+      expect((await stubArgv())[0].startsWith('# Continuing from: ')).toBe(true);
+      expect(existsSync(picksFile())).toBe(true);
+    }, 90_000);
+
+    it('starts a discovered session without asking', async () => {
+      const file = await session('minimal-session', project, 'plain prompt');
+      const projects = join(root, 'claude', 'projects', encodeProjectPath(project));
+      await mkdir(projects, { recursive: true });
+      await writeFile(join(projects, `${sessionId}.jsonl`), await readFile(file));
+      const run = await underPty([sessionId.slice(0, 8), '--cwd', project, '--no-llm', '--open', '1']);
+      expect(run).toMatchObject({ code: 0 });
+      expect(run.output).not.toContain('Press Enter to start');
+      expect((await stubArgv())[0].startsWith('# Continuing from: ')).toBe(true);
+    }, 90_000);
+
     it('survives Ctrl-C itself and exits 130 when it kills the agent', async () => {
       const file = await session('minimal-session', project, 'plain prompt');
       const run = await underPty(
-        ['--file', file, '--no-llm', '--open', '1'],
+        ['--file', file, '--no-llm', '--open', '1', '--yes'],
         { AGENT_TREE_STUB_WAIT: '1' },
         'STUB-READY',
       );

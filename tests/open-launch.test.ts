@@ -330,6 +330,36 @@ describe('resolveLaunchDir', () => {
 });
 
 describe('runOpenMode', () => {
+  it('asks before starting a session file and starts nothing when declined', async () => {
+    const ctx = await context(project, { open: '1', file: 'session.jsonl' });
+    const { spawn, calls } = scriptedSpawn(exitsWith(0));
+    const questions: string[] = [];
+    const confirm = async (question: string) => {
+      questions.push(question);
+      return false;
+    };
+    expect(await runOpenMode(ctx, deps({ spawn, confirm }))).toBe(130);
+    expect(calls).toEqual([]);
+    expect(recordPick).not.toHaveBeenCalled();
+    expect(questions).toHaveLength(1);
+    expect(questions[0]).toContain(`About to start claude in ${project} with the continue prompt`);
+    expect(questions[0]).toContain('  # Continuing from: ');
+    expect(questions[0]).toContain('Press Enter to start');
+  });
+
+  it.each([
+    ['a session file after a yes', { file: 'session.jsonl' }, 1],
+    ['a session file with --yes', { file: 'session.jsonl', yes: true }, 0],
+    ['a discovered session', {}, 0],
+  ])('starts %s, asking only for files without --yes', async (_name, extra, asked) => {
+    const ctx = await context(project, { open: '1', ...extra });
+    const { spawn, calls } = scriptedSpawn(exitsWith(0));
+    const confirm = vi.fn(async () => true);
+    expect(await runOpenMode(ctx, deps({ spawn, confirm }))).toBe(0);
+    expect(confirm).toHaveBeenCalledTimes(asked);
+    expect(calls).toHaveLength(1);
+  });
+
   it('starts claude in the step directory with the --snapshot prompt and records the pick', async () => {
     const ctx = await context(project, { open: '1' });
     const expected = await buildSnapshotPrompt(ctx, '1', 'continue');

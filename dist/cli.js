@@ -6786,7 +6786,7 @@ function parseCliArgs(argv) {
       "claude",
       "codex"
     ])
-  ).option("--open-dir <dir>", "directory --open starts in (default: the step's directory)").addHelpText("after", `
+  ).option("--open-dir <dir>", "directory --open starts in (default: the step's directory)").option("--yes", "let --open start a --file session without asking first").addHelpText("after", `
 Docs and issues: ${REPOSITORY_URL}`).exitOverride();
   try {
     program2.parse(argv, { from: "node" });
@@ -6812,8 +6812,8 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
     if ((opts.since !== void 0 || opts.includeToolOutput) && !searching)
       fail("--since and --include-tool-output require --search");
     if (opts.open !== void 0 && !opts.open.trim()) fail("--open needs a step number");
-    if ((opts.agent || opts.openDir !== void 0) && opts.open === void 0)
-      fail("--agent and --open-dir require --open");
+    if ((opts.agent || opts.openDir !== void 0 || opts.yes) && opts.open === void 0)
+      fail("--agent, --open-dir and --yes require --open");
     if (opts.open !== void 0 && (opts.json || opts.dumpJson || opts.dryRun))
       fail("--open does not support --json, --dump-json or --dry-run");
     if (opts.usage && (opts.sessions || opts.picks || searching || opts.open !== void 0 || opts.snapshot || opts.unstar || opts.diff))
@@ -30492,6 +30492,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
 
 // src/cli/open.ts
 import { stat as stat3 } from "node:fs/promises";
+import { createInterface as createInterface4 } from "node:readline";
 import { isatty } from "node:tty";
 
 // src/launch/directory.ts
@@ -30600,6 +30601,8 @@ function exitStatus(code, signal) {
 }
 
 // src/cli/open.ts
+var PREVIEW_LINES = 8;
+var PREVIEW_WIDTH = 120;
 var defaultDeps = {
   env: process.env,
   interactive: () => isatty(0) && isatty(1)
@@ -30647,6 +30650,15 @@ async function runOpenMode(ctx, deps = defaultDeps) {
     console.error(`error: ${planned.message}`);
     return 2;
   }
+  if (ctx.opts.file && !ctx.opts.yes) {
+    const question = ctx.redactor.apply(
+      confirmationText(agent, directory.dir, mode, prompt.step, prompt.node.id, prompt.markdown)
+    );
+    if (!await (deps.confirm ?? askOnTerminal)(question)) {
+      console.error("Cancelled; nothing was started.");
+      return 130;
+    }
+  }
   console.error(
     ctx.redactor.apply(
       `Starting ${agent} in ${directory.dir} with the ${mode} prompt for step ${prompt.step} (${prompt.node.id}).`
@@ -30671,6 +30683,30 @@ async function runOpenMode(ctx, deps = defaultDeps) {
     return outcome.error.code === "ENOENT" ? 127 : 126;
   }
   return outcome.status;
+}
+function confirmationText(agent, dir, mode, step, nodeId, markdown) {
+  const lines = markdown.split("\n");
+  const shown = lines.slice(0, PREVIEW_LINES).map((line) => `  ${line.length > PREVIEW_WIDTH ? `${line.slice(0, PREVIEW_WIDTH - 1)}\u2026` : line}`);
+  const rest = lines.length - shown.length;
+  return [
+    `About to start ${agent} in ${dir} with the ${mode} prompt for step ${step} (${nodeId}).`,
+    "The prompt comes from a session file; check what it will send:",
+    ...shown,
+    ...rest > 0 ? [`  \u2026 ${rest} more line${rest === 1 ? "" : "s"}`] : [],
+    "Press Enter to start, or Ctrl-C to cancel (--yes skips this question)."
+  ].join("\n");
+}
+function askOnTerminal(question) {
+  const rl = createInterface4({ input: process.stdin, output: process.stderr, terminal: true });
+  return new Promise((resolve9) => {
+    rl.once("SIGINT", () => resolve9(false));
+    rl.once("close", () => resolve9(false));
+    rl.question(
+      `${question}
+`,
+      (answer) => resolve9(["", "y", "yes"].includes(answer.trim().toLowerCase()))
+    );
+  }).finally(() => rl.close());
 }
 async function isDirectory(path2) {
   try {
@@ -30718,7 +30754,7 @@ function createLoggerSync(level = "info") {
 }
 
 // src/utils/picker.ts
-import { createInterface as createInterface4 } from "node:readline/promises";
+import { createInterface as createInterface5 } from "node:readline/promises";
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
@@ -30803,7 +30839,7 @@ async function pickSession(opts = {}) {
       )
     );
   });
-  const rl = createInterface4({
+  const rl = createInterface5({
     input: opts.input ?? process.stdin,
     output: opts.output ?? process.stderr
   });

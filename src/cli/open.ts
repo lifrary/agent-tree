@@ -1,5 +1,6 @@
 /** --open: start a new agent session from a step's continue or fork prompt. */
 import { stat } from 'node:fs/promises';
+import { createInterface } from 'node:readline';
 import { isatty } from 'node:tty';
 
 import { planLaunch, type AgentId } from '../launch/command.js';
@@ -13,7 +14,12 @@ export interface OpenDeps {
   env: NodeJS.ProcessEnv;
   interactive: () => boolean;
   spawn?: SpawnFn;
+  /** Shows the question on the terminal; resolves true to start the agent. */
+  confirm?: (question: string) => Promise<boolean>;
 }
+
+const PREVIEW_LINES = 8;
+const PREVIEW_WIDTH = 120;
 
 const defaultDeps: OpenDeps = {
   env: process.env,
@@ -81,6 +87,18 @@ export async function runOpenMode(ctx: ModeContext, deps: OpenDeps = defaultDeps
     return 2;
   }
 
+  // A session file may come from someone else: its prompt and directory get a
+  // human look before they reach an agent. Discovered local sessions start directly.
+  if (ctx.opts.file && !ctx.opts.yes) {
+    const question = ctx.redactor.apply(
+      confirmationText(agent, directory.dir, mode, prompt.step, prompt.node.id, prompt.markdown),
+    );
+    if (!(await (deps.confirm ?? askOnTerminal)(question))) {
+      console.error('Cancelled; nothing was started.');
+      return 130;
+    }
+  }
+
   console.error(
     ctx.redactor.apply(
       `Starting ${agent} in ${directory.dir} with the ${mode} prompt for step ${prompt.step} (${prompt.node.id}).`,
@@ -107,6 +125,40 @@ export async function runOpenMode(ctx: ModeContext, deps: OpenDeps = defaultDeps
     return outcome.error.code === 'ENOENT' ? 127 : 126;
   }
   return outcome.status;
+}
+
+export function confirmationText(
+  agent: AgentId,
+  dir: string,
+  mode: string,
+  step: number | string,
+  nodeId: string,
+  markdown: string,
+): string {
+  const lines = markdown.split('\n');
+  const shown = lines
+    .slice(0, PREVIEW_LINES)
+    .map((line) => `  ${line.length > PREVIEW_WIDTH ? `${line.slice(0, PREVIEW_WIDTH - 1)}…` : line}`);
+  const rest = lines.length - shown.length;
+  return [
+    `About to start ${agent} in ${dir} with the ${mode} prompt for step ${step} (${nodeId}).`,
+    'The prompt comes from a session file; check what it will send:',
+    ...shown,
+    ...(rest > 0 ? [`  … ${rest} more line${rest === 1 ? '' : 's'}`] : []),
+    'Press Enter to start, or Ctrl-C to cancel (--yes skips this question).',
+  ].join('\n');
+}
+
+/** Enter, "y" or "yes" starts; anything else, Ctrl-C or end of input cancels. */
+function askOnTerminal(question: string): Promise<boolean> {
+  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  return new Promise<boolean>((resolve) => {
+    rl.once('SIGINT', () => resolve(false));
+    rl.once('close', () => resolve(false));
+    rl.question(`${question}\n`, (answer) =>
+      resolve(['', 'y', 'yes'].includes(answer.trim().toLowerCase())),
+    );
+  }).finally(() => rl.close());
 }
 
 async function isDirectory(path: string): Promise<boolean> {

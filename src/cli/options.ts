@@ -51,6 +51,7 @@ export interface CliOptions {
   open?: string; // --open <step> starts an agent session with the resume prompt
   agent?: SessionSourceId; // --agent picks the agent --open starts
   openDir?: string; // --open-dir overrides the directory --open starts in
+  yes?: boolean; // --yes starts --open without asking, even for a session file
 }
 
 export type ParsedArgs =
@@ -124,6 +125,7 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       ]),
     )
     .option('--open-dir <dir>', "directory --open starts in (default: the step's directory)")
+    .option('--yes', 'let --open start a --file session without asking first')
     .addHelpText('after', `\nDocs and issues: ${REPOSITORY_URL}`)
     .exitOverride();
 
@@ -151,8 +153,8 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     if ((opts.since !== undefined || opts.includeToolOutput) && !searching)
       fail('--since and --include-tool-output require --search');
     if (opts.open !== undefined && !opts.open.trim()) fail('--open needs a step number');
-    if ((opts.agent || opts.openDir !== undefined) && opts.open === undefined)
-      fail('--agent and --open-dir require --open');
+    if ((opts.agent || opts.openDir !== undefined || opts.yes) && opts.open === undefined)
+      fail('--agent, --open-dir and --yes require --open');
     if (opts.open !== undefined && (opts.json || opts.dumpJson || opts.dryRun))
       fail('--open does not support --json, --dump-json or --dry-run');
     if (
