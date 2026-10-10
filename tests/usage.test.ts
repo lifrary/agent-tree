@@ -1,5 +1,13 @@
 import { execFileSync, spawn } from 'node:child_process';
-import { chmodSync, cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import {
+  appendFileSync,
+  chmodSync,
+  cpSync,
+  mkdtempSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -134,6 +142,34 @@ describe('Claude Code subagent usage', () => {
   it('reports no subagents field when the session has no subagent folder', async () => {
     const usage = (await mindmapOf(exportedCopy())).stats.usage!;
     expect(usage).not.toHaveProperty('subagents');
+  });
+
+  it('keeps inline sidechain calls (older Claude Code) beside the main numbers', async () => {
+    const path = exportedCopy();
+    const sidechain = (uuid: string, id: string, input: number) =>
+      JSON.stringify({
+        parentUuid: 'e-a8',
+        uuid,
+        isSidechain: true,
+        agentId: 'inline-1',
+        timestamp: '2026-10-01T10:20:20.000Z',
+        sessionId: 's',
+        type: 'assistant',
+        message: {
+          role: 'assistant',
+          id,
+          model: 'claude-haiku-5-5',
+          content: [],
+          usage: { input_tokens: input, output_tokens: 2 },
+        },
+      });
+    appendFileSync(
+      path,
+      sidechain('e-x1', 'msg_X1', 40) + '\n' + sidechain('e-x2', 'msg_X2', 60) + '\n',
+    );
+    const usage = (await mindmapOf(path)).stats.usage!;
+    expect(usage).toMatchObject({ calls: 4, prompt_tokens: 6675, output_tokens: 129 });
+    expect(usage.subagents).toEqual({ count: 1, calls: 2, prompt_tokens: 100, output_tokens: 4 });
   });
 
   it('falls back to toolUseResult.agentId and keeps an unlinked agent at the root', async () => {
