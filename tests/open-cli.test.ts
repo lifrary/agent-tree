@@ -141,10 +141,12 @@ async function underPty(
   extra: Record<string, string> = {},
   interruptOn?: string,
   reply?: { on: string; text: string },
+  stderrTo?: string,
 ): Promise<PtyResult> {
+  const command = [process.execPath, '--import', 'tsx', entry, ...args];
   const spec = {
     cwd: process.cwd(),
-    argv: [process.execPath, '--import', 'tsx', entry, ...args],
+    argv: stderrTo ? ['/bin/sh', '-c', 'exec "$@" 2>"$0"', stderrTo, ...command] : command,
     env: env(extra),
     timeout: 40,
     interruptOn,
@@ -300,6 +302,32 @@ describe.skipIf(!hasPty)(
       expect(started).toMatchObject({ code: 0 });
       expect((await stubArgv())[0].startsWith('# Continuing from: ')).toBe(true);
       expect(existsSync(picksFile())).toBe(true);
+    }, 90_000);
+
+    it('asks on the terminal even when stderr goes to a file', async () => {
+      const file = await session('minimal-session', project, 'plain prompt');
+      const errors = join(root, 'stderr.txt');
+      const run = await underPty(
+        ['--file', file, '--no-llm', '--open', '1'],
+        {},
+        undefined,
+        { on: 'Press Enter to start', text: '\r' },
+        errors,
+      );
+      expect(run).toMatchObject({ code: 0 });
+      expect(run.output).toContain('About to start claude in');
+      expect(existsSync(`${stubOut}.argv`)).toBe(true);
+    }, 90_000);
+
+    it('exits 2 and starts nothing when the session has no turns', async () => {
+      const first = (await readFile(resolve('tests/fixtures/minimal-session.jsonl'), 'utf8')).split('\n')[0];
+      expect(JSON.parse(first).type).toBe('permission-mode');
+      const empty = join(root, 'empty.jsonl');
+      await writeFile(empty, `${first}\n`);
+      const run = await underPty(['--file', empty, '--no-llm', '--open', '1', '--yes']);
+      expect(run).toMatchObject({ code: 2 });
+      expect(run.output).toContain('No turns found');
+      await expectNothingRan();
     }, 90_000);
 
     it('starts a discovered session without asking', async () => {

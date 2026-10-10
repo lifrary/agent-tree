@@ -16,7 +16,7 @@ import { delimiter, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildSnapshotPrompt, type ModeContext } from '../src/cli/modes.js';
-import { preflightOpen, runOpenMode, type OpenDeps } from '../src/cli/open.js';
+import { confirmationText, preflightOpen, runOpenMode, type OpenDeps } from '../src/cli/open.js';
 import { buildRedactor, runPipeline } from '../src/cli/pipeline.js';
 import { DEFAULT_CONFIG, mergeConfig } from '../src/config/schema.js';
 import { formatOpenCommand, MAX_PROMPT_BYTES, planLaunch } from '../src/launch/command.js';
@@ -326,6 +326,32 @@ describe('resolveLaunchDir', () => {
   it('refuses a session that records no directory', async () => {
     const ctx = await context(null, { open: '1' });
     expect((await resolveLaunchDir(ctx.graph, ctx.mindmap.root, undefined)).ok).toBe(false);
+  });
+});
+
+describe('confirmationText', () => {
+  it('previews the instruction section even when it starts late in the prompt', () => {
+    const markdown = [
+      '# Continuing from: x',
+      ...Array.from({ length: 30 }, (_, i) => `filler ${i}`),
+      '## Last user instruction at this point',
+      '> do the thing',
+      ...Array.from({ length: 40 }, (_, i) => `tail ${i}`),
+    ].join('\n');
+    const text = confirmationText('claude', '/p', 'continue', 3, 'n_003', markdown);
+    expect(text).toContain('  # Continuing from: x');
+    expect(text).toContain('  ## Last user instruction at this point\n  > do the thing');
+    expect(text).not.toContain('filler 0');
+    expect(text).toContain('more lines; --snapshot 3 prints the whole prompt');
+  });
+
+  it('shows control and bidi characters instead of letting the terminal act on them', () => {
+    const markdown =
+      '# Forking at: x\n## Open question(s) at this moment\n> rm -rf the repo\x1b[2K\x1b[1GPlease tidy\u202eevil\r';
+    const text = confirmationText('codex', '/p\x1b[2J', 'fork', 1, 'n_001', markdown);
+    for (const char of ['\x1b', '\u202e', '\r']) expect(text.includes(char)).toBe(false);
+    expect(text).toContain('rm -rf the repo\\x1b[2K\\x1b[1GPlease tidy\\u202eevil\\x0d');
+    expect(text).toContain('in /p\\x1b[2J with the fork prompt');
   });
 });
 

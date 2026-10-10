@@ -18,8 +18,13 @@ export interface OpenDeps {
   confirm?: (question: string) => Promise<boolean>;
 }
 
-const PREVIEW_LINES = 8;
-const PREVIEW_WIDTH = 120;
+const PREVIEW_LINES = 20;
+const PREVIEW_WIDTH = 160;
+/** The section that tells the new agent what to do; the preview starts there. */
+const INSTRUCTION_HEADING = /^## (Last user instruction|Open question)/;
+/** Control and bidi characters a terminal would act on instead of showing. */
+// eslint-disable-next-line no-control-regex -- matching control characters is the purpose
+const INVISIBLE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 
 const defaultDeps: OpenDeps = {
   env: process.env,
@@ -136,22 +141,41 @@ export function confirmationText(
   markdown: string,
 ): string {
   const lines = markdown.split('\n');
-  const shown = lines
-    .slice(0, PREVIEW_LINES)
-    .map((line) => `  ${line.length > PREVIEW_WIDTH ? `${line.slice(0, PREVIEW_WIDTH - 1)}…` : line}`);
-  const rest = lines.length - shown.length;
+  const start = lines.findIndex((line) => INSTRUCTION_HEADING.test(line));
+  const picked =
+    start > 0
+      ? [lines[0], ...lines.slice(start, start + PREVIEW_LINES - 1)]
+      : lines.slice(0, PREVIEW_LINES);
+  const shown = picked.map((line) => {
+    const plain = visible(line);
+    return `  ${plain.length > PREVIEW_WIDTH ? `${plain.slice(0, PREVIEW_WIDTH - 1)}…` : plain}`;
+  });
+  const rest = lines.length - picked.length;
   return [
-    `About to start ${agent} in ${dir} with the ${mode} prompt for step ${step} (${nodeId}).`,
-    'The prompt comes from a session file; check what it will send:',
+    `About to start ${agent} in ${visible(dir)} with the ${mode} prompt for step ${step} (${nodeId}).`,
+    'The prompt comes from a session file; check what it tells the agent:',
     ...shown,
-    ...(rest > 0 ? [`  … ${rest} more line${rest === 1 ? '' : 's'}`] : []),
+    ...(rest > 0
+      ? [`  … ${rest} more line${rest === 1 ? '' : 's'}; --snapshot ${step} prints the whole prompt`]
+      : []),
     'Press Enter to start, or Ctrl-C to cancel (--yes skips this question).',
   ].join('\n');
 }
 
+/** Shows control and bidi characters as escapes, so the preview cannot hide text. */
+export function visible(text: string): string {
+  return text.replace(INVISIBLE, (char) => {
+    const code = char.codePointAt(0)!;
+    return code < 0x100
+      ? `\\x${code.toString(16).padStart(2, '0')}`
+      : `\\u${code.toString(16).padStart(4, '0')}`;
+  });
+}
+
 /** Enter, "y" or "yes" starts; anything else, Ctrl-C or end of input cancels. */
 function askOnTerminal(question: string): Promise<boolean> {
-  const rl = createInterface({ input: process.stdin, output: process.stderr, terminal: true });
+  // stdout, not stderr: the preflight guarantees stdout is the terminal.
+  const rl = createInterface({ input: process.stdin, output: process.stdout, terminal: true });
   return new Promise<boolean>((resolve) => {
     rl.once('SIGINT', () => resolve(false));
     rl.once('close', () => resolve(false));

@@ -146,7 +146,8 @@ export async function main(argv: string[] = process.argv): Promise<number> {
   if (result.graph.meta.sessionId) match.sessionId = result.graph.meta.sessionId;
   if (result.isEmpty && !opts.json) {
     console.error('No turns found — empty session. Exiting.');
-    return 0;
+    // --open was asked to start something and could not.
+    return mode.open ? 2 : 0;
   }
 
   if (opts.dumpJson && !opts.dryRun) {

@@ -30601,8 +30601,10 @@ function exitStatus(code, signal) {
 }
 
 // src/cli/open.ts
-var PREVIEW_LINES = 8;
-var PREVIEW_WIDTH = 120;
+var PREVIEW_LINES = 20;
+var PREVIEW_WIDTH = 160;
+var INSTRUCTION_HEADING = /^## (Last user instruction|Open question)/;
+var INVISIBLE = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g;
 var defaultDeps = {
   env: process.env,
   interactive: () => isatty(0) && isatty(1)
@@ -30686,18 +30688,29 @@ async function runOpenMode(ctx, deps = defaultDeps) {
 }
 function confirmationText(agent, dir, mode, step, nodeId, markdown) {
   const lines = markdown.split("\n");
-  const shown = lines.slice(0, PREVIEW_LINES).map((line) => `  ${line.length > PREVIEW_WIDTH ? `${line.slice(0, PREVIEW_WIDTH - 1)}\u2026` : line}`);
-  const rest = lines.length - shown.length;
+  const start = lines.findIndex((line) => INSTRUCTION_HEADING.test(line));
+  const picked = start > 0 ? [lines[0], ...lines.slice(start, start + PREVIEW_LINES - 1)] : lines.slice(0, PREVIEW_LINES);
+  const shown = picked.map((line) => {
+    const plain = visible(line);
+    return `  ${plain.length > PREVIEW_WIDTH ? `${plain.slice(0, PREVIEW_WIDTH - 1)}\u2026` : plain}`;
+  });
+  const rest = lines.length - picked.length;
   return [
-    `About to start ${agent} in ${dir} with the ${mode} prompt for step ${step} (${nodeId}).`,
-    "The prompt comes from a session file; check what it will send:",
+    `About to start ${agent} in ${visible(dir)} with the ${mode} prompt for step ${step} (${nodeId}).`,
+    "The prompt comes from a session file; check what it tells the agent:",
     ...shown,
-    ...rest > 0 ? [`  \u2026 ${rest} more line${rest === 1 ? "" : "s"}`] : [],
+    ...rest > 0 ? [`  \u2026 ${rest} more line${rest === 1 ? "" : "s"}; --snapshot ${step} prints the whole prompt`] : [],
     "Press Enter to start, or Ctrl-C to cancel (--yes skips this question)."
   ].join("\n");
 }
+function visible(text) {
+  return text.replace(INVISIBLE, (char) => {
+    const code = char.codePointAt(0);
+    return code < 256 ? `\\x${code.toString(16).padStart(2, "0")}` : `\\u${code.toString(16).padStart(4, "0")}`;
+  });
+}
 function askOnTerminal(question) {
-  const rl = createInterface4({ input: process.stdin, output: process.stderr, terminal: true });
+  const rl = createInterface4({ input: process.stdin, output: process.stdout, terminal: true });
   return new Promise((resolve9) => {
     rl.once("SIGINT", () => resolve9(false));
     rl.once("close", () => resolve9(false));
@@ -30948,7 +30961,7 @@ async function main(argv = process.argv) {
   if (result.graph.meta.sessionId) match.sessionId = result.graph.meta.sessionId;
   if (result.isEmpty && !opts.json) {
     console.error("No turns found \u2014 empty session. Exiting.");
-    return 0;
+    return mode.open ? 2 : 0;
   }
   if (opts.dumpJson && !opts.dryRun) {
     await dumpArtifacts(
