@@ -1,0 +1,7 @@
+{
+  "agentType": "general-purpose",
+  "description": "nested helper",
+  "toolUseId": "toolu_inside_a1",
+  "parentAgentId": "a1",
+  "spawnDepth": 2
+}
