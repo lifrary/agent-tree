@@ -46,6 +46,12 @@ CI also audits dependencies with `npm audit`, rejects stale committed
 bundles, and checks CLI and MCP behavior from a fresh tarball installation
 across the Node/OS matrix.
 
+Build `dist/` from a real `node_modules` directory inside your checkout. In a
+git worktree whose `node_modules` is a symlink to another checkout, esbuild
+writes paths such as `../agent-tree/node_modules/commander/...` into the
+bundle, and CI rejects it as stale. Copy the directory instead (on macOS,
+`cp -cR` makes a cheap APFS clone) or run `npm ci` in the worktree.
+
 ## What we care about
 
 ### Tests are not optional for security-sensitive paths

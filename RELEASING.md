@@ -17,7 +17,13 @@ post-publish smoke test, MCP plugin re-install).
 - ESLint 10 flat config, Vitest 5, and the TypeScript 7.0.2 native compiler.
   TypeScript 6.0.3 remains installed for typescript-eslint's JavaScript
   compiler API. Use the npm scripts to select the intended compiler.
-- Logged in to npm as `seungwoolee`: `npm whoami`
+- Logged in to npm as `seungwoolee`: `npm whoami`, checked right before
+  publishing. `npm login` writes a session token that expires after two
+  hours (npm's session-based auth, effective 2025-12-09:
+  https://github.blog/changelog/2025-12-09-npm-classic-tokens-revoked-session-based-auth-and-cli-token-management-now-available/),
+  so a login from the night before fails: on 2026-10-10 at 12:33 KST
+  `npm whoami` returned `E401 Unauthorized` for a login made at 23:20 the
+  previous day. Log in again with `npm login --auth-type=web`.
 - Logged in to GitHub via `gh`: `gh auth status`
 - On `main` branch with no untracked / uncommitted changes
 - Working directory at repo root
@@ -162,6 +168,12 @@ stdout are both TTYs, so a scripted publish must run under a pseudo-terminal;
 pass `--no-browser` and open the printed URL yourself. On 2026-10-09, 0.2.1
 needed one browser approval and 0.3.0, published right after it, went
 through without a second prompt, so publish consecutive versions back to back.
+
+Because the login session lasts only two hours, plan the login and the
+publish as one sitting: the maintainer approves the login page, then the
+publish's 2FA page, within minutes of each other. Unlike `npm publish`,
+`npm login --auth-type=web --no-browser` needs no TTY: it prints `Login at:`
+with a URL and polls, so a script can open that URL in the browser itself.
 
 > `prepublishOnly` re-runs lint+typecheck+test+build automatically. If it
 > fails, the publish is aborted before any registry write.

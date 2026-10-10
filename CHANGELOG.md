@@ -36,6 +36,10 @@ All notable changes to this project are documented here. The format follows [Kee
 - `RELEASING.md` records the npm web 2FA path for scripted publishes, that a
   prebuilt-tarball publish skips `prepublishOnly`, and that a new tarball can
   return 404 for minutes after `npm view` lists the version.
+- `RELEASING.md` notes that an npm login lasts two hours, so the login and
+  the publish approvals belong in one sitting, and that web login works
+  without a TTY. `CONTRIBUTING.md` warns that building from a worktree whose
+  `node_modules` is a symlink embeds the other checkout's paths in `dist/`.
 
 ## [v0.3.0] — 2026-10-09
 
