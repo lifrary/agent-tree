@@ -36,21 +36,34 @@ interface AgentFile {
   parentAgentId: string | null;
 }
 
-/** Undefined when the session has no subagent folder: "no data", not zero agents. */
+/**
+ * Undefined when the session has no readable subagent folder: "no data", not
+ * zero agents. `seen` holds the main transcript's calls, which a forked
+ * subagent's transcript repeats.
+ */
 export async function readClaudeSubagents(
   jsonlPath: string,
   events: RawEvent[],
+  seen: Set<string>,
   logger?: Logger,
 ): Promise<SubagentUsageAt[] | undefined> {
   const directory = join(dirname(jsonlPath), basename(jsonlPath, '.jsonl'), 'subagents');
-  const info = await lstatIfPresent(directory);
-  if (!info?.isDirectory()) return undefined;
-  const seen = new Set<string>();
+  let names: string[];
+  try {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return undefined;
+    names = (await readDirectory(directory))
+      .filter((entry) => entry.isFile())
+      .map((entry) => entry.name)
+      .sort();
+  } catch (error) {
+    // Usage is optional data: an unreadable folder must never fail the tree.
+    logger?.debug('skipped an unreadable subagent folder', {
+      code: (error as NodeJS.ErrnoException | null)?.code,
+    });
+    return undefined;
+  }
   const agents: AgentFile[] = [];
-  const names = (await readDirectory(directory))
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
-    .sort();
   for (const name of names) {
     const match = AGENT_FILE.exec(name);
     if (!match) continue;

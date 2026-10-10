@@ -1,10 +1,10 @@
 /**
  * Codex usage samples, collected while the reader streams a rollout.
  *
- * Two record kinds log the same calls. CLI 0.162 writes `token_usage_record`
- * (one per response, unique `response_id`); every version writes `event_msg`
- * `token_count`, which repeats a response whenever its cumulative total did
- * not move. A file with any token_usage_record uses those alone; otherwise the
+ * Two record kinds log the same calls. Newer CLIs (0.155 onward) also write
+ * `token_usage_record` (one per response, unique `response_id`); every
+ * version writes `event_msg` `token_count`, which repeats a response whenever
+ * its cumulative total did not move. A file with any token_usage_record uses those alone; otherwise the
  * token_count events minus repeats. `rate_limits`, a sibling of `info` in
  * token_count, is account data and is never read.
  */

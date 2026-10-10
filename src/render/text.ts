@@ -295,7 +295,9 @@ export function renderTextTree(mindmap: MindMap, opts: TextRenderOptions = {}): 
       color: node.color,
       pickedContinue: !!modes?.has('continue'),
       pickedFork: !!modes?.has('fork'),
-      ...(opts.usage ? { usage: rowUsage(node) } : {}),
+      ...(opts.usage
+        ? { usage: rowUsage(node, typeof opts.maxDepth === 'number' && depth >= opts.maxDepth) }
+        : {}),
     });
 
     const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];

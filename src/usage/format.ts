@@ -39,8 +39,13 @@ export interface RowUsage {
   compactions: Compaction[];
 }
 
-export function rowUsage(node: MindMapNode): RowUsage | undefined {
-  return node.usage ? { usage: node.usage, compactions: ownCompactions(node) } : undefined;
+/** With its children hidden (`--phases-only`), a row also shows their compactions. */
+export function rowUsage(node: MindMapNode, childrenHidden: boolean): RowUsage | undefined {
+  if (!node.usage) return undefined;
+  return {
+    usage: node.usage,
+    compactions: childrenHidden ? node.usage.compactions : ownCompactions(node),
+  };
 }
 
 /** One row standing for several sibling rows (collapsed runs). */

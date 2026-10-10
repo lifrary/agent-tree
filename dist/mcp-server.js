@@ -42754,8 +42754,12 @@ function ownCompactions(node2) {
     return false;
   });
 }
-function rowUsage(node2) {
-  return node2.usage ? { usage: node2.usage, compactions: ownCompactions(node2) } : void 0;
+function rowUsage(node2, childrenHidden) {
+  if (!node2.usage) return void 0;
+  return {
+    usage: node2.usage,
+    compactions: childrenHidden ? node2.usage.compactions : ownCompactions(node2)
+  };
 }
 function sumRowUsage(rows) {
   const present2 = rows.filter((row) => row !== void 0);
@@ -42941,7 +42945,7 @@ function renderTextTree(mindmap, opts = {}) {
       color: node2.color,
       pickedContinue: !!modes?.has("continue"),
       pickedFork: !!modes?.has("fork"),
-      ...opts.usage ? { usage: rowUsage(node2) } : {}
+      ...opts.usage ? { usage: rowUsage(node2, typeof opts.maxDepth === "number" && depth >= opts.maxDepth) } : {}
     });
     const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
     node2.children.forEach((c, i) => {
@@ -43075,8 +43079,7 @@ function claudeCall(record2, seen) {
 function nonEmpty(value) {
   return typeof value === "string" && value.trim() ? value : null;
 }
-function claudeMainUsage(events) {
-  const seen = /* @__PURE__ */ new Set();
+function claudeMainUsage(events, seen) {
   const samples = [];
   const compactions = [];
   const sidechains = /* @__PURE__ */ new Map();
@@ -43135,13 +43138,20 @@ var META_LIMIT = 1024 * 1024;
 var CHUNK_BYTES = 1024 * 1024;
 var NEWLINE = 10;
 var USAGE_KEY = Buffer.from('"usage"');
-async function readClaudeSubagents(jsonlPath, events, logger2) {
+async function readClaudeSubagents(jsonlPath, events, seen, logger2) {
   const directory = join5(dirname(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
-  const info = await lstatIfPresent(directory);
-  if (!info?.isDirectory()) return void 0;
-  const seen = /* @__PURE__ */ new Set();
+  let names;
+  try {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return void 0;
+    names = (await readDirectory(directory)).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
+  } catch (error62) {
+    logger2?.debug("skipped an unreadable subagent folder", {
+      code: error62?.code
+    });
+    return void 0;
+  }
   const agents = [];
-  const names = (await readDirectory(directory)).filter((entry) => entry.isFile()).map((entry) => entry.name).sort();
   for (const name of names) {
     const match = AGENT_FILE.exec(name);
     if (!match) continue;
@@ -43274,8 +43284,9 @@ async function collectSessionUsage(input2) {
   if (input2.source === "codex") {
     return { calls: input2.samples ?? [], compactions: codexCompactions(input2.events) };
   }
-  const main = claudeMainUsage(input2.events);
-  const files = await readClaudeSubagents(input2.jsonlPath, input2.events, input2.logger);
+  const seen = /* @__PURE__ */ new Set();
+  const main = claudeMainUsage(input2.events, seen);
+  const files = await readClaudeSubagents(input2.jsonlPath, input2.events, seen, input2.logger);
   const subagents = files === void 0 && main.sidechains.length === 0 ? void 0 : [...main.sidechains, ...files ?? []];
   return { calls: main.samples, compactions: main.compactions, subagents };
 }

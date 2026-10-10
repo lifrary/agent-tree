@@ -1,4 +1,5 @@
-import { cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { execFileSync, spawn } from 'node:child_process';
+import { chmodSync, cpSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -206,6 +207,95 @@ describe('Claude Code subagent usage', () => {
     const usage = (await mindmapOf(path)).stats.usage!;
     expect(usage.subagents).toEqual({ count: 1, calls: 2, prompt_tokens: 313, output_tokens: 11 });
   });
+
+  it('never follows a symlinked or FIFO sidecar', async () => {
+    const outside = join(temporary, 'outside.meta.json');
+    // Followed, this would move a1 to the step holding toolu_write1.
+    writeFileSync(outside, '{"toolUseId":"toolu_write1"}');
+    for (const plant of ['symlink', 'fifo'] as const) {
+      const path = join(temporary, `${plant}.jsonl`);
+      cpSync(FIXTURE, path);
+      const folder = join(temporary, plant, 'subagents');
+      cpSync(resolve('tests/fixtures/usage-claude/subagents'), folder, { recursive: true });
+      const meta = join(folder, 'agent-a1.meta.json');
+      rmSync(meta);
+      if (plant === 'symlink') symlinkSync(outside, meta);
+      else execFileSync('mkfifo', [meta]);
+      // A reader that opened the FIFO blocking waits for a writer forever; this
+      // late writer releases it, so a regression fails on time instead of hanging.
+      const writer =
+        plant === 'fifo'
+          ? setTimeout(() => spawn('sh', ['-c', 'exec 3>"$1"', 'sh', meta]).unref(), 3000)
+          : undefined;
+      const started = Date.now();
+      let mindmap: MindMap;
+      try {
+        mindmap = await mindmapOf(path);
+      } finally {
+        clearTimeout(writer);
+      }
+      expect(Date.now() - started).toBeLessThan(1500);
+      // Without its sidecar, a1 still links through toolUseResult.agentId.
+      expect(nodeHolding(mindmap, 'e-r1').usage!.subagents!.count).toBe(2);
+      expect(nodeHolding(mindmap, 'e-a4').usage!.subagents!.count).toBe(0);
+    }
+  }, 15_000);
+
+  it('does not count a forked subagent repeating the main call that started it', async () => {
+    const path = join(temporary, 'session.jsonl');
+    cpSync(FIXTURE, path);
+    const folder = join(temporary, 'session', 'subagents');
+    cpSync(resolve('tests/fixtures/usage-claude/subagents'), folder, { recursive: true });
+    const record = (id: string, usage: Record<string, number>) =>
+      JSON.stringify({
+        type: 'assistant',
+        uuid: `f-${id}`,
+        isSidechain: true,
+        message: { id, model: 'claude-opus-5-5', usage },
+      });
+    writeFileSync(
+      join(folder, 'agent-f1.jsonl'),
+      [
+        // The fork's transcript opens with the parent's own msg_A.
+        record('msg_A', {
+          input_tokens: 10,
+          cache_creation_input_tokens: 100,
+          cache_read_input_tokens: 1000,
+          output_tokens: 50,
+        }),
+        record('msg_F1', { input_tokens: 8, output_tokens: 2 }),
+      ].join('\n') + '\n',
+    );
+    writeFileSync(join(folder, 'agent-f1.meta.json'), '{"toolUseId":"toolu_agent1","isFork":true}');
+    const usage = (await mindmapOf(path)).stats.usage!;
+    expect(usage).toMatchObject({ calls: 4, prompt_tokens: 6675 });
+    expect(usage.subagents).toEqual({
+      count: 3,
+      calls: 4,
+      prompt_tokens: 717 + 8,
+      output_tokens: 18 + 2,
+    });
+  });
+
+  it.skipIf(process.getuid?.() === 0)(
+    'keeps the tree and main usage when the subagent folder is unreadable',
+    async () => {
+      const path = join(temporary, 'session.jsonl');
+      cpSync(FIXTURE, path);
+      const sessionFolder = join(temporary, 'session');
+      cpSync(resolve('tests/fixtures/usage-claude/subagents'), join(sessionFolder, 'subagents'), {
+        recursive: true,
+      });
+      chmodSync(sessionFolder, 0o000);
+      try {
+        const usage = (await mindmapOf(path)).stats.usage!;
+        expect(usage).toMatchObject({ calls: 4, prompt_tokens: 6675 });
+        expect(usage).not.toHaveProperty('subagents');
+      } finally {
+        chmodSync(sessionFolder, 0o755);
+      }
+    },
+  );
 });
 
 describe('attachUsage', () => {

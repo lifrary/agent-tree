@@ -41,8 +41,10 @@ export async function collectSessionUsage(input: CollectUsageInput): Promise<Ses
   if (input.source === 'codex') {
     return { calls: input.samples ?? [], compactions: codexCompactions(input.events) };
   }
-  const main = claudeMainUsage(input.events);
-  const files = await readClaudeSubagents(input.jsonlPath, input.events, input.logger);
+  // One set for the session: a forked subagent repeats the main call that started it.
+  const seen = new Set<string>();
+  const main = claudeMainUsage(input.events, seen);
+  const files = await readClaudeSubagents(input.jsonlPath, input.events, seen, input.logger);
   const subagents =
     files === undefined && main.sidechains.length === 0
       ? undefined

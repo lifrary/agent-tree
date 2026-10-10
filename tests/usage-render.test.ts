@@ -155,6 +155,39 @@ describe('usage in the text tree', () => {
     expect(rows[1]).toMatch(/parser\.ts ×3 +prompt 17k · out 300 · ctx 15k\/258k {2}compacted$/);
     expect(rows[2]).toMatch(/parser\.ts \(Edit\) ?$/);
   });
+
+  it('moves a hidden sub-action compaction onto its phase row under --phases-only', async () => {
+    const mindmap = await mindmapOf(FIXTURE, true);
+    // Re-home the fixture's compaction onto a sub-action under the second phase.
+    const phase = mindmap.root.children[1];
+    const action = structuredClone(phase);
+    action.id = 'n_004';
+    action.label = 'parser.test.ts (Write)';
+    action.children = [];
+    phase.children = [action];
+    attachUsage(mindmap, {
+      calls: [
+        {
+          eventUuid: 'e-a4',
+          timestamp: '',
+          prompt_tokens: 100,
+          cache_read_tokens: 0,
+          cache_write_tokens: 0,
+          output_tokens: 1,
+          reasoning_tokens: 0,
+          context_window: null,
+        },
+      ],
+      compactions: [{ eventUuid: 'e-a4', pre_tokens: 900000, post_tokens: 20000, trigger: 'auto' }],
+    });
+    const rows = (maxDepth?: number) =>
+      renderTextTree(mindmap, { usage: true, color: false, maxDepth, groupConsecutive: false })
+        .text.split('\n')
+        .filter((line) => line.includes('compacted'))
+        .map((line) => line.split('.')[0].trim());
+    expect(rows()).toEqual(['4']);
+    expect(rows(1)).toEqual(['3']);
+  });
 });
 
 describe('usage in JSON', () => {

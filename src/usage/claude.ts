@@ -49,8 +49,8 @@ export interface ClaudeMainUsage {
   sidechains: SubagentUsageAt[];
 }
 
-export function claudeMainUsage(events: RawEvent[]): ClaudeMainUsage {
-  const seen = new Set<string>();
+/** `seen` collects the calls counted here, for the subagent pass that follows. */
+export function claudeMainUsage(events: RawEvent[], seen: Set<string>): ClaudeMainUsage {
   const samples: UsageSample[] = [];
   const compactions: CompactionAt[] = [];
   const sidechains = new Map<string, SubagentUsageAt>();
