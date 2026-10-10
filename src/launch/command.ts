@@ -1,4 +1,6 @@
 /** The exact argv --open hands to each agent, and the command that reproduces it. */
+import { basename } from 'node:path';
+
 import type { SessionSourceId } from '../sources/types.js';
 
 export type AgentId = SessionSourceId;
@@ -63,16 +65,23 @@ export function planLaunch(
 export interface OpenCommandInput {
   source: SessionSourceId;
   sessionId: string;
-  /** Set when the session was opened with --file; the command then names the file. */
-  file?: string;
+  jsonlPath: string;
+  /** The session was opened with --file, so the command names the file too. */
+  byFile: boolean;
   step: number | string;
   mode: ResumeMode;
 }
 
-/** The `agent-tree ... --open` command a user can paste into their own terminal. */
+/**
+ * The `agent-tree ... --open` command a user can paste into their own terminal.
+ * An id prefix is used only when the file name carries the id: a transcript
+ * without a UUID gets a path hash as its id, which no prefix lookup finds.
+ */
 export function formatOpenCommand(input: OpenCommandInput): string {
-  const selector = input.file
-    ? `--file '${input.file.replace(/'/g, "'\\''")}'`
-    : input.sessionId.slice(0, 8);
+  const findable = basename(input.jsonlPath).toLowerCase().includes(input.sessionId.toLowerCase());
+  const selector =
+    input.byFile || !findable
+      ? `--file '${input.jsonlPath.replace(/'/g, "'\\''")}'`
+      : input.sessionId.slice(0, 8);
   return `agent-tree --source ${input.source} ${selector} --open ${input.step} --mode ${input.mode}`;
 }

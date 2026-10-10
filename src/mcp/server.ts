@@ -219,7 +219,8 @@ export function createServer(): McpServer {
       const openCommand = formatOpenCommand({
         source: match.source,
         sessionId: match.sessionId,
-        file: input.file ? match.jsonlPath : undefined,
+        jsonlPath: match.jsonlPath,
+        byFile: !!input.file,
         step: renderTextTree(mindmap).idToNumber.get(node.id) ?? node.id,
         mode: input.mode,
       });

@@ -43365,8 +43365,10 @@ function toSessionMatch(entry) {
 }
 
 // src/launch/command.ts
+import { basename as basename3 } from "node:path";
 function formatOpenCommand(input2) {
-  const selector = input2.file ? `--file '${input2.file.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
+  const findable = basename3(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
+  const selector = input2.byFile || !findable ? `--file '${input2.jsonlPath.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
   return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
 }
 
@@ -43715,7 +43717,8 @@ ${tree.text}${footer}`
       const openCommand = formatOpenCommand({
         source: match.source,
         sessionId: match.sessionId,
-        file: input2.file ? match.jsonlPath : void 0,
+        jsonlPath: match.jsonlPath,
+        byFile: !!input2.file,
         step: renderTextTree(mindmap).idToNumber.get(node2.id) ?? node2.id,
         mode: input2.mode
       });

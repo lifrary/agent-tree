@@ -7,6 +7,7 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { createServer } from '../src/mcp/server.js';
+import { encodeProjectPath } from '../src/sources/claude.js';
 
 const testState = vi.hoisted(() => ({ userConfigPath: '', picksRoot: '' }));
 vi.mock('../src/config/loader.js', async (importOriginal) => {
@@ -96,6 +97,20 @@ describe('MCP and --open', () => {
     expect(body.startsWith('# Continuing from: ')).toBe(true);
     const command = `agent-tree --source claude --file '${project}/it'\\''s.jsonl' --open 1 --mode continue`;
     expect(body.trimEnd().endsWith(`\n${command}`)).toBe(true);
+  });
+
+  it('names the file when the transcript id is not a UUID and no prefix would find it', async () => {
+    const dir = join(root, 'claude', 'projects', encodeProjectPath(project));
+    await mkdir(dir, { recursive: true });
+    const path = join(dir, `${id}.jsonl`);
+    const raw = await readFile(resolve('tests/fixtures/minimal-session.jsonl'), 'utf8');
+    await writeFile(path, raw.split(id).join('not-a-uuid'));
+    const body = await snapshotText({ cwd: project, sessionId: id.slice(0, 8), nodeId: '1' });
+    expect(
+      body
+        .trimEnd()
+        .endsWith(`\nagent-tree --source claude --file '${path}' --open 1 --mode continue`),
+    ).toBe(true);
   });
 
   it('names a discovered session by its id prefix, source and mode', async () => {

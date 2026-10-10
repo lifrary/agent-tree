@@ -102,7 +102,8 @@ export async function runSnapshotMode(ctx: ModeContext): Promise<number> {
       `  start it directly: ${formatOpenCommand({
         source: ctx.match.source,
         sessionId: ctx.match.sessionId,
-        file: ctx.opts.file ? ctx.match.jsonlPath : undefined,
+        jsonlPath: ctx.match.jsonlPath,
+        byFile: !!ctx.opts.file,
         step: prompt.step,
         mode,
       })}`,

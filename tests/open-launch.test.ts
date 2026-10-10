@@ -1,12 +1,22 @@
 import { EventEmitter } from 'node:events';
-import type { ChildProcess, SpawnOptions } from 'node:child_process';
-import { chmod, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from 'node:fs/promises';
+import { chmodSync, rmSync } from 'node:fs';
+import { spawn as realSpawn, type ChildProcess, type SpawnOptions } from 'node:child_process';
+import {
+  chmod,
+  copyFile,
+  mkdir,
+  mkdtemp,
+  readFile,
+  realpath,
+  rm,
+  writeFile,
+} from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { delimiter, join, resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { buildSnapshotPrompt, type ModeContext } from '../src/cli/modes.js';
-import { runOpenMode, type OpenDeps } from '../src/cli/open.js';
+import { preflightOpen, runOpenMode, type OpenDeps } from '../src/cli/open.js';
 import { buildRedactor, runPipeline } from '../src/cli/pipeline.js';
 import { DEFAULT_CONFIG, mergeConfig } from '../src/config/schema.js';
 import { formatOpenCommand, MAX_PROMPT_BYTES, planLaunch } from '../src/launch/command.js';
@@ -158,18 +168,41 @@ describe('planLaunch', () => {
 
 describe('formatOpenCommand', () => {
   it('names the session by id prefix, or quotes an exported file', () => {
-    expect(formatOpenCommand({ source: 'codex', sessionId, step: 12, mode: 'fork' })).toBe(
-      'agent-tree --source codex aaaa1111 --open 12 --mode fork',
-    );
+    const rollout = `/c/sessions/rollout-2026-01-02T03-04-05-${sessionId}.jsonl`;
+    expect(
+      formatOpenCommand({
+        source: 'codex',
+        sessionId,
+        jsonlPath: rollout,
+        byFile: false,
+        step: 12,
+        mode: 'fork',
+      }),
+    ).toBe('agent-tree --source codex aaaa1111 --open 12 --mode fork');
     expect(
       formatOpenCommand({
         source: 'claude',
         sessionId,
-        file: "/x/it's.jsonl",
+        jsonlPath: "/x/it's.jsonl",
+        byFile: true,
         step: 3,
         mode: 'continue',
       }),
     ).toBe(`agent-tree --source claude --file '/x/it'\\''s.jsonl' --open 3 --mode continue`);
+  });
+
+  it('names the file when the session id is a path hash no prefix lookup can find', () => {
+    const hashed = '854376eb9a0c4d1e8f2b3a4c5d6e7f80';
+    expect(
+      formatOpenCommand({
+        source: 'claude',
+        sessionId: hashed,
+        jsonlPath: `/p/${sessionId}.jsonl`,
+        byFile: false,
+        step: 1,
+        mode: 'continue',
+      }),
+    ).toBe(`agent-tree --source claude --file '/p/${sessionId}.jsonl' --open 1 --mode continue`);
   });
 });
 
@@ -224,6 +257,27 @@ describe('runAgent', () => {
     const { spawn } = scriptedSpawn((child) => child.emit('error', error), { spawned: false });
     const onStart = vi.fn();
     expect(await runAgent(plan.plan, { spawn, onStart })).toEqual({ started: false, error });
+    expect(onStart).not.toHaveBeenCalled();
+  });
+
+  it('reports a real spawn failure as not started: a non-executable file or a missing cwd', async () => {
+    const script = join(root, 'not-executable');
+    await writeFile(script, '#!/bin/sh\n');
+    const onStart = vi.fn();
+    const denied = await runAgent(
+      { command: script, args: [], options: { cwd: root, stdio: 'inherit', shell: false } },
+      { onStart },
+    );
+    expect(denied).toMatchObject({ started: false, error: { code: 'EACCES' } });
+    const gone = await runAgent(
+      {
+        command: '/bin/sh',
+        args: [],
+        options: { cwd: join(root, 'gone'), stdio: 'inherit', shell: false },
+      },
+      { onStart },
+    );
+    expect(gone).toMatchObject({ started: false, error: { code: 'ENOENT' } });
     expect(onStart).not.toHaveBeenCalled();
   });
 
@@ -326,5 +380,53 @@ describe('runOpenMode', () => {
       errors.mockRestore();
     }
     expect(recordPick).not.toHaveBeenCalled();
+  });
+
+  it('names a directory that vanished before the spawn, and a binary that lost its x bit', async () => {
+    const bin = join(root, 'bin');
+    await mkdir(bin);
+    await copyFile(join(stubBin, 'claude'), join(bin, 'claude'));
+    await chmod(join(bin, 'claude'), 0o755);
+    const ctx = await context(project, { open: '1' });
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      // Every check passed; then the world changes just before the real spawn.
+      const removeDir: SpawnFn = (command, args, options) => {
+        rmSync(project, { recursive: true, force: true });
+        return realSpawn(command, args, options);
+      };
+      expect(await runOpenMode(ctx, deps({ env: { PATH: bin }, spawn: removeDir }))).toBe(2);
+      expect(errors.mock.calls.flat().join('\n')).toContain('directory disappeared');
+
+      await mkdir(project);
+      const dropX: SpawnFn = (command, args, options) => {
+        chmodSync(command, 0o644);
+        return realSpawn(command, args, options);
+      };
+      expect(await runOpenMode(ctx, deps({ env: { PATH: bin }, spawn: dropX }))).toBe(126);
+    } finally {
+      errors.mockRestore();
+    }
+    expect(recordPick).not.toHaveBeenCalled();
+  });
+
+  it('runs its cheap refusals before any analysis exists', async () => {
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await preflightOpen('codex', deps({ env: { PATH: join(root, 'none') } }))).toEqual({
+        ok: false,
+        status: 127,
+      });
+      expect(await preflightOpen('claude', deps({ interactive: () => false }))).toEqual({
+        ok: false,
+        status: 2,
+      });
+      expect(await preflightOpen('codex', deps())).toEqual({
+        ok: true,
+        binary: join(stubBin, 'codex'),
+      });
+    } finally {
+      errors.mockRestore();
+    }
   });
 });

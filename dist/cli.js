@@ -3338,7 +3338,7 @@ var init_js_yaml = __esm({
 
 // src/cli.ts
 import { resolve as resolve8 } from "node:path";
-import { stat as stat3 } from "node:fs/promises";
+import { stat as stat4 } from "node:fs/promises";
 
 // node_modules/commander/lib/error.js
 var CommanderError = class extends Error {
@@ -30011,6 +30011,7 @@ function notSelected() {
 }
 
 // src/launch/command.ts
+import { basename as basename2 } from "node:path";
 var MAX_PROMPT_BYTES = 1e5;
 function planLaunch(agent, binary, dir, prompt) {
   const bytes = Buffer.byteLength(prompt, "utf8");
@@ -30039,7 +30040,8 @@ function planLaunch(agent, binary, dir, prompt) {
   };
 }
 function formatOpenCommand(input2) {
-  const selector = input2.file ? `--file '${input2.file.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
+  const findable = basename2(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
+  const selector = input2.byFile || !findable ? `--file '${input2.jsonlPath.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
   return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
 }
 
@@ -30287,7 +30289,8 @@ async function runSnapshotMode(ctx) {
       `  start it directly: ${formatOpenCommand({
         source: ctx.match.source,
         sessionId: ctx.match.sessionId,
-        file: ctx.opts.file ? ctx.match.jsonlPath : void 0,
+        jsonlPath: ctx.match.jsonlPath,
+        byFile: !!ctx.opts.file,
         step: prompt.step,
         mode
       })}`
@@ -30486,6 +30489,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
 }
 
 // src/cli/open.ts
+import { stat as stat3 } from "node:fs/promises";
 import { isatty } from "node:tty";
 
 // src/launch/directory.ts
@@ -30598,27 +30602,33 @@ var defaultDeps = {
   env: process.env,
   interactive: () => isatty(0) && isatty(1)
 };
-async function runOpenMode(ctx, deps = defaultDeps) {
-  const agent = ctx.opts.agent ?? ctx.match.source;
+async function preflightOpen(agent, deps = defaultDeps) {
   const binary = await findOnPath(agent, deps.env.PATH);
   if (!binary) {
     console.error(
       `error: ${agent} not found on PATH; install it or use --snapshot to copy the prompt`
     );
-    return 127;
+    return { ok: false, status: 127 };
   }
   if (deps.env.CLAUDECODE === "1") {
     console.error(
       "error: --open refuses to run inside an agent session (CLAUDECODE=1), where nobody is at the keyboard of the new agent; run it from your own terminal, or use --snapshot"
     );
-    return 2;
+    return { ok: false, status: 2 };
   }
   if (!deps.interactive()) {
     console.error(
       "error: --open needs an interactive terminal on stdin and stdout; use --snapshot to print the prompt instead"
     );
-    return 2;
+    return { ok: false, status: 2 };
   }
+  return { ok: true, binary };
+}
+async function runOpenMode(ctx, deps = defaultDeps) {
+  const agent = ctx.opts.agent ?? ctx.match.source;
+  const preflight = await preflightOpen(agent, deps);
+  if (!preflight.ok) return preflight.status;
+  const { binary } = preflight;
   const mode = ctx.opts.mode ?? "continue";
   const prompt = await buildSnapshotPrompt(ctx, ctx.opts.open, mode);
   if (!prompt) {
@@ -30647,10 +30657,25 @@ async function runOpenMode(ctx, deps = defaultDeps) {
     )
   });
   if (!outcome.started) {
+    if (outcome.error.code === "ENOENT" && !await isDirectory(directory.dir)) {
+      console.error(
+        ctx.redactor.apply(
+          `error: the directory disappeared before ${agent} started: ${directory.dir}`
+        )
+      );
+      return 2;
+    }
     console.error(`error: could not start ${binary}: ${outcome.error.message}`);
     return outcome.error.code === "ENOENT" ? 127 : 126;
   }
   return outcome.status;
+}
+async function isDirectory(path2) {
+  try {
+    return (await stat3(path2)).isDirectory();
+  } catch {
+    return false;
+  }
 }
 
 // src/cli/search.ts
@@ -30695,7 +30720,7 @@ import { createInterface as createInterface4 } from "node:readline/promises";
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname3, extname, resolve as resolve7 } from "node:path";
+import { basename as basename3, dirname as dirname3, extname, resolve as resolve7 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
     throw new RangeError("session limit must be a nonnegative safe integer");
@@ -30712,8 +30737,8 @@ async function sessionFromFile(filePath, source) {
   if (!info.isFile()) throw new Error("session file must be a regular file");
   return {
     source: await detectSessionSource(jsonlPath, source),
-    sessionId: basename2(jsonlPath, ".jsonl"),
-    projectDir: basename2(dirname3(jsonlPath)),
+    sessionId: basename3(jsonlPath, ".jsonl"),
+    projectDir: basename3(dirname3(jsonlPath)),
     jsonlPath
   };
 }
@@ -30824,7 +30849,7 @@ async function main(argv = process.argv) {
   const projectCwd = opts.cwd ? resolve8(opts.cwd) : void 0;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
-  if (!(await stat3(cwd)).isDirectory()) {
+  if (!(await stat4(cwd)).isDirectory()) {
     console.error("error: --cwd must name a directory");
     return 2;
   }
