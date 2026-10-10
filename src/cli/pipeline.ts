@@ -41,6 +41,8 @@ export interface PipelineDeps {
   logger: Logger;
   /** Suppress [N/5] stderr progress lines (used by --list / --snapshot). */
   quiet?: boolean;
+  /** Attach token usage (default true). Search skips it: it reads subagent folders. */
+  usage?: boolean;
 }
 
 export interface PipelineResult {
@@ -53,7 +55,7 @@ export interface PipelineResult {
 }
 
 export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
-  const { match, opts, config, logger, quiet = false } = deps;
+  const { match, opts, config, logger, quiet = false, usage: withUsage = true } = deps;
   const progress = (msg: string) => {
     if (!quiet) process.stderr.write(msg);
   };
@@ -163,13 +165,15 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
     redactor,
   });
   progress(`✔ ${pl(mindmap.stats.total_nodes, 'node')} across depth ${treeDepth(mindmap)}\n`);
-  await attachSessionUsage(mindmap, {
-    source: match.source,
-    jsonlPath: match.jsonlPath,
-    events: graph.events,
-    samples: usage,
-    logger,
-  });
+  if (withUsage) {
+    await attachSessionUsage(mindmap, {
+      source: match.source,
+      jsonlPath: match.jsonlPath,
+      events: graph.events,
+      samples: usage,
+      logger,
+    });
+  }
 
   // LLM labeling (optional)
   const llmEnabled = opts.llm !== false && config.llm.enabled;

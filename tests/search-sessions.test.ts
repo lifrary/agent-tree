@@ -396,7 +396,7 @@ describe('agent-tree --search', () => {
     expect(lines[6]).toBe('  +2 more steps');
     const firstStep = /step (\d+)/.exec(lines[1])![1];
     expect(lines[7]).toBe(
-      `  open: agent-tree --source claude ${ids.new.slice(0, 8)} --snapshot ${firstStep} --mode continue`,
+      `  snapshot: agent-tree --source claude ${ids.new.slice(0, 8)} --snapshot ${firstStep} --mode continue`,
     );
     expect(stdout).not.toContain('\x1b[');
   }, 30_000);

@@ -412,11 +412,11 @@ describe('search text output', () => {
   it('repeats --cwd in the snapshot command when the search was scoped to a project', () => {
     const [unscoped] = formatSessionBlocks(report(null), { commandId });
     expect(unscoped.split('\n').at(-1)).toBe(
-      '  open: agent-tree --source claude aaaa1111 --snapshot 3 --mode continue',
+      '  snapshot: agent-tree --source claude aaaa1111 --snapshot 3 --mode continue',
     );
     const [scoped] = formatSessionBlocks(report("/tmp/it's here"), { commandId });
     expect(scoped.split('\n').at(-1)).toBe(
-      "  open: agent-tree --source claude --cwd '/tmp/it'\\''s here' aaaa1111 --snapshot 3 --mode continue",
+      "  snapshot: agent-tree --source claude --cwd '/tmp/it'\\''s here' aaaa1111 --snapshot 3 --mode continue",
     );
   });
 });

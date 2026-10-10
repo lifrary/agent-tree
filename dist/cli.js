@@ -30284,7 +30284,7 @@ function expandPath(template, projectCwd) {
 // src/cli/pipeline.ts
 var SPEC_VERSION = "v0.3";
 async function runPipeline(deps) {
-  const { match, opts, config: config2, logger, quiet = false } = deps;
+  const { match, opts, config: config2, logger, quiet = false, usage: withUsage = true } = deps;
   const progress = (msg) => {
     if (!quiet) process.stderr.write(msg);
   };
@@ -30384,13 +30384,15 @@ async function runPipeline(deps) {
   });
   progress(`\u2714 ${pl(mindmap.stats.total_nodes, "node")} across depth ${treeDepth(mindmap)}
 `);
-  await attachSessionUsage(mindmap, {
-    source: match.source,
-    jsonlPath: match.jsonlPath,
-    events: graph.events,
-    samples: usage,
-    logger
-  });
+  if (withUsage) {
+    await attachSessionUsage(mindmap, {
+      source: match.source,
+      jsonlPath: match.jsonlPath,
+      events: graph.events,
+      samples: usage,
+      logger
+    });
+  }
   const llmEnabled = opts.llm !== false && config2.llm.enabled;
   if (!llmEnabled) {
     logger.debug("LLM labeling disabled (flag or config).");
@@ -31359,7 +31361,7 @@ function formatSession(result, cwd, options) {
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? "" : "s"}`);
   lines.push(
     printable(
-      `  open: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+      `  snapshot: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
     )
   );
   return lines.join("\n");
@@ -31654,7 +31656,8 @@ async function mapSession(entry, ctx) {
     opts: { llm: false, cwd: ctx.cwd },
     config: ctx.config,
     logger: quietLogger,
-    quiet: true
+    quiet: true,
+    usage: false
   });
   if (result.isEmpty) return null;
   const steps = buildStepIndex(result.mindmap);

@@ -199,7 +199,7 @@ $ agent-tree --search parser
 claude  cccc1111  /tmp/usage-proj  2026-10-10 14:48
   step 2  user        Implement the parser for the config files
   step 3  user        Now write the tests for the parser please
-  open: agent-tree --source claude cccc1111 --snapshot 2 --mode continue
+  snapshot: agent-tree --source claude cccc1111 --snapshot 2 --mode continue
 ```
 
 It reads every project and both agents unless you narrow it with `--cwd`, `--source` or `--since <days>`. It matches your prompts, the agent's replies and the commands and paths it used; add `--include-tool-output` to match tool results too. A lowercase query ignores case, and any capital letter makes it exact. `--json` prints the results for scripts, and Claude gets the same search as the `agent_tree_search` tool.
@@ -486,7 +486,7 @@ On the command line, the same requests map to `--sessions`, `--list`, `--snapsho
 
 // agent_tree_search: sessions and steps where a text appears, newest first
 { "query": "string", "cwd": "string", "scope": "all|project", "source": "codex",
-  "limit": 10, "sinceDays": "number?", "includeToolOutput": "boolean?" } // limit: integer 1–50
+  "limit": 10, "sinceDays": "integer ≥ 1?", "includeToolOutput": "boolean?" } // limit: integer 1–50
 ```
 
 Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", "text": "…" }] }`; failure adds `"isError": true`. Catalog results also carry `structuredContent: { sessions: [...] }`, JSON list results carry `structuredContent: { mindmap: {...} }`, and search results carry `structuredContent: { query, case_sensitive, scope, scanned, total_sessions, results: [...] }` with redacted snippets. Per-session tools take `sessionId` or `file`, never both, and fall back to the latest session in `cwd`, then the latest overall. `format: "json"` rejects a nonempty `filter` and `phasesOnly: true`. The canonical definitions live in [`src/mcp/server.ts`](./src/mcp/server.ts) and [`src/mcp/search.ts`](./src/mcp/search.ts), and the skill Claude Code loads with the plugin is [`skills/agent-tree/SKILL.md`](./skills/agent-tree/SKILL.md).

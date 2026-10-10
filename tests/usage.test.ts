@@ -60,6 +60,20 @@ function exportedCopy(): string {
 }
 
 describe('Claude Code usage', () => {
+  it('attaches usage unless the caller opts out, as search does', async () => {
+    expect((await mindmapOf(FIXTURE)).stats.usage).toBeDefined();
+    const bare = await runPipeline({
+      match: match(FIXTURE),
+      opts: { llm: false },
+      config: DEFAULT_CONFIG,
+      logger,
+      quiet: true,
+      usage: false,
+    });
+    expect(bare.mindmap.stats.usage).toBeUndefined();
+    expect(bare.mindmap.root.usage).toBeUndefined();
+  });
+
   it('counts each message.id once, falls back to requestId, and skips <synthetic>', async () => {
     const usage = (await mindmapOf(exportedCopy())).stats.usage!;
     // msg_A (two records), msg_B, msg_C and req_D (two records without an id).

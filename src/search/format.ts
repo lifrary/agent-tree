@@ -34,7 +34,7 @@ function formatSession(result: SessionResult, cwd: string, options: FormatOption
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? '' : 's'}`);
   lines.push(
     printable(
-      `  open: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
+      `  snapshot: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
     ),
   );
   return lines.join('\n');

@@ -40,6 +40,7 @@ export async function mapSession(
     config: ctx.config,
     logger: quietLogger,
     quiet: true,
+    usage: false,
   });
   if (result.isEmpty) return null;
   const steps = buildStepIndex(result.mindmap);
