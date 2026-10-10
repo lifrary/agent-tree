@@ -506,6 +506,9 @@ Before every paid request, agent-tree counts the prepared prompt with `messages.
 - [ ] **Search across sessions**: find the session and the numbered step where something happened, across Claude Code and Codex logs
 - [ ] **Token usage per step**: see what each prompt cost and where the context filled up, from the usage both agents already log
 - [ ] **Open a session from any step**: one command starts a new Claude Code or Codex session with the continue or fork prompt, no copy-paste
+- [ ] **Search subagent work and archived sessions**: reach Claude Code subagent transcripts and the Codex sessions moved to `~/.codex/session_archives/`
+- [ ] **Codex subagent usage**: count each Codex subagent's tokens against the step that started it
+- [ ] **Token totals in the session list**: show each session's total usage next to it in `--sessions`
 
 Have an idea or hit a bug? [Open an issue](https://github.com/lifrary/agent-tree/issues).
 
