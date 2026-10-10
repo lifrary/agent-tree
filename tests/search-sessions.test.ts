@@ -282,6 +282,12 @@ describe('agent-tree --search', () => {
     );
     expect(snapshot.stdout.split('\n')[0]).toContain('KESTREL');
 
+    const output = await search('listing 1', '--include-tool-output');
+    expect(output.results[0].hits.map((hit: { field: string }) => hit.field)).toEqual([
+      'tool_output',
+    ]);
+    expect((await search('listing 1')).results).toEqual([]);
+
     for (const hidden of [
       'INSTRUCTIONS_ONLY',
       'DEVELOPER_ONLY',

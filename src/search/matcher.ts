@@ -29,9 +29,12 @@ export function createMatcher(query: string): Matcher {
   const alternatives = [...needles].map(escapeRegExp);
   let maxNeedleBytes = Math.max(...[...needles].map((needle) => needle.length));
   if (/[\u0080-\uffff]/.test(once)) {
-    const escaped = unicodeEscapedPattern(once);
-    alternatives.push(escaped.pattern);
-    maxNeedleBytes = Math.max(maxNeedleBytes, escaped.bytes);
+    // Some writers escape non-ASCII as \uXXXX, also inside a JSON string in a string.
+    const escapedOnce = asciiEscaped(once);
+    for (const escaped of new Set([escapedOnce, JSON.stringify(escapedOnce).slice(1, -1)])) {
+      alternatives.push(hexFolded(escaped));
+      maxNeedleBytes = Math.max(maxNeedleBytes, escaped.length);
+    }
   }
   return {
     query,
@@ -58,24 +61,25 @@ function latin1(text: string): string {
   return Buffer.from(text, 'utf8').toString('latin1');
 }
 
-/** Non-ASCII UTF-16 units as `\uXXXX` with hex digits of either case. */
-function unicodeEscapedPattern(text: string): { pattern: string; bytes: number } {
+/** Every non-ASCII UTF-16 unit as `\uXXXX`, the way an ASCII-only JSON writer stores it. */
+function asciiEscaped(text: string): string {
+  return text.replace(
+    /[\u0080-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+/** `text` as a literal pattern whose `\uXXXX` hex digits match in either case. */
+function hexFolded(text: string): string {
   let pattern = '';
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const unit = text.charCodeAt(i);
-    if (unit < 0x80) {
-      pattern += escapeRegExp(text[i]);
-      bytes += 1;
-      continue;
-    }
-    pattern += '\\\\u';
-    for (const digit of unit.toString(16).padStart(4, '0')) {
-      pattern += /[a-f]/.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit;
-    }
-    bytes += 6;
+  let last = 0;
+  for (const match of text.matchAll(/(?<=\\)u([0-9a-f]{4})/g)) {
+    const at = match.index ?? 0;
+    pattern += escapeRegExp(text.slice(last, at)) + 'u';
+    pattern += match[1].replace(/[a-f]/g, (digit) => `[${digit}${digit.toUpperCase()}]`);
+    last = at + match[0].length;
   }
-  return { pattern, bytes };
+  return pattern + escapeRegExp(text.slice(last));
 }
 
 function escapeRegExp(text: string): string {

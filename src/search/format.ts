@@ -1,5 +1,6 @@
 /** Text rendering of a search report, shared by the CLI and the MCP tool. */
 import type { Matcher } from './matcher.js';
+import { printable } from './snippet.js';
 import type { SearchReport, SessionResult } from './types.js';
 
 export const TEXT_STEPS_PER_SESSION = 5;
@@ -14,15 +15,17 @@ export interface FormatOptions {
 
 /** One block per session, newest first, separated by blank lines. */
 export function formatSessionBlocks(report: SearchReport, options: FormatOptions): string[] {
-  return report.results.map((result) => formatSession(result, options));
+  // The tree's step numbers depend on the configuration of the directory searched from.
+  const cwd = report.scope.project === null ? '' : ` --cwd ${shellQuote(report.scope.project)}`;
+  return report.results.map((result) => formatSession(result, cwd, options));
 }
 
-function formatSession(result: SessionResult, options: FormatOptions): string {
+function formatSession(result: SessionResult, cwd: string, options: FormatOptions): string {
   const shown = result.hits.slice(0, TEXT_STEPS_PER_SESSION);
   const more = result.hits.length - shown.length + result.more_hits;
   const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
   const lines = [
-    `${result.source}  ${result.session_id.slice(0, 8)}  ${result.project_dir}  ${localTime(result.mtime)}`,
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}`,
     ...shown.map(
       (hit) =>
         `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`,
@@ -30,7 +33,9 @@ function formatSession(result: SessionResult, options: FormatOptions): string {
   ];
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? '' : 's'}`);
   lines.push(
-    `  open: agent-tree --source ${result.source} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
+    printable(
+      `  open: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
+    ),
   );
   return lines.join('\n');
 }
@@ -55,6 +60,10 @@ function highlight(snippet: string, matcher: Matcher | undefined): string {
   if (at < 0) return snippet;
   const end = at + matcher.query.length;
   return `${snippet.slice(0, at)}${HIGHLIGHT[0]}${snippet.slice(at, end)}${HIGHLIGHT[1]}${snippet.slice(end)}`;
+}
+
+function shellQuote(text: string): string {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
 }
 
 function localTime(iso: string): string {

@@ -10,7 +10,9 @@ import {
   fieldsOf,
   type FieldText,
 } from '../src/search/project.js';
+import { formatSessionBlocks } from '../src/search/format.js';
 import { scanFile } from '../src/search/scan.js';
+import type { SearchReport } from '../src/search/types.js';
 import { matchField, snippetAround } from '../src/search/snippet.js';
 import { defaultRedactor } from '../src/utils/redact.js';
 
@@ -63,6 +65,14 @@ describe('search prefilter (stage 1)', () => {
   it('finds text inside a JSON string that is itself JSON (Codex function arguments)', async () => {
     const line = json({ arguments: json({ cmd: 'grep "needle" src' }) });
     expect(await candidates([line], 'grep "needle"')).toEqual([line]);
+  });
+
+  it('finds Hangul that an ASCII-only writer escaped inside Codex function arguments', async () => {
+    const asciiArguments = '{"cmd":"grep \\uac80\\uc0c9 src"}';
+    expect(JSON.parse(asciiArguments).cmd).toBe('grep 검색 src');
+    const line = json({ payload: { type: 'function_call', arguments: asciiArguments } });
+    expect(line).toContain('\\\\uac80\\\\uc0c9');
+    expect(await candidates([line], '검색')).toEqual([line]);
   });
 
   it('finds a Hangul query stored as raw UTF-8 and as \\uXXXX escapes', async () => {
@@ -173,6 +183,29 @@ describe('searchable fields', () => {
     for (const noise of ['<command-name>/x</command-name>', 'Stop hook feedback: x', '$ ls']) {
       expect(fields(claudeRecordItems(claude({ role: 'user', content: noise })))).toEqual([]);
     }
+  });
+
+  it('agrees with the readers on calls they keep or drop', () => {
+    const shell = (action: Record<string, unknown>) =>
+      codexRecordItems({
+        type: 'response_item',
+        payload: { type: 'local_shell_call', call_id: 'c1', action: { type: 'exec', ...action } },
+      });
+    expect(shell({ command: [] })).toEqual([]);
+    expect(shell({ command: ['ls', 1] })).toEqual([]);
+    expect(fields(shell({ command: ['ls', 'src'] })).map((field) => field.text)).toEqual([
+      'local_shell',
+      'exec',
+      'ls',
+      'src',
+    ]);
+    const unnamed = claudeRecordItems(
+      claude({
+        role: 'assistant',
+        content: [{ type: 'tool_use', id: 't1', input: { command: 'make needle' } }],
+      }),
+    );
+    expect(fields(unnamed)).toContainEqual({ field: 'tool_input', text: 'make needle' });
   });
 
   it('never projects Codex developer instructions, reasoning or session metadata', () => {
@@ -290,6 +323,28 @@ describe('searchable fields', () => {
     );
     expect(fieldsOf(results, state).map((field) => field.text)).toEqual(['needle via s2']);
   });
+
+  it('skips search calls written as argv arrays', () => {
+    const call = (command: string[]) =>
+      codexRecordItems({
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'shell',
+          call_id: 'c1',
+          arguments: json({ command }),
+        },
+      });
+    const state = () => ({ includeToolOutput: false, searchCalls: new Set<string>() });
+    for (const command of [
+      ['agent-tree', '--search', 'heron'],
+      ['npx', 'agent-tree', '--json', '--search', 'heron'],
+      ['atree', '--search', 'heron'],
+    ]) {
+      expect(fieldsOf(call(command), state()), command.join(' ')).toEqual([]);
+    }
+    expect(fieldsOf(call(['grep', '--search', 'heron']), state())).not.toEqual([]);
+  });
 });
 
 describe('confirming on redacted text', () => {
@@ -315,5 +370,52 @@ describe('confirming on redacted text', () => {
 
   it('strips terminal escapes and bidirectional overrides from snippets', () => {
     expect(snippetAround('x\x1b[2Jneedle\u202ey', 6, 6)).toBe('x [2Jneedle y');
+  });
+});
+
+describe('search text output', () => {
+  const report = (project: string | null): SearchReport => ({
+    query: 'needle',
+    case_sensitive: false,
+    scope: { sources: ['claude'], project, since_days: null, include_tool_output: false },
+    scanned: { sessions: 1, bytes: 10, seconds: 0.1, stopped_early: false },
+    total_sessions: 1,
+    results: [
+      {
+        source: 'claude',
+        session_id: 'aaaa1111-2222-4333-8444-555566667777',
+        project_dir: '/tmp/odd\x1b]0;title\x07dir',
+        mtime: '2026-10-01T10:00:00.000Z',
+        hits: [
+          {
+            step: 3,
+            node_id: 'n_003',
+            field: 'user',
+            timestamp: '2026-10-01T10:00:00.000Z',
+            snippet: 'a needle',
+            matches_in_step: 1,
+          },
+        ],
+        more_hits: 0,
+      },
+    ],
+  });
+  const commandId = () => 'aaaa1111';
+
+  it('keeps control characters from session paths out of the terminal', () => {
+    const [block] = formatSessionBlocks(report(null), { commandId });
+    expect(block.split('\n').some((line) => /\p{Cc}/u.test(line))).toBe(false);
+    expect(block.split('\n')[0]).toContain('/tmp/odd ]0;title dir');
+  });
+
+  it('repeats --cwd in the snapshot command when the search was scoped to a project', () => {
+    const [unscoped] = formatSessionBlocks(report(null), { commandId });
+    expect(unscoped.split('\n').at(-1)).toBe(
+      '  open: agent-tree --source claude aaaa1111 --snapshot 3 --mode continue',
+    );
+    const [scoped] = formatSessionBlocks(report("/tmp/it's here"), { commandId });
+    expect(scoped.split('\n').at(-1)).toBe(
+      "  open: agent-tree --source claude --cwd '/tmp/it'\\''s here' aaaa1111 --snapshot 3 --mode continue",
+    );
   });
 });

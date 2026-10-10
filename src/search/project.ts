@@ -75,9 +75,10 @@ function messageItems(role: 'user' | 'assistant', content: unknown): Item[] {
 }
 
 function toolUseItems(block: Record<string, unknown>): Item[] {
-  if (typeof block.name !== 'string') return [];
+  // The Claude reader keeps a tool call without a name, so its input stays searchable.
+  const name = typeof block.name === 'string' ? block.name : '';
   const id = typeof block.id === 'string' ? block.id : '';
-  return [{ kind: 'tool_use', id, name: block.name, input: block.input }];
+  return [{ kind: 'tool_use', id, name, input: block.input }];
 }
 
 function toolResultItems(block: Record<string, unknown>): Item[] {
@@ -128,7 +129,7 @@ export function codexRecordItems(record: Record<string, unknown>): Item[] {
         : [];
     case 'local_shell_call': {
       const action = payload.action;
-      if (!isRecord(action) || action.type !== 'exec') return [];
+      if (!isRecord(action) || action.type !== 'exec' || !isCommand(action.command)) return [];
       // Earlier records used id instead of call_id for local shell calls.
       const shellId =
         payload.call_id === undefined && typeof payload.id === 'string' ? payload.id : id;
@@ -146,6 +147,12 @@ export function codexRecordItems(record: Record<string, unknown>): Item[] {
     default:
       return [];
   }
+}
+
+function isCommand(value: unknown): boolean {
+  return (
+    Array.isArray(value) && value.length > 0 && value.every((part) => typeof part === 'string')
+  );
 }
 
 function publicTexts(blocks: unknown[]): string[] {
@@ -185,7 +192,11 @@ export function fieldsOf(items: Item[], state: ProjectionState): FieldText[] {
 }
 
 function isSearchCall(name: string, leaves: string[]): boolean {
-  return name.endsWith('agent_tree_search') || leaves.some((leaf) => SEARCH_COMMAND.test(leaf));
+  // Joined leaves catch argv arrays such as ["npx", "agent-tree", "--search", "x"].
+  return (
+    name.endsWith('agent_tree_search') ||
+    [...leaves, leaves.join(' ')].some((leaf) => SEARCH_COMMAND.test(leaf))
+  );
 }
 
 /** String values anywhere in a tool input (commands, paths, patch text). */

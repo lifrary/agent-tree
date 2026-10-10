@@ -11,8 +11,10 @@ export interface FieldMatch {
 }
 
 // Controls (newlines, tabs, escape sequences) and bidirectional overrides would
-// reshape a terminal line; runs of them and of whitespace become one space.
-const UNPRINTABLE = /[\s\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]+/gu;
+// reshape a terminal line. In snippets, runs of them and of whitespace become one space.
+const CONTROLS = '\\p{Cc}\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069';
+const CONTROL = new RegExp(`[${CONTROLS}]`, 'gu');
+const UNPRINTABLE = new RegExp(`[\\s${CONTROLS}]+`, 'gu');
 
 /**
  * Matches on the REDACTED text, so a secret can neither be found nor confirmed.
@@ -39,6 +41,11 @@ export function snippetAround(text: string, at: number, length: number): string 
   if (end < text.length && isLowSurrogate(text.charCodeAt(end))) end += 1;
   const body = text.slice(start, end).replace(UNPRINTABLE, ' ').trim();
   return `${start > 0 ? '…' : ''}${body}${end < text.length ? '…' : ''}`;
+}
+
+/** `text` safe for one terminal line: each control character becomes a space. */
+export function printable(text: string): string {
+  return text.replace(CONTROL, ' ');
 }
 
 function isLowSurrogate(unit: number): boolean {

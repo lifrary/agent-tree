@@ -30440,26 +30440,56 @@ async function runOpenMode(_ctx) {
   return 1;
 }
 
+// src/search/snippet.ts
+var SNIPPET_CONTEXT = 60;
+var CONTROLS = "\\p{Cc}\\u200e\\u200f\\u202a-\\u202e\\u2066-\\u2069";
+var CONTROL = new RegExp(`[${CONTROLS}]`, "gu");
+var UNPRINTABLE = new RegExp(`[\\s${CONTROLS}]+`, "gu");
+function matchField(field, matcher, redactor) {
+  if (matcher.indexIn(field.text) < 0) return null;
+  const safe = redactor.apply(field.text);
+  const at = matcher.indexIn(safe);
+  if (at < 0) return null;
+  return { field: field.field, snippet: snippetAround(safe, at, matcher.query.length) };
+}
+function snippetAround(text, at, length) {
+  let start = Math.max(0, at - SNIPPET_CONTEXT);
+  let end = Math.min(text.length, at + length + SNIPPET_CONTEXT);
+  if (start > 0 && isLowSurrogate(text.charCodeAt(start))) start -= 1;
+  if (end < text.length && isLowSurrogate(text.charCodeAt(end))) end += 1;
+  const body = text.slice(start, end).replace(UNPRINTABLE, " ").trim();
+  return `${start > 0 ? "\u2026" : ""}${body}${end < text.length ? "\u2026" : ""}`;
+}
+function printable(text) {
+  return text.replace(CONTROL, " ");
+}
+function isLowSurrogate(unit) {
+  return unit >= 56320 && unit <= 57343;
+}
+
 // src/search/format.ts
 var TEXT_STEPS_PER_SESSION = 5;
 var FIELD_WIDTH = 11;
 var HIGHLIGHT = ["\x1B[1;31m", "\x1B[0m"];
 function formatSessionBlocks(report, options) {
-  return report.results.map((result) => formatSession(result, options));
+  const cwd = report.scope.project === null ? "" : ` --cwd ${shellQuote(report.scope.project)}`;
+  return report.results.map((result) => formatSession(result, cwd, options));
 }
-function formatSession(result, options) {
+function formatSession(result, cwd, options) {
   const shown = result.hits.slice(0, TEXT_STEPS_PER_SESSION);
   const more = result.hits.length - shown.length + result.more_hits;
   const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
   const lines = [
-    `${result.source}  ${result.session_id.slice(0, 8)}  ${result.project_dir}  ${localTime(result.mtime)}`,
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}`,
     ...shown.map(
       (hit) => `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`
     )
   ];
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? "" : "s"}`);
   lines.push(
-    `  open: agent-tree --source ${result.source} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+    printable(
+      `  open: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+    )
   );
   return lines.join("\n");
 }
@@ -30476,6 +30506,9 @@ function highlight(snippet, matcher) {
   if (at < 0) return snippet;
   const end = at + matcher.query.length;
   return `${snippet.slice(0, at)}${HIGHLIGHT[0]}${snippet.slice(at, end)}${HIGHLIGHT[1]}${snippet.slice(end)}`;
+}
+function shellQuote(text) {
+  return /^[\w@%+=:,./-]+$/.test(text) ? text : `'${text.replace(/'/g, `'\\''`)}'`;
 }
 function localTime(iso) {
   const date5 = new Date(iso);
@@ -30652,9 +30685,9 @@ function messageItems(role, content) {
   return items;
 }
 function toolUseItems(block) {
-  if (typeof block.name !== "string") return [];
+  const name = typeof block.name === "string" ? block.name : "";
   const id = typeof block.id === "string" ? block.id : "";
-  return [{ kind: "tool_use", id, name: block.name, input: block.input }];
+  return [{ kind: "tool_use", id, name, input: block.input }];
 }
 function toolResultItems(block) {
   const id = typeof block.tool_use_id === "string" ? block.tool_use_id : "";
@@ -30697,7 +30730,7 @@ function codexRecordItems(record2) {
       return id && named && typeof payload.input === "string" ? [{ kind: "tool_use", id, name: payload.name, input: payload.input }] : [];
     case "local_shell_call": {
       const action = payload.action;
-      if (!isRecord5(action) || action.type !== "exec") return [];
+      if (!isRecord5(action) || action.type !== "exec" || !isCommand(action.command)) return [];
       const shellId = payload.call_id === void 0 && typeof payload.id === "string" ? payload.id : id;
       return shellId.trim() ? [{ kind: "tool_use", id: shellId, name: "local_shell", input: action }] : [];
     }
@@ -30711,6 +30744,9 @@ function codexRecordItems(record2) {
     default:
       return [];
   }
+}
+function isCommand(value) {
+  return Array.isArray(value) && value.length > 0 && value.every((part) => typeof part === "string");
 }
 function publicTexts(blocks) {
   const texts = [];
@@ -30742,7 +30778,7 @@ function fieldsOf(items, state) {
   return fields;
 }
 function isSearchCall(name, leaves) {
-  return name.endsWith("agent_tree_search") || leaves.some((leaf) => SEARCH_COMMAND.test(leaf));
+  return name.endsWith("agent_tree_search") || [...leaves, leaves.join(" ")].some((leaf) => SEARCH_COMMAND.test(leaf));
 }
 function stringLeaves(value, depth = 0, out = []) {
   if (typeof value === "string") out.push(value);
@@ -30771,28 +30807,6 @@ function looksLikeSystemNoise2(text) {
   if (t.startsWith("Base directory for this skill:")) return true;
   if (/^[❯>$#] /.test(t)) return true;
   return false;
-}
-
-// src/search/snippet.ts
-var SNIPPET_CONTEXT = 60;
-var UNPRINTABLE = /[\s\p{Cc}\u200e\u200f\u202a-\u202e\u2066-\u2069]+/gu;
-function matchField(field, matcher, redactor) {
-  if (matcher.indexIn(field.text) < 0) return null;
-  const safe = redactor.apply(field.text);
-  const at = matcher.indexIn(safe);
-  if (at < 0) return null;
-  return { field: field.field, snippet: snippetAround(safe, at, matcher.query.length) };
-}
-function snippetAround(text, at, length) {
-  let start = Math.max(0, at - SNIPPET_CONTEXT);
-  let end = Math.min(text.length, at + length + SNIPPET_CONTEXT);
-  if (start > 0 && isLowSurrogate(text.charCodeAt(start))) start -= 1;
-  if (end < text.length && isLowSurrogate(text.charCodeAt(end))) end += 1;
-  const body = text.slice(start, end).replace(UNPRINTABLE, " ").trim();
-  return `${start > 0 ? "\u2026" : ""}${body}${end < text.length ? "\u2026" : ""}`;
-}
-function isLowSurrogate(unit) {
-  return unit >= 56320 && unit <= 57343;
 }
 
 // src/search/map.ts
@@ -30859,9 +30873,11 @@ function createMatcher(query) {
   const alternatives = [...needles].map(escapeRegExp);
   let maxNeedleBytes = Math.max(...[...needles].map((needle) => needle.length));
   if (/[\u0080-\uffff]/.test(once)) {
-    const escaped = unicodeEscapedPattern(once);
-    alternatives.push(escaped.pattern);
-    maxNeedleBytes = Math.max(maxNeedleBytes, escaped.bytes);
+    const escapedOnce = asciiEscaped(once);
+    for (const escaped of /* @__PURE__ */ new Set([escapedOnce, JSON.stringify(escapedOnce).slice(1, -1)])) {
+      alternatives.push(hexFolded(escaped));
+      maxNeedleBytes = Math.max(maxNeedleBytes, escaped.length);
+    }
   }
   return {
     query,
@@ -30881,23 +30897,22 @@ function foldAscii(text) {
 function latin1(text) {
   return Buffer.from(text, "utf8").toString("latin1");
 }
-function unicodeEscapedPattern(text) {
+function asciiEscaped(text) {
+  return text.replace(
+    /[\u0080-\uffff]/g,
+    (unit) => `\\u${unit.charCodeAt(0).toString(16).padStart(4, "0")}`
+  );
+}
+function hexFolded(text) {
   let pattern = "";
-  let bytes = 0;
-  for (let i = 0; i < text.length; i++) {
-    const unit = text.charCodeAt(i);
-    if (unit < 128) {
-      pattern += escapeRegExp(text[i]);
-      bytes += 1;
-      continue;
-    }
-    pattern += "\\\\u";
-    for (const digit of unit.toString(16).padStart(4, "0")) {
-      pattern += /[a-f]/.test(digit) ? `[${digit}${digit.toUpperCase()}]` : digit;
-    }
-    bytes += 6;
+  let last = 0;
+  for (const match of text.matchAll(/(?<=\\)u([0-9a-f]{4})/g)) {
+    const at = match.index ?? 0;
+    pattern += escapeRegExp(text.slice(last, at)) + "u";
+    pattern += match[1].replace(/[a-f]/g, (digit) => `[${digit}${digit.toUpperCase()}]`);
+    last = at + match[0].length;
   }
-  return { pattern, bytes };
+  return pattern + escapeRegExp(text.slice(last));
 }
 function escapeRegExp(text) {
   return text.replace(/[\\^$.*+?()[\]{}|/-]/g, "\\$&");
