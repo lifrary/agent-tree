@@ -44,7 +44,7 @@ registered (no per-call CLI subprocess), fall back to the CLI otherwise.
 When the `agent-tree` MCP server is connected (via plugin install):
 
 - `agent_tree_sessions({ source?, cwd?, limit? })` → redacted recent-session catalog; default limit 20, integer 1–1000
-- `agent_tree_list({ source?, cwd, sessionId?, file?, phasesOnly?, filter?, format? })` → numbered text tree by default, or complete redacted mindmap with `format: "json"`
+- `agent_tree_list({ source?, cwd, sessionId?, file?, phasesOnly?, filter?, format?, usage? })` → numbered text tree by default, or complete redacted mindmap with `format: "json"`; `usage: true` adds token columns per step (prompt, output, largest context, compactions, subagents), and JSON carries `usage` on every node whenever the session logged token usage
 - `agent_tree_snapshot({ source?, cwd, nodeId, mode?, sessionId?, file? })` → resume markdown and records the pick; mode defaults to `continue`
 - `agent_tree_picks({ source? })` → lists recorded picks across both sources, or the selected source
 - `agent_tree_diff({ source?, cwd, from, to, sessionId?, file? })` → summarises what happened between two nodes
@@ -83,7 +83,13 @@ agent-tree --file /path/to/export.jsonl --no-llm --list
 agent-tree --file /path/to/export.jsonl --no-llm --strict --json
 agent-tree --source codex --cwd /path/to/project --sessions
 agent-tree --source codex <session-id> --no-llm --snapshot <N> --mode fork
+agent-tree --search "<text>" --json            # sessions and steps where it appears
+agent-tree [<session-id>] --no-llm --list --usage  # token usage per step
 ```
+
+`--open <N>` starts a new Claude Code or Codex session from a step for a person
+at a terminal. Never run it yourself: it refuses inside an agent session
+(`CLAUDECODE=1`) and without a terminal. Suggest the command to the user instead.
 
 The CLI is `agent-tree` (alias `atree`), installed globally via npm. If the
 binary is missing, prompt the user to run `npm i -g @seungwoolee/agent-tree` first.

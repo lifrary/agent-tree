@@ -17,6 +17,34 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ### Added
 
+- **Search across sessions.** `--search <text>` and the MCP tool
+  `agent_tree_search` find the session and the numbered step where a text
+  appears in prompts, replies and tool inputs (tool results with
+  `--include-tool-output`), newest session first, with redacted snippets.
+  Every project and both agents by default; `--cwd`, `--source`,
+  `--since <days>` and `--limit` narrow it, and `--json` prints the results.
+  A raw-byte prefilter keeps a scan of every local session fast (19.9 GiB in
+  about 15 s on one machine). Matching runs on redacted text, so a search
+  can neither find nor confirm a secret. MCP replies are capped near 20 KB.
+  The MCP server now has seven tools.
+- **Token usage per step.** Every mindmap node carries `usage` whenever the
+  session logged it: calls, prompt tokens with cache reads and writes,
+  output and reasoning tokens, the largest context, the model's window for
+  Codex, compactions, and subagent usage reported beside the main numbers.
+  `--usage` adds these columns to the text tree, and `agent_tree_list`
+  accepts `usage: true`. Claude Code writes one response as several records
+  with the same usage, so each response counts once. Codex usage comes from
+  `token_usage_record` where present, otherwise from `token_count`. Claude
+  Code subagent transcripts count toward the step that started them.
+- **Open a session from any step.** `--open <step>`, with `--mode`,
+  `--agent claude|codex` and `--open-dir`, starts the agent with the
+  continue or fork prompt in the step's directory, without a shell, and
+  exits with the agent's status. For a `--file` session it first shows the
+  directory and the instruction and waits for Enter; `--yes` skips that. It
+  refuses without a terminal, inside an agent session (`CLAUDECODE=1`) and
+  for prompts over 100,000 bytes, and exits 127 when the agent is not on
+  PATH. No MCP tool starts an agent; `agent_tree_snapshot` and the
+  interactive `--snapshot` suggest the `--open` command instead.
 - `agent-tree --help` ends with the project's GitHub link.
 - After the first successful resume from the interactive tree, the CLI
   prints a short note asking for a GitHub star, once per machine. It goes to
@@ -25,8 +53,18 @@ All notable changes to this project are documented here. The format follows [Kee
   `~/.cache/agent-tree/` records that it was shown. The MCP server never
   prints it.
 
+### Changed
+
+- `--cwd` naming a missing directory exits 2, like other usage errors,
+  instead of 1.
+- The Claude Code reader no longer warns on stderr about a missing
+  permission-mode line; current Claude Code omits it in many valid sessions
+  (122 of the newest 300 on one machine). `--verbose` still shows it.
+
 ### Docs
 
+- The README covers search, token usage and `--open`, ticks the 0.4 roadmap
+  items and adds the next ones; every list of MCP tools now has seven.
 - The README is reorganized around the supported agents, features, a
   first-class "For AI agents" section (identity, isolated install and
   self-test, MCP wiring for any client, tools, recipes and rules) and a new
