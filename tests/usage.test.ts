@@ -17,7 +17,7 @@ import type { SessionMatch } from '../src/sources/types.js';
 import { buildStepIndex } from '../src/tree/steps.js';
 import type { MindMap, MindMapNode } from '../src/types.js';
 import { attachUsage } from '../src/usage/attach.js';
-import { formatTokens } from '../src/usage/format.js';
+import { formatTokens, formatUsage } from '../src/usage/format.js';
 import { createLoggerSync } from '../src/utils/logger.js';
 
 const FIXTURE = resolve('tests/fixtures/usage-claude.jsonl');
@@ -197,7 +197,14 @@ describe('Claude Code subagent usage', () => {
     writeFileSync(join(folder, 'agent-a2.meta.json'), '{"toolUseId":"toolu_missing"}');
     const mindmap = await mindmapOf(path);
     expect(nodeHolding(mindmap, 'e-r1').usage!.subagents).toMatchObject({ count: 1, calls: 2 });
-    expect(mindmap.root.usage!.subagents).toMatchObject({ count: 2, calls: 3 });
+    expect(mindmap.root.usage!.subagents).toMatchObject({
+      count: 2,
+      calls: 3,
+      unattributed_count: 1,
+    });
+    expect(formatUsage({ usage: mindmap.root.usage!, compactions: [] })).toContain(
+      '1 unattributed',
+    );
     const childAgents = mindmap.root.children.reduce(
       (sum, child) => sum + (child.usage?.subagents?.count ?? 0),
       0,

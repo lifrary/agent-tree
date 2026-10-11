@@ -153,7 +153,7 @@ export async function buildSnapshotPrompt(
   const gitCtx = sourceCwd
     ? await getGitContext(sourceCwd)
     : { available: false as const, cwd: '' };
-  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
+  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx, ctx.redactor) : null;
   const markdown = ctx.redactor.apply(
     gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown,
   );

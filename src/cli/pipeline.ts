@@ -10,6 +10,7 @@
 
 import { detectSegments } from '../analyzer/segments.js';
 import { createHash } from 'node:crypto';
+import { basename, dirname } from 'node:path';
 import { computeInputHash, writeJsonCache } from '../cache/disk.js';
 import { graphToDump } from '../reader/graph.js';
 import { createAnthropicClient } from '../llm/anthropic.js';
@@ -32,7 +33,7 @@ import type { CliOptions } from './options.js';
 /** Resolved config returned by `loadConfig` — re-aliased here for clarity. */
 export type ResolvedConfig = ClaudeMapConfig;
 
-export const SPEC_VERSION = 'v0.3';
+export const SPEC_VERSION = 'v0.6';
 
 export interface PipelineDeps {
   match: SessionMatch;
@@ -87,7 +88,11 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
   });
   // Portable exports may omit the session UUID. Use a stable path identity
   // for pick history rather than trusting a filename or unsafe envelope id.
-  if (!isFullUuid(meta.sessionId)) {
+  const childTranscript =
+    match.source === 'claude' &&
+    basename(dirname(match.jsonlPath)) === 'subagents' &&
+    /^agent-[A-Za-z0-9_-]{1,128}\.jsonl$/.test(basename(match.jsonlPath));
+  if (!isFullUuid(meta.sessionId) || childTranscript) {
     meta.sessionId = createHash('sha256').update(match.jsonlPath).digest('hex').slice(0, 32);
   }
   progress(`✔ ${events.length} events`);
@@ -131,6 +136,15 @@ export async function runPipeline(deps: PipelineDeps): Promise<PipelineResult> {
         sidechain_count: 0,
       },
     };
+    if (withUsage) {
+      await attachSessionUsage(emptyMindmap, {
+        source: match.source,
+        jsonlPath: match.jsonlPath,
+        events,
+        samples: usage,
+        logger,
+      });
+    }
     return {
       graph: { meta, events: [], childrenOf: new Map(), roots: [], byUuid: new Map() },
       segments: [],

@@ -71,7 +71,9 @@ The reason: redaction and path-safety bugs are silent failures that bypass every
 
 ### Routing through canonical helpers
 
-If you add a new code path that analyzes a session, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Claude catalogs are parse-free; Codex catalogs read bounded metadata headers, never analyze the conversation. Catalog strings still need redaction before output.
+If you add a new code path that analyzes a session, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Claude catalogs are parse-free; Codex catalogs read bounded metadata headers. Explicit `--sessions --usage`
+or MCP `usage: true` may analyze only the already-limited rows, through
+`runPipeline` with LLM disabled. Catalog strings still need redaction before output.
 
 ### Adding a session source
 
@@ -99,8 +101,8 @@ retain output redaction, and never execute commands from a transcript.
   session. All per-session tools accept `file` or `sessionId`,
   never both. All tools accept optional `source`; picks can filter by source
   or list both. MCP remains heuristic-only.
-- Cover portable exports, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, regular-file
-  discovery (no agent/subagent or symlink entries), strict parse failures,
+- Cover portable exports, `CLAUDE_CONFIG_DIR`, `CODEX_HOME`, default main-only
+  catalogs, opt-in child/archive discovery with no symlink entries, strict parse failures,
   JSON redaction/no stdout banners, and incompatible CLI flags (exit 2).
   JSON is the complete mindmap, not a filtered text view.
 - Verify defaults < user < project < environment < explicit CLI precedence,

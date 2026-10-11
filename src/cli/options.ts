@@ -47,7 +47,7 @@ export interface CliOptions {
   search?: string; // --search <text> finds steps across sessions
   since?: number; // --since <days> limits --search to recent files
   includeToolOutput?: boolean; // --include-tool-output also matches tool results
-  usage?: boolean; // --usage adds token columns to the tree
+  usage?: boolean; // --usage adds tree token columns or opt-in session totals
   open?: string; // --open <step> starts an agent session with the resume prompt
   agent?: SessionSourceId; // --agent picks the agent --open starts
   openDir?: string; // --open-dir overrides the directory --open starts in
@@ -70,13 +70,13 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     .option('--pick', 'interactive picker over recent sessions')
     .option('--file <path>', 'read a Claude Code or Codex JSONL file (auto-detected)')
     .addOption(
-      new Option('--source <source>', 'session source (discovery: claude; search: both; file: auto)').choices([
-        'claude',
-        'codex',
-      ]),
+      new Option(
+        '--source <source>',
+        'session source (discovery: claude; search: both; file: auto)',
+      ).choices(['claude', 'codex']),
     )
     .option('--cwd <dir>', 'project directory for session discovery and configuration')
-    .option('--sessions', 'list recent sessions without analyzing their contents')
+    .option('--sessions', 'list recent sessions (metadata only unless --usage is set)')
     .option(
       '--limit <n>',
       'maximum sessions to list (default: 20) or report from --search (default: 10)',
@@ -114,9 +114,16 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
     .option('--unstar <id>', 'remove the ⭐ from a previously-picked node')
     .option('--diff <ids...>', 'summarise what happened between two nodes (numbers or n_NNN ids)')
     .option('--search <text>', 'find the sessions and steps where the text appears')
-    .option('--since <days>', 'limit --search to sessions changed in the last N days', positiveInteger)
+    .option(
+      '--since <days>',
+      'limit --search to sessions changed in the last N days',
+      positiveInteger,
+    )
     .option('--include-tool-output', 'let --search also match tool results')
-    .option('--usage', 'show token usage per step in the tree')
+    .option(
+      '--usage',
+      'show tree token usage; with --sessions, read logs for totals without LLM calls',
+    )
     .option('--open <step>', 'start a new agent session from a step (continue or fork prompt)')
     .addOption(
       new Option('--agent <agent>', 'agent --open starts (default: the session source)').choices([
@@ -159,10 +166,14 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
       fail('--open does not support --json, --dump-json or --dry-run');
     if (
       opts.usage &&
-      (opts.sessions || opts.picks || searching || opts.open !== undefined || opts.snapshot ||
-        opts.unstar || opts.diff)
+      (opts.picks ||
+        searching ||
+        opts.open !== undefined ||
+        opts.snapshot ||
+        opts.unstar ||
+        opts.diff)
     )
-      fail('--usage only applies to tree output (--list, --tui, --json)');
+      fail('--usage only applies to tree output (--list, --tui, --json) or --sessions');
     if (
       [opts.includeSidechains, opts.flattenSidechains, opts.dropSidechains].filter(Boolean).length >
       1
@@ -204,7 +215,9 @@ export function parseCliArgs(argv: string[]): ParsedArgs {
         ...(searching ? [] : ['color']),
       ].some((option) => program.getOptionValueSource(option) === 'cli')
     ) {
-      fail('--sessions, --picks and --search do not support LLM, sidechain or tree display options');
+      fail(
+        '--sessions, --picks and --search do not support LLM, sidechain or tree display options',
+      );
     }
     return {
       ok: true,

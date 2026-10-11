@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { createReadStream } from 'node:fs';
+import { createReadStream, read } from 'node:fs';
 import { createInterface } from 'node:readline';
 import { isFullUuid } from '../sources/files.js';
 import type { ReadSessionOptions, ReadSessionResult } from '../sources/types.js';
@@ -269,10 +269,23 @@ function suppressFallbacks(candidates: Candidate[]): number {
 
 export async function readCodex(
   path: string,
-  opts: ReadSessionOptions = {},
+  opts: ReadSessionOptions & {
+    /** Already-open regular file; caller owns closing it. */ fd?: number;
+  } = {},
 ): Promise<ReadSessionResult> {
   const { logger, strict = false } = opts;
-  const stream = createReadStream(path, { encoding: 'utf8' });
+  const stream = createReadStream(path, {
+    encoding: 'utf8',
+    ...(opts.fd === undefined
+      ? {}
+      : {
+          fd: opts.fd,
+          autoClose: false,
+          // ReadStream.destroy() closes even an autoClose:false descriptor.
+          // This stream borrows it; release stream resources, not caller ownership.
+          fs: { read, close: (_fd, callback) => callback(null) },
+        }),
+  });
   const lines = createInterface({ input: stream, crlfDelay: Infinity });
   const meta: SessionMeta = { sessionId: '', permissionMode: '' };
   const context = { cwd: '', gitBranch: '', version: '', entrypoint: '', isSidechain: false };
@@ -463,7 +476,11 @@ export async function readCodex(
     }
   } finally {
     lines.close();
-    stream.destroy();
+    await new Promise<void>((done) => {
+      if (stream.closed) return done();
+      stream.once('close', done);
+      stream.destroy();
+    });
   }
 
   skippedMetaCount += suppressFallbacks(candidates);

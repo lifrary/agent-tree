@@ -25,7 +25,7 @@ function formatSession(result: SessionResult, cwd: string, options: FormatOption
   const more = result.hits.length - shown.length + result.more_hits;
   const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
   const lines = [
-    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}`,
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}${result.archived ? '  [archived]' : ''}${result.subagent ? '  [subagent]' : ''}`,
     ...shown.map(
       (hit) =>
         `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`,
@@ -34,9 +34,19 @@ function formatSession(result: SessionResult, cwd: string, options: FormatOption
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? '' : 's'}`);
   lines.push(
     printable(
-      `  snapshot: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
+      `  snapshot: agent-tree --source ${result.source}${cwd} ${result.file ? `--file ${shellQuote(result.file)}` : options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`,
     ),
   );
+  if (result.subagent) {
+    const parent = result.subagent;
+    lines.push(
+      printable(
+        parent.parent_file && parent.parent_step !== null
+          ? `  parent: agent-tree --source ${result.source}${cwd} --file ${shellQuote(parent.parent_file)} --snapshot ${parent.parent_step} --mode continue`
+          : `  parent: ${parent.parent_session_id ?? 'unknown'} (originating step unavailable)`,
+      ),
+    );
+  }
   return lines.join('\n');
 }
 

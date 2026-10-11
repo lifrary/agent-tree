@@ -40,6 +40,9 @@ export function addUsage(a: StepUsage, b: StepUsage): StepUsage {
       calls: x.calls + y.calls,
       prompt_tokens: x.prompt_tokens + y.prompt_tokens,
       output_tokens: x.output_tokens + y.output_tokens,
+      ...((x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) > 0
+        ? { unattributed_count: (x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) }
+        : {}),
     };
   }
   return sum;

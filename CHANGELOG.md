@@ -4,6 +4,50 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
+### 0.6.0 — recovery, search coverage and usage
+
+This release combines the 0.5 and 0.6 roadmap milestones. It is not yet
+published to npm; there is no separate 0.5.0 publication.
+
+### Added
+
+- Source-attributed, bounded historical evidence in recovery prompts, with
+  explicit continue/fork cutoffs and omission notices. Fork prompts exclude
+  outcomes after the selected question. Prompts do not restore files;
+  attached Git context describes the current checkout.
+- Search of Claude Code and Codex child transcripts and Codex
+  `archived_sessions/`, with exact-file commands and proven parent-step links.
+  Unknown parent steps remain unknown. Archived main sessions also resolve
+  by ID; default recent catalogs still exclude children and archives.
+- Codex descendant usage attributed separately from main usage, with
+  inherited-call deduplication and session-level attribution when the
+  initiating step is unavailable. Related child changes invalidate MCP usage
+  caches for both sources.
+- Opt-in `--sessions --usage` and `agent_tree_sessions({ usage: true })`.
+  Only selected rows are analyzed; main and child usage are preserved beside
+  combined prompt/output totals. Missing usage is distinct from zero and
+  unavailable transcripts do not erase other rows.
+
+### Changed
+
+- JSON mindmaps identify the updated contract as `spec_version: "v0.6"`.
+- Native Claude child transcripts use path-derived pick identities instead
+  of colliding with the parent session UUID repeated in their records.
+- Numeric UUIDs are no longer partially redacted as Luhn-valid credit-card
+  prefixes, preserving usable file selectors while still redacting cards.
+- Git context is explicitly current, with redaction before display shortening.
+- The roadmap now prioritizes finding and resuming reliably, then complete
+  usage accounting; release metadata is prepared for 0.6.0.
+
+### Limits
+
+- Recovery evidence is bounded to 32 excerpts and a 512-occurrence ancestry
+  walk, plus provable instruction anchors. Truncated traversal reports unknown
+  additional context rather than implying complete decision recovery.
+- Usage comes from available logs, not a billing ledger. Inherited calls
+  cannot always be distinguished when response/thread identity and timestamp
+  evidence are absent. Unknown step attribution stays explicit.
+
 ## [v0.4.0] — 2026-10-10
 
 ### Fixed

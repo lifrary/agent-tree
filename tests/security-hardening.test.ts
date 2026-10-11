@@ -18,7 +18,7 @@
  */
 
 import { describe, expect, it, beforeEach, afterEach, vi } from 'vitest';
-import { mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, rm, stat, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -26,14 +26,18 @@ import { dirname } from 'node:path';
 
 import { detectSegments } from '../src/analyzer/segments.js';
 import { dumpArtifacts } from '../src/cli/modes.js';
-import { passesRedosFuzz } from '../src/cli/pipeline.js';
+import { passesRedosFuzz, runPipeline } from '../src/cli/pipeline.js';
+import { DEFAULT_CONFIG, mergeConfig } from '../src/config/schema.js';
 import { labelMindMap } from '../src/llm/labeler.js';
 import { buildGraph } from '../src/reader/graph.js';
 import { readJsonl } from '../src/reader/jsonl.js';
 import { buildMindMap } from '../src/tree/builder.js';
+import { encodeProjectPath } from '../src/sources/claude.js';
+import { createLoggerSync } from '../src/utils/logger.js';
 import { defaultRedactor } from '../src/utils/redact.js';
 import { readPicks, recordPick, removePicksForNode } from '../src/utils/picks.js';
 import { safeGitCwd } from '../src/utils/safe_path.js';
+import { listSessions, sessionFromFile } from '../src/utils/session_path.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const FIXTURE = resolve(here, 'fixtures/minimal-session.jsonl');
@@ -44,6 +48,16 @@ const FIXTURE = resolve(here, 'fixtures/minimal-session.jsonl');
 
 describe('redactor — new patterns added in audit pass', () => {
   const r = defaultRedactor();
+
+  it('preserves numeric UUID selectors without exposing adjacent valid cards', () => {
+    const id = '44444444-2222-4333-8444-555555555554';
+    const path = `/sessions/${id}/subagents/agent-worker.jsonl`;
+    for (const card of ['4111111111111111', '4111 1111 1111 1111', '4111-1111-1111-1111']) {
+      const result = r.applyWithStats(`${path} card=${card}`);
+      expect(result.text).toBe(`${path} card=[CARD]`);
+      expect(result.hits.credit_card).toBe(1);
+    }
+  });
 
   it('catches GitHub fine-grained PATs (github_pat_<82+ chars>)', () => {
     const fake =
@@ -619,5 +633,218 @@ describe('passesRedosFuzz — extra_patterns self-DoS guard', () => {
     passesRedosFuzz(evil);
     const elapsed = Date.now() - start;
     expect(elapsed).toBeLessThan(1000);
+  });
+});
+
+describe('expanded discovery — untrusted files and optional metadata', () => {
+  const parentId = 'aaaaaaaa-2222-4333-8444-555555555551';
+  const otherId = 'bbbbbbbb-2222-4333-8444-555555555552';
+  let root: string;
+  let projects: string;
+  let project: string;
+  let children: string;
+
+  beforeEach(async () => {
+    root = await mkdtemp(join(tmpdir(), 'agent-tree-discovery-safety-'));
+    projects = join(root, 'claude', 'projects');
+    project = join(projects, encodeProjectPath('/synthetic/project'));
+    children = join(project, parentId, 'subagents');
+    await mkdir(children, { recursive: true });
+  });
+  afterEach(async () => {
+    await rm(root, { recursive: true, force: true });
+  });
+
+  async function child(id: string, metadata?: string) {
+    const file = join(children, `agent-${id}.jsonl`);
+    await writeFile(file, '{}\n');
+    if (metadata !== undefined) await writeFile(join(children, `agent-${id}.meta.json`), metadata);
+    return file;
+  }
+
+  async function archive(id: string, contents: string, directory = 'archived_sessions') {
+    const dir = join(root, 'codex', directory);
+    await mkdir(dir, { recursive: true });
+    const file = join(dir, `rollout-2026-10-01T00-00-00-${id}.jsonl`);
+    await writeFile(file, contents);
+    return file;
+  }
+
+  const header = (id: string, extra: Record<string, unknown> = {}) =>
+    JSON.stringify({
+      type: 'session_meta',
+      payload: { id, cwd: '/synthetic/project', source: 'cli', ...extra },
+    }) + '\n';
+
+  it('gives a child reusing its parent UUID a stable independent pipeline and snapshot identity', async () => {
+    const file = await child('identity-worker');
+    const parent = join(project, `${parentId}.jsonl`);
+    const contents =
+      JSON.stringify({
+        type: 'user',
+        uuid: 'identity-prompt',
+        parentUuid: null,
+        sessionId: parentId,
+        timestamp: '2026-10-01T00:00:00.000Z',
+        cwd: root,
+        isSidechain: true,
+        message: { role: 'user', content: 'Inspect child identity without changing the parent.' },
+      }) + '\n';
+    await writeFile(file, contents);
+    await writeFile(parent, contents);
+    const analyze = async (path: string) =>
+      runPipeline({
+        match: await sessionFromFile(path, 'claude'),
+        opts: { llm: false, cwd: root, dryRun: true },
+        config: mergeConfig(DEFAULT_CONFIG, {
+          cache: { enabled: false, dir: join(root, 'cache') },
+        }),
+        logger: createLoggerSync('error'),
+        quiet: true,
+        usage: false,
+      });
+    const first = await analyze(file);
+    const second = await analyze(file);
+    const main = await analyze(parent);
+    const identity = first.mindmap.session_id;
+    expect(main.mindmap.session_id).toBe(parentId);
+    expect(identity).not.toBe(parentId);
+    expect(identity).not.toBe('');
+    expect(second.mindmap.session_id).toBe(identity);
+    expect(first.mindmap.root.context_snapshot_continue.session_id).toBe(identity);
+    expect(first.mindmap.root.context_snapshot_fork.session_id).toBe(identity);
+    expect(second.mindmap.root.context_snapshot_continue.session_id).toBe(identity);
+  });
+
+  it('does not follow symlinked Claude project, parent, subagents directories or child files', async () => {
+    const accepted = await child('regular');
+    const outside = join(root, 'outside');
+    await mkdir(join(outside, 'subagents'), { recursive: true });
+    await writeFile(join(outside, 'subagents', 'agent-outside.jsonl'), '{}\n');
+    await symlink(outside, join(project, otherId), 'dir');
+    await symlink(project, join(projects, '-linked-project'), 'dir');
+    const third = join(project, 'cccccccc-2222-4333-8444-555555555553');
+    await mkdir(third);
+    await symlink(join(outside, 'subagents'), join(third, 'subagents'), 'dir');
+    await symlink(
+      join(outside, 'subagents', 'agent-outside.jsonl'),
+      join(children, 'agent-linked.jsonl'),
+    );
+    await mkdir(join(children, 'agent-directory.jsonl'));
+
+    expect(
+      (await listSessions({ root: projects, includeSubagents: true })).map(
+        (entry) => entry.jsonlPath,
+      ),
+    ).toEqual([accepted]);
+  });
+
+  it('ignores symlinked and nonregular Claude metadata without losing the child transcript', async () => {
+    const linked = await child('linked-meta');
+    const nonregular = await child('directory-meta');
+    const outside = join(root, 'outside-meta.json');
+    await writeFile(
+      outside,
+      JSON.stringify({ toolUseId: 'untrusted-spawn', parentAgentId: 'outside' }),
+    );
+    await symlink(outside, join(children, 'agent-linked-meta.meta.json'));
+    await mkdir(join(children, 'agent-directory-meta.meta.json'));
+    const entries = await listSessions({ root: projects, includeSubagents: true });
+
+    expect(entries.map((entry) => entry.jsonlPath).sort()).toEqual([linked, nonregular].sort());
+    for (const entry of entries)
+      expect(entry.subagent).toEqual({
+        id: entry.jsonlPath === linked ? 'linked-meta' : 'directory-meta',
+        parentSessionId: parentId,
+      });
+  });
+
+  it.each([
+    ['invalid-json', '{not-json'],
+    ['array', '[{"toolUseId":"untrusted-spawn"}]'],
+    ['null', 'null'],
+    ['wrong-types', JSON.stringify({ toolUseId: 123, parentAgentId: ['outside'] })],
+    ['traversal', JSON.stringify({ parentAgentId: '../../outside' })],
+    [
+      'oversized',
+      JSON.stringify({
+        toolUseId: 'untrusted-spawn',
+        parentAgentId: 'outside',
+        padding: 'x'.repeat(1024 * 1024),
+      }),
+    ],
+  ])('treats %s child metadata as optional untrusted data', async (id, metadata) => {
+    const file = await child(id, metadata);
+    const entries = await listSessions({ root: projects, includeSubagents: true });
+    expect(entries).toHaveLength(1);
+    expect(entries[0]).toMatchObject({ jsonlPath: file });
+    expect(entries[0].subagent).toEqual({ id, parentSessionId: parentId });
+  });
+
+  it('rejects symlinked archive rollouts/date directories and nonregular archive entries', async () => {
+    const accepted = await archive(parentId, header(parentId));
+    const archived = join(root, 'codex', 'archived_sessions');
+    const outside = join(root, 'outside-archive');
+    await mkdir(join(outside, '10', '01'), { recursive: true });
+    const outsideFile = join(outside, '10', '01', `rollout-2026-10-01T00-00-00-${otherId}.jsonl`);
+    await writeFile(outsideFile, header(otherId));
+    await symlink(outsideFile, join(archived, `rollout-2026-10-01T00-00-00-${otherId}.jsonl`));
+    await symlink(outside, join(archived, '2026'), 'dir');
+    await mkdir(
+      join(archived, 'rollout-2026-10-01T00-00-00-cccccccc-2222-4333-8444-555555555553.jsonl'),
+    );
+    const entries = await listSessions({
+      source: 'codex',
+      root: join(root, 'codex', 'sessions'),
+      includeArchived: true,
+      includeSubagents: true,
+    });
+    expect(entries.map((entry) => entry.jsonlPath)).toEqual([accepted]);
+  });
+
+  it('does not follow a symlinked archived_sessions root', async () => {
+    const outside = join(root, 'outside-archive');
+    await mkdir(outside);
+    await mkdir(join(root, 'codex'));
+    await writeFile(
+      join(outside, `rollout-2026-10-01T00-00-00-${parentId}.jsonl`),
+      header(parentId),
+    );
+    await symlink(outside, join(root, 'codex', 'archived_sessions'), 'dir');
+    expect(
+      await listSessions({
+        source: 'codex',
+        root: join(root, 'codex', 'sessions'),
+        includeArchived: true,
+      }),
+    ).toEqual([]);
+  });
+
+  it('skips malformed, oversized and mismatched archived session headers while keeping valid siblings', async () => {
+    const accepted = await archive(parentId, header(parentId));
+    await archive(otherId, '{not-json\n');
+    const oversizedId = 'cccccccc-2222-4333-8444-555555555553';
+    await archive(oversizedId, header(oversizedId, { base_instructions: 'x'.repeat(1024 * 1024) }));
+    await archive('dddddddd-2222-4333-8444-555555555554', header(otherId));
+    const invalidParentId = 'eeeeeeee-2222-4333-8444-555555555555';
+    const invalidParent = await archive(
+      invalidParentId,
+      header(invalidParentId, {
+        source: { subagent: { thread_spawn: { parent_thread_id: '../../outside' } } },
+      }),
+    );
+    const entries = await listSessions({
+      source: 'codex',
+      root: join(root, 'codex', 'sessions'),
+      includeArchived: true,
+      includeSubagents: true,
+    });
+    expect(entries.map((entry) => entry.jsonlPath).sort()).toEqual(
+      [accepted, invalidParent].sort(),
+    );
+    expect(entries.find((entry) => entry.jsonlPath === invalidParent)?.subagent).toMatchObject({
+      id: invalidParentId,
+      parentSessionId: null,
+    });
   });
 });

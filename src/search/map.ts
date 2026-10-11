@@ -5,7 +5,10 @@
  */
 import { runPipeline, type ResolvedConfig } from '../cli/pipeline.js';
 import type { RawEvent } from '../types.js';
-import type { SessionEntry } from '../sources/types.js';
+import type { SessionEntry, SessionSourceId } from '../sources/types.js';
+import { findSpawnEvent } from '../sources/relations.js';
+import { isMissingPath } from '../sources/files.js';
+import { listSessions } from '../utils/session_path.js';
 import { buildStepIndex } from '../tree/steps.js';
 import { createLoggerSync } from '../utils/logger.js';
 import type { Redactor } from '../utils/redact.js';
@@ -26,6 +29,8 @@ export interface MapContext {
   config: ResolvedConfig;
   /** Directory for configuration-relative paths; the pipeline needs one. */
   cwd: string;
+  entries?: SessionEntry[];
+  relatedEntries?: Map<SessionSourceId, Promise<SessionEntry[]>>;
 }
 
 /** The session's matching steps, or null when no event in the tree matches. */
@@ -72,13 +77,84 @@ export async function mapSession(
   const hits = [...byStep.values()].sort((a, b) => a.step - b.step);
   return {
     source,
-    session_id: sessionId,
+    session_id: ctx.redactor.apply(sessionId),
     project_dir: ctx.redactor.apply(
       source === 'claude' ? (firstCwd(result.graph.events) ?? projectDir) : projectDir,
     ),
     mtime: new Date(entry.mtimeMs).toISOString(),
     hits: hits.slice(0, MAX_HITS_PER_SESSION),
     more_hits: Math.max(0, hits.length - MAX_HITS_PER_SESSION),
+    ...(entry.archived || entry.subagent ? { file: ctx.redactor.apply(jsonlPath) } : {}),
+    ...(entry.archived ? { archived: true } : {}),
+    ...(entry.subagent ? { subagent: await parentLink(entry, ctx) } : {}),
+  };
+}
+
+async function parentLink(
+  entry: SessionEntry,
+  ctx: MapContext,
+): Promise<NonNullable<SessionResult['subagent']>> {
+  const child = entry.subagent!;
+  const findParent = (entries: SessionEntry[]) =>
+    child.parentAgentId
+      ? entries.find(
+          (candidate) =>
+            candidate.jsonlPath !== entry.jsonlPath &&
+            candidate.source === entry.source &&
+            candidate.subagent?.id === child.parentAgentId &&
+            candidate.subagent?.parentSessionId === child.parentSessionId,
+        )
+      : entries.find(
+          (candidate) =>
+            candidate.source === entry.source &&
+            candidate.sessionId.toLowerCase() === child.parentSessionId?.toLowerCase() &&
+            candidate.jsonlPath !== entry.jsonlPath,
+        );
+  let parent = findParent(ctx.entries ?? []);
+  let step: number | null = null;
+  try {
+    if (!parent && child.parentSessionId) {
+      // A child can change cwd. Project filtering must not erase its provenance.
+      const cache = (ctx.relatedEntries ??= new Map());
+      let entries = cache.get(entry.source);
+      if (!entries) {
+        entries = listSessions({
+          source: entry.source,
+          includeSubagents: true,
+          includeArchived: true,
+        });
+        cache.set(entry.source, entries);
+      }
+      parent = findParent(await entries);
+    }
+    if (parent) {
+      const result = await runPipeline({
+        match: parent,
+        opts: { llm: false, cwd: ctx.cwd, dryRun: true },
+        config: ctx.config,
+        logger: quietLogger,
+        quiet: true,
+        usage: false,
+      });
+      const event = findSpawnEvent(result.graph.events, entry);
+      if (event) step = buildStepIndex(result.mindmap).stepOfEvent(event) ?? null;
+    }
+  } catch (error) {
+    if (
+      !isMissingPath(error) &&
+      !['EACCES', 'EPERM', 'ESTALE'].includes((error as NodeJS.ErrnoException | null)?.code ?? '')
+    )
+      throw error;
+  }
+  return {
+    id: ctx.redactor.apply(child.id),
+    parent_session_id: parent
+      ? ctx.redactor.apply(parent.sessionId)
+      : child.parentSessionId === null
+        ? null
+        : ctx.redactor.apply(child.parentSessionId),
+    parent_file: parent ? ctx.redactor.apply(parent.jsonlPath) : null,
+    parent_step: step,
   };
 }
 

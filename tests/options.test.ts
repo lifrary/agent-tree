@@ -54,7 +54,6 @@ describe('CLI argument validation', () => {
     ['--include-tool-output'],
     ['--list', '--include-tool-output'],
     ['--search', 'x', '--usage'],
-    ['--sessions', '--usage'],
     ['--snapshot', '1', '--usage'],
     ['--diff', '1', '2', '--usage'],
     ['--open', '1', '--usage'],
@@ -74,6 +73,14 @@ describe('CLI argument validation', () => {
     ['--search', 'x', '--no-group'],
   ])('rejects invalid or conflicting arguments %j', (...args) => {
     expect(parse(...args)).toEqual({ ok: false, exitCode: 2 });
+  });
+
+  it('accepts opt-in usage for a bounded JSON catalog', () => {
+    const parsed = parse('--sessions', '--usage', '--json', '--limit', '3');
+    expect(parsed).toMatchObject({
+      ok: true,
+      opts: { sessions: true, usage: true, json: true, limit: 3 },
+    });
   });
 
   it.each(['0', '-1', '1.5', '1e3', '10junk', '9007199254740992'])(
@@ -143,7 +150,10 @@ describe('CLI argument validation', () => {
       },
     });
     expect(parse('--search', 'x'.repeat(200))).toMatchObject({ ok: true });
-    expect(parse('--search', 'x', '--no-color')).toMatchObject({ ok: true, opts: { color: false } });
+    expect(parse('--search', 'x', '--no-color')).toMatchObject({
+      ok: true,
+      opts: { color: false },
+    });
   });
 
   it.each([['--list'], ['--json'], ['--phases-only'], ['--tui'], []])(

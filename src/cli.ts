@@ -34,6 +34,7 @@ import { pickSession } from './utils/picker.js';
 import { defaultRedactor, redactDeep, type Redactor } from './utils/redact.js';
 import { maybeShowStarHint } from './utils/star_hint.js';
 import type { SessionSourceId } from './sources/types.js';
+import { addCatalogUsage, formatCatalogUsage } from './usage/catalog.js';
 import {
   findLatestSession,
   findLatestSessionInProject,
@@ -72,14 +73,18 @@ export async function main(argv: string[] = process.argv): Promise<number> {
       limit: opts.limit ?? 20,
     });
     const redactor = buildRedactor(opts, config, logger);
-    const safeEntries = redactDeep(entries, redactor);
+    const usageEntries = opts.usage
+      ? await addCatalogUsage(entries, { opts, config, logger, redactor })
+      : undefined;
+    const safeEntries = usageEntries ?? redactDeep(entries, redactor);
     process.stdout.write(
       opts.json
         ? JSON.stringify({ sessions: safeEntries }, null, 2) + '\n'
         : safeEntries
             .map(
-              (entry) =>
-                `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`,
+              (entry, index) =>
+                `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}` +
+                (usageEntries ? `  ${formatCatalogUsage(usageEntries[index])}` : ''),
             )
             .join('\n') + '\n',
     );
@@ -323,7 +328,10 @@ if (invokedDirectly) {
     if (error.code !== 'EPIPE') throw error;
   });
   main().then(exitAfterFlush, (err) => {
-    console.error('error:', defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
+    console.error(
+      'error:',
+      defaultRedactor().apply(err instanceof Error ? err.message : String(err)),
+    );
     exitAfterFlush(1);
   });
 }

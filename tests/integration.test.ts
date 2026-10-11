@@ -60,7 +60,8 @@ describe('integration — secret redaction end-to-end (terminal-only)', () => {
       'ghp_fakefakefakefakefakefakefakefakefak',
       'tk_fakefakefakefakefakefakefake',
       'AKIAABCDEFGHIJKLMNOP',
-      'AIzaSyDummyDummyDummyDummyDummyDummyDummyD',
+      // A real GCP key shape: AIza plus exactly 35 characters.
+      'AIza01234567890123456789012345678901234',
     ];
     for (const lit of literals) {
       expect(all, `secret ${lit} leaked into mindmap`).not.toContain(lit);

@@ -106,6 +106,33 @@ async function main() {
       otherSessionId,
     );
 
+    await prepareExpandedDiscovery();
+    const expanded = JSON.parse(
+      await runOut(bin, ['--source', 'codex', '--search', 'coverageprobe', '--json'], tempDir),
+    );
+    assert.equal(expanded.results.length, 2);
+    assert.ok(expanded.results.some((entry) => entry.archived === true));
+    const childHit = expanded.results.find((entry) => entry.subagent);
+    assert.ok(childHit?.file);
+    assert.equal(childHit.subagent.parent_session_id, expectedSessionId);
+    assert.equal(childHit.subagent.parent_step, null);
+    const childSnapshot = await runOut(
+      bin,
+      ['--file', childHit.file, '--no-llm', '--snapshot', String(childHit.hits[0].step)],
+      tempDir,
+    );
+    assert.match(childSnapshot, /childcoverageprobe/);
+    assert.match(childSnapshot, /Source event/);
+    assert.doesNotMatch(childSnapshot, /SYNTHETIC_PRIVATE_INSTRUCTIONS/);
+    const usageCatalog = JSON.parse(
+      await runOut(
+        bin,
+        ['--source', 'codex', '--sessions', '--cwd', tempDir, '--limit', '1', '--usage', '--json'],
+        tempDir,
+      ),
+    );
+    assertCatalogUsage(usageCatalog);
+
     await smokeMcp(
       join(tempDir, 'node_modules/@seungwoolee/agent-tree/dist/mcp-server.js'),
       version,
@@ -115,6 +142,65 @@ async function main() {
   } finally {
     if (tempDir) await rm(tempDir, { recursive: true, force: true });
   }
+}
+
+async function prepareExpandedDiscovery() {
+  const home = join(tempDir, 'home', '.codex');
+  const archive = join(home, 'archived_sessions');
+  const active = join(home, 'sessions', '2026', '01', '02');
+  await mkdir(archive, { recursive: true });
+  for (const [id, directory, subagent, text] of [
+    ['cccc1111-2222-3333-4444-555566667777', archive, false, 'archivecoverageprobe'],
+    ['eeee1111-2222-3333-4444-555566667777', active, true, 'childcoverageprobe'],
+  ]) {
+    const records = [
+      {
+        timestamp: '2026-01-02T03:04:05Z',
+        type: 'session_meta',
+        payload: {
+          id,
+          cwd: tempDir,
+          source: subagent
+            ? { subagent: { thread_spawn: { parent_thread_id: expectedSessionId } } }
+            : 'cli',
+        },
+      },
+      {
+        timestamp: '2026-01-02T03:04:06Z',
+        type: 'response_item',
+        payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] },
+      },
+    ];
+    if (subagent)
+      records.push({
+        timestamp: '2026-01-02T03:04:07Z',
+        type: 'token_usage_record',
+        payload: {
+          thread_id: id,
+          response_id: 'smoke-child-response',
+          usage: {
+            input_tokens: 100,
+            output_tokens: 7,
+            cached_input_tokens: 0,
+            reasoning_output_tokens: 0,
+          },
+        },
+      });
+    await writeFile(
+      join(directory, `rollout-2026-01-02T03-04-05-${id}.jsonl`),
+      records.map((record) => JSON.stringify(record)).join('\n') + '\n',
+    );
+  }
+}
+
+function assertCatalogUsage(catalog) {
+  assert.equal(catalog.sessions.length, 1);
+  const entry = catalog.sessions[0];
+  assert.equal(entry.usage_status, 'available');
+  assert.equal(entry.total_prompt_tokens, 100);
+  assert.equal(entry.total_output_tokens, 7);
+  assert.equal(entry.usage.prompt_tokens, 0);
+  assert.equal(entry.usage.subagents.prompt_tokens, 100);
 }
 
 async function prepareCodexDiscovery() {
@@ -237,6 +323,7 @@ async function smokeMcp(serverPath, version, rolloutPath) {
     assert.equal(schemas.agent_tree_sessions.properties.limit.default, 20);
     assert.equal(schemas.agent_tree_sessions.properties.limit.minimum, 1);
     assert.equal(schemas.agent_tree_sessions.properties.limit.maximum, 1000);
+    assert.equal(schemas.agent_tree_sessions.properties.usage.type, 'boolean');
     assert.deepEqual(Object.keys(schemas.agent_tree_picks.properties ?? {}), ['source']);
     for (const name of expectedTools) {
       assert.equal(schemas[name].properties.source.type, 'string');
@@ -288,6 +375,18 @@ async function smokeMcp(serverPath, version, rolloutPath) {
     assert.notEqual(catalog.isError, true);
     assertCatalog(catalog.structuredContent, rolloutPath);
     assert.deepEqual(JSON.parse(catalog.content[0].text), catalog.structuredContent);
+    const usageCatalog = await rpc('tools/call', {
+      name: 'agent_tree_sessions',
+      arguments: { source: 'codex', cwd: tempDir, limit: 1, usage: true },
+    });
+    assert.notEqual(usageCatalog.isError, true);
+    assertCatalogUsage(usageCatalog.structuredContent);
+    const expanded = await rpc('tools/call', {
+      name: 'agent_tree_search',
+      arguments: { source: 'codex', cwd: tempDir, query: 'coverageprobe' },
+    });
+    assert.notEqual(expanded.isError, true);
+    assert.equal(expanded.structuredContent.results.length, 2);
     const defaultCatalog = await rpc('tools/call', { name: 'agent_tree_sessions', arguments: {} });
     assert.notEqual(defaultCatalog.isError, true);
     assert.deepEqual(defaultCatalog.structuredContent?.sessions, []);

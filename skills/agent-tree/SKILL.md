@@ -1,7 +1,7 @@
 ---
 name: agent-tree
 description: Use when the user asks to "map a session", "show me the tree", "agent-tree", "/agent-tree", "resume from a node", "fork from this session", find recent sessions, or inspect a Claude Code or Codex JSONL export. Renders the session as a numbered file-tree and emits a continue/fork resume block on selection. Finds the session and step where something happened. Seven MCP tools and a CLI fallback.
-version: 0.4.0
+version: 0.6.0
 ---
 
 # agent-tree skill
@@ -43,7 +43,7 @@ registered (no per-call CLI subprocess), fall back to the CLI otherwise.
 
 When the `agent-tree` MCP server is connected (via plugin install):
 
-- `agent_tree_sessions({ source?, cwd?, limit? })` → redacted recent-session catalog; default limit 20, integer 1–1000
+- `agent_tree_sessions({ source?, cwd?, limit?, usage? })` → redacted recent-session catalog; default limit 20, integer 1–1000. `usage: true` opts into transcript reads for the selected rows and reports main/child usage with combined totals; missing data is not zero
 - `agent_tree_list({ source?, cwd, sessionId?, file?, phasesOnly?, filter?, format?, usage? })` → numbered text tree by default, or complete redacted mindmap with `format: "json"`; `usage: true` adds token columns per step (prompt, output, largest context, compactions, subagents), and JSON carries `usage` on every node whenever the session logged token usage
 - `agent_tree_snapshot({ source?, cwd, nodeId, mode?, sessionId?, file? })` → resume markdown and records the pick; mode defaults to `continue`
 - `agent_tree_picks({ source? })` → lists recorded picks across both sources, or the selected source
@@ -67,6 +67,14 @@ JSON text. Each catalog entry has `source`, `sessionId`, `projectDir`, `jsonlPat
 JSON mindmaps also carry top-level `source`.
 MCP always uses heuristic labels and makes no LLM calls.
 
+With catalog `usage: true`, rows add `usage_status` (`available`, `not_logged`,
+`unavailable`), `usage`, `total_prompt_tokens`, and `total_output_tokens`.
+The `usage` object keeps main and child counts separate; totals combine them.
+Missing/unavailable totals are null, not zero. Unassigned child counts appear
+as `usage.subagents.unattributed_count`. Missing call identity/timestamp
+evidence can prevent inherited-history deduplication; do not present these
+logged totals as a verified bill.
+
 ### CLI fallback
 
 If the MCP server isn't available, fall through to spawning the CLI:
@@ -78,6 +86,7 @@ agent-tree --picks
 agent-tree [<session-id>] --no-llm --diff <a> <b>
 agent-tree [<session-id>] --no-llm --unstar <N>
 agent-tree --sessions --limit 20 --json
+agent-tree --sessions --usage --limit 10 --json
 agent-tree --cwd /path/to/project --sessions
 agent-tree --file /path/to/export.jsonl --no-llm --list
 agent-tree --file /path/to/export.jsonl --no-llm --strict --json
@@ -130,16 +139,21 @@ preflight counts and reserves before paid calls; a failed count makes no
 paid labeling call for that segment. Reservations are not refunded after
 failure, and output charges are separate: this is not a monetary cap.
 
-Claude discovery uses `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/`, only regular
-UUID-named `.jsonl` files, and excludes agent/subagent and symlink entries.
+Claude's default catalog uses `<CLAUDE_CONFIG_DIR or ~/.claude>/projects/`,
+only regular UUID-named `.jsonl` files. Search also reads regular child
+transcripts under `<session>/subagents/`; symlinks remain excluded.
 Project encoding replaces every non-ASCII-alphanumeric character with `-`.
 An imported export without a valid session UUID gets a stable path-derived
 32-hex local history identity; continue selecting it with `--file`, not that
 identity as a UUID prefix.
 
-Codex discovery uses `<CODEX_HOME or ~/.codex>/sessions/YYYY/MM/DD/`, reads
-only rollout metadata headers, and excludes subagent sessions and symlinks.
-Archived sessions and subagent exports can be opened explicitly with `--file`.
+Codex's default catalog uses `<CODEX_HOME or ~/.codex>/sessions/YYYY/MM/DD/`,
+reads only metadata headers, and excludes subagents and symlinks. Search
+also covers child sessions and `archived_sessions/`; archived main sessions
+can resolve by ID. Child/archive search results include an exact `--file`
+command. Follow that file selector, not a child's display ID. Parent links
+identify the initiating step only when proven by metadata/tool records;
+an unavailable link is not proof that no parent existed.
 Project matching uses the metadata cwd. Tool calls/results and public reasoning
 summaries are normalized; duplicate message notifications are not extra turns.
 Compaction is represented as a system event without replaying replacement
@@ -208,6 +222,11 @@ After the fence, tell the user:
 - They should open a new Claude Code or Codex session and paste it as the first message.
 - This supplies context only: it does not invoke native resume/fork commands,
   restore files, or guarantee the agent will reproduce the original execution.
+- Historical evidence is bounded and source-attributed; heed omission notices
+  and the cutoff before reading more of the source log. Continue includes
+  work through the selected segment; fork excludes the work following its
+  question. Do not import later outcomes into a fork. Git context is current
+  working-tree state, not a historical checkout.
 
 ### Step 3 — handle errors
 
@@ -243,7 +262,8 @@ Redaction is always enabled, the only LLM provider is `anthropic`, and
 telemetry accepts only `false`. LLM config honors model, input/output limits,
 parallelism, prompt caching, and `render.lang` (`auto|ko|en`); these do not
 turn on LLM use in MCP. MCP's analysis cache is invalidated by caller
-configuration and source path/mtime/ctime/size, and respects `cache.enabled`.
+configuration, source file identity and related child transcript changes for
+both sources, and respects `cache.enabled`.
 
 ## What you should NOT do
 

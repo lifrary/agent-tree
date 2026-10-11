@@ -81,7 +81,8 @@ export function formatUsage(row: RowUsage | undefined): string {
   if (agents && agents.calls > 0) {
     parts.push(
       `${agents.count} agent${agents.count === 1 ? '' : 's'} prompt ${formatTokens(agents.prompt_tokens)}` +
-        ` · out ${formatTokens(agents.output_tokens)}`,
+        ` · out ${formatTokens(agents.output_tokens)}` +
+        (agents.unattributed_count ? ` · ${agents.unattributed_count} unattributed` : ''),
     );
   }
   return parts.join('  ');

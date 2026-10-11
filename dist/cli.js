@@ -2239,10 +2239,10 @@ function writeFlowMapping(state, level, node2) {
     const keyRender = writeNode(state, level, key, node2, { iskey: true });
     const keyText = keyRender.text;
     const valueText = writeNode(state, level, value, node2, {}).text;
-    const sep = state.flowSkipColonSpace || valueText === "" ? "" : " ";
+    const sep3 = state.flowSkipColonSpace || valueText === "" ? "" : " ";
     const keyIsBareProps = key.kind === "scalar" && keyRender.noBody && (key.tagged || key.anchor !== void 0);
     const keyColonSep = key.kind === "alias" || keyIsBareProps ? " " : "";
-    pairBuffer += `${keyText}${keyColonSep}:${sep}${valueText}`;
+    pairBuffer += `${keyText}${keyColonSep}:${sep3}${valueText}`;
     result += pairBuffer;
   }
   const pad = state.flowBracketPadding && result !== "" ? " " : "";
@@ -2333,8 +2333,8 @@ function writeNode(state, level, node2, parent, ctx) {
       if (anchor2 !== null) props.push(anchor2);
       if (tag !== null) props.push(tag);
     }
-    const sep = body === "" || body.charCodeAt(0) === CHAR_LINE_FEED ? "" : " ";
-    text = `${props.join(" ")}${sep}${body}`;
+    const sep3 = body === "" || body.charCodeAt(0) === CHAR_LINE_FEED ? "" : " ";
+    text = `${props.join(" ")}${sep3}${body}`;
   }
   return {
     text,
@@ -2376,8 +2376,8 @@ function present(documents, options) {
         block: true,
         compact: true
       }).text;
-      const sep = body === "" ? "" : hasDirectives || rootStartsOwnLine(doc.contents) ? "\n" : " ";
-      result += `---${sep}${body}
+      const sep3 = body === "" ? "" : hasDirectives || rootStartsOwnLine(doc.contents) ? "\n" : " ";
+      result += `---${sep3}${body}
 `;
     } else result += writeNode(state, 0, doc.contents, null, {
       block: true,
@@ -3337,7 +3337,7 @@ var init_js_yaml = __esm({
 });
 
 // src/cli.ts
-import { resolve as resolve8 } from "node:path";
+import { resolve as resolve9 } from "node:path";
 import { stat as stat4 } from "node:fs/promises";
 
 // node_modules/commander/lib/error.js
@@ -6709,7 +6709,7 @@ function useColor() {
 var program = new Command();
 
 // src/version.ts
-var VERSION = true ? "0.4.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
+var VERSION = true ? "0.6.0" : JSON.parse(readFileSync(new URL("../package.json", import.meta.url), "utf8")).version;
 
 // src/utils/star_hint.ts
 import { mkdir, writeFile } from "node:fs/promises";
@@ -6767,11 +6767,11 @@ function parseCliArgs(argv) {
   program2.name("agent-tree").description(
     "Navigate Claude Code or Codex sessions as numbered trees and generate resume prompts."
   ).version(VERSION, "-V, --version", "print agent-tree version").argument("[session-id]", "session UUID or short prefix (e.g. 69c2f35e)").option("--latest", "use the most recently modified session").option("--pick", "interactive picker over recent sessions").option("--file <path>", "read a Claude Code or Codex JSONL file (auto-detected)").addOption(
-    new Option("--source <source>", "session source (discovery: claude; search: both; file: auto)").choices([
-      "claude",
-      "codex"
-    ])
-  ).option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions without analyzing their contents").option(
+    new Option(
+      "--source <source>",
+      "session source (discovery: claude; search: both; file: auto)"
+    ).choices(["claude", "codex"])
+  ).option("--cwd <dir>", "project directory for session discovery and configuration").option("--sessions", "list recent sessions (metadata only unless --usage is set)").option(
     "--limit <n>",
     "maximum sessions to list (default: 20) or report from --search (default: 10)",
     positiveInteger
@@ -6781,7 +6781,14 @@ function parseCliArgs(argv) {
   ).option("-v, --verbose", "debug logging").option("--trace", "trace logging (implies --verbose)").option("--dry-run", "run the analysis pipeline but do not emit any output").option("--model <name>", "Anthropic model for LLM labeling").option("--max-llm-tokens <n>", "input token budget ceiling across segments", positiveInteger).option("--redact-strict", "add PII patterns (email/phone/SSN/RRN); card check is always on").option("--redact-dryrun", "print redaction hit counts to stderr").option("--include-sidechains", "keep sidechain segments as a branch (default)").option("--flatten-sidechains", "merge sidechains into main tree").option("--drop-sidechains", "omit sidechain events entirely").option("--list", "print numbered ASCII tree to stdout (skill-friendly)").option("--snapshot <id>", "print single node's snapshot markdown to stdout").addOption(new Option("--mode <mode>", "snapshot mode").choices(["continue", "fork"])).option("--tui", "interactive readline prompt with numbered selection").option(
     "--filter <kw>",
     "show only rows whose label/time/range matches keyword (case-insensitive)"
-  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").option("--search <text>", "find the sessions and steps where the text appears").option("--since <days>", "limit --search to sessions changed in the last N days", positiveInteger).option("--include-tool-output", "let --search also match tool results").option("--usage", "show token usage per step in the tree").option("--open <step>", "start a new agent session from a step (continue or fork prompt)").addOption(
+  ).option("--no-group", "do not collapse consecutive same-file rows").option("--no-color", "force-disable ANSI color even on TTY").option("--phases-only", "show only phase headers (user prompts), hide sub-actions").option("--picks", "list every pick across every session (no session arg needed)").option("--unstar <id>", "remove the \u2B50 from a previously-picked node").option("--diff <ids...>", "summarise what happened between two nodes (numbers or n_NNN ids)").option("--search <text>", "find the sessions and steps where the text appears").option(
+    "--since <days>",
+    "limit --search to sessions changed in the last N days",
+    positiveInteger
+  ).option("--include-tool-output", "let --search also match tool results").option(
+    "--usage",
+    "show tree token usage; with --sessions, read logs for totals without LLM calls"
+  ).option("--open <step>", "start a new agent session from a step (continue or fork prompt)").addOption(
     new Option("--agent <agent>", "agent --open starts (default: the session source)").choices([
       "claude",
       "codex"
@@ -6816,8 +6823,8 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
       fail("--agent, --open-dir and --yes require --open");
     if (opts.open !== void 0 && (opts.json || opts.dumpJson || opts.dryRun))
       fail("--open does not support --json, --dump-json or --dry-run");
-    if (opts.usage && (opts.sessions || opts.picks || searching || opts.open !== void 0 || opts.snapshot || opts.unstar || opts.diff))
-      fail("--usage only applies to tree output (--list, --tui, --json)");
+    if (opts.usage && (opts.picks || searching || opts.open !== void 0 || opts.snapshot || opts.unstar || opts.diff))
+      fail("--usage only applies to tree output (--list, --tui, --json) or --sessions");
     if ([opts.includeSidechains, opts.flattenSidechains, opts.dropSidechains].filter(Boolean).length > 1) {
       fail("sidechain modes are mutually exclusive");
     }
@@ -6850,7 +6857,9 @@ Docs and issues: ${REPOSITORY_URL}`).exitOverride();
       // Search highlights matches on a TTY, so --no-color applies to it.
       ...searching ? [] : ["color"]
     ].some((option) => program2.getOptionValueSource(option) === "cli")) {
-      fail("--sessions, --picks and --search do not support LLM, sidechain or tree display options");
+      fail(
+        "--sessions, --picks and --search do not support LLM, sidechain or tree display options"
+      );
     }
     return {
       ok: true,
@@ -7172,6 +7181,7 @@ function topN(counts, n) {
 
 // src/cli/pipeline.ts
 import { createHash as createHash3 } from "node:crypto";
+import { basename as basename3, dirname as dirname5 } from "node:path";
 
 // src/cache/disk.ts
 import { createHash } from "node:crypto";
@@ -7463,11 +7473,252 @@ function errMsg(err) {
   return status === null ? "network or client error" : `HTTP ${status}`;
 }
 function defaultSleep(ms) {
-  return new Promise((resolve9) => setTimeout(resolve9, ms));
+  return new Promise((resolve10) => setTimeout(resolve10, ms));
 }
 
 // src/utils/git.ts
 import { spawn } from "node:child_process";
+
+// src/utils/redact.ts
+var DEFAULT_PATTERNS = [
+  {
+    name: "anthropic_api_key",
+    regex: /sk-ant-[A-Za-z0-9_-]{20,}/g,
+    replacement: "sk-ant-***REDACTED***"
+  },
+  {
+    name: "openai_api_key",
+    regex: /sk-[A-Za-z0-9]{32,}/g,
+    replacement: "sk-***REDACTED***"
+  },
+  {
+    name: "github_pat",
+    regex: /gh[pous]_[A-Za-z0-9]{30,}/g,
+    replacement: "gh*_***REDACTED***"
+  },
+  {
+    name: "slack_token",
+    regex: /xox[bpoar]-[A-Za-z0-9-]{10,}/g,
+    replacement: "xox*-***REDACTED***"
+  },
+  {
+    name: "bearer_token",
+    regex: /\bBearer\s+[A-Za-z0-9._-]{20,}/g,
+    replacement: "Bearer ***REDACTED***"
+  },
+  {
+    name: "aws_access_key_id",
+    regex: /\bAKIA[0-9A-Z]{16}\b/g,
+    replacement: "AKIA***REDACTED***"
+  },
+  {
+    name: "aws_temp_key",
+    regex: /\bASIA[0-9A-Z]{16}\b/g,
+    replacement: "ASIA***REDACTED***"
+  },
+  {
+    // 35-char alphanumeric + `_-` suffix. `\b` at the end would fail when the
+    // key happens to end in `-` (a non-word char), because the next char is
+    // also typically non-word (space/`.`/EOF) and `\b` needs a word↔non-word
+    // transition. `{35}` is fixed-length, so the engine can't shorten the
+    // match to dodge the boundary — the whole key would leak unredacted.
+    // Use a negative lookahead against the same class to terminate correctly
+    // regardless of word-ness at the seam.
+    name: "gcp_api_key",
+    regex: /\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g,
+    replacement: "AIza***REDACTED***"
+  },
+  {
+    name: "gcp_oauth_token",
+    regex: /\bya29\.[0-9A-Za-z_-]{20,}/g,
+    replacement: "ya29.***REDACTED***"
+  },
+  {
+    // GitHub fine-grained PAT: `github_pat_<22 alnum>_<59 alnum_>` (≥82 total)
+    name: "github_pat_finegrained",
+    regex: /\bgithub_pat_[A-Za-z0-9_]{82,}/g,
+    replacement: "github_pat_***REDACTED***"
+  },
+  {
+    // OpenAI project / service-account / admin keys (added 2024)
+    name: "openai_project_key",
+    regex: /\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/g,
+    replacement: "sk-***REDACTED***"
+  },
+  {
+    name: "stripe_secret_key",
+    regex: /\bsk_(?:live|test)_[A-Za-z0-9]{24,}/g,
+    replacement: "sk_***REDACTED***"
+  },
+  {
+    name: "huggingface_token",
+    regex: /\bhf_[A-Za-z0-9]{30,}\b/g,
+    replacement: "hf_***REDACTED***"
+  },
+  {
+    // npm automation / publish tokens — 36 alnum after `npm_`. Common in
+    // `.npmrc` pastes that developers drop into chat while debugging
+    // publish failures.
+    name: "npm_token",
+    regex: /\bnpm_[A-Za-z0-9]{36}\b/g,
+    replacement: "npm_***REDACTED***"
+  },
+  {
+    name: "private_key_block",
+    regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
+    replacement: "-----REDACTED PRIVATE KEY-----"
+  },
+  {
+    // base64url (RFC 4648 §5) alphabet is `[A-Za-z0-9_-]` — signature portion
+    // can legally end in `-` or `_`. Trailing `\b` required a word↔non-word
+    // transition and would fail whenever the signature happened to end on a
+    // `-`/`_` with non-word context after (space / EOF / punctuation). The
+    // engine could sometimes backtrack within the `{10,}` to land on a word
+    // char, leaking the trailing byte; when the signature was ≤10 chars of
+    // trailing `-`s it couldn't match at all. Replace with a negative
+    // lookahead against the same class.
+    name: "jwt",
+    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
+    replacement: "eyJ***REDACTED.JWT***"
+  }
+];
+var STRICT_EXTRA = [
+  {
+    name: "email",
+    regex: /\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g,
+    replacement: "[EMAIL]"
+  },
+  // IMPORTANT: ssn_us and rrn_ko are narrower patterns — they must run before
+  // the generic phone regex, or the phone regex swallows their digit groups.
+  {
+    name: "ssn_us",
+    regex: /\b\d{3}-\d{2}-\d{4}\b/g,
+    replacement: "[SSN]"
+  },
+  {
+    name: "rrn_ko",
+    regex: /\b\d{6}-[1-4]\d{6}\b/g,
+    replacement: "[RRN]"
+  },
+  {
+    // International E.164 with required `+` prefix. Pure-digit bounded run,
+    // no nested optionals → ReDoS-safe.
+    name: "phone_e164",
+    regex: /\+\d{8,15}\b/g,
+    replacement: "[PHONE]"
+  },
+  {
+    // Local/domestic phone with ≥2 separators. Separators are REQUIRED — the
+    // old regex had `[-.\s]?` at three positions plus an outer-optional
+    // prefix group, yielding nested optionals whose backtracking was
+    // catastrophic on long digit-only input (classic ReDoS). Requiring both
+    // middle separators removes the ambiguity without losing common formats:
+    //   ✓ 010-1234-5678   ✓ (415) 555-0123   ✓ +82 10-1234-5678
+    // Pure-digit numbers like "01012345678" are intentionally not caught
+    // here — phone_e164 above catches the `+` variant, and for separator-less
+    // domestic strings the false-positive risk on long IDs (order numbers,
+    // SKUs) outweighs the extra recall.
+    name: "phone",
+    // (?<!\w) at the start — not \b — so that a leading `(` (not a word
+    // char, breaks \b) is still matched when the prior byte is whitespace.
+    // Without this, `US office (415) 555-0123` would match as
+    // `415) 555-0123` and leave the paren outside the redaction.
+    regex: /(?<!\w)(?:\+\d{1,3}[-.\s])?\(?\d{2,4}\)?[-.\s]\d{3,4}[-.\s]\d{3,4}\b/g,
+    replacement: "[PHONE]"
+  }
+];
+function defaultRedactor(opts = {}) {
+  const patterns = [
+    ...DEFAULT_PATTERNS,
+    ...opts.strict ? STRICT_EXTRA : [],
+    ...opts.extraPatterns ?? []
+  ];
+  return {
+    patterns,
+    apply(text) {
+      if (!text) return text;
+      let out = text;
+      for (const p of patterns) out = out.replace(p.regex, p.replacement);
+      out = redactCreditCards(out);
+      return out;
+    },
+    applyWithStats(text) {
+      const hits = {};
+      if (!text) return { text, hits };
+      let out = text;
+      for (const p of patterns) {
+        const matches = out.match(p.regex);
+        if (matches && matches.length > 0) hits[p.name] = matches.length;
+        out = out.replace(p.regex, p.replacement);
+      }
+      const cardResult = redactCreditCardsWithStats(out);
+      if (cardResult.hits > 0) hits.credit_card = cardResult.hits;
+      return { text: cardResult.text, hits };
+    }
+  };
+}
+function redactDeep(value, redactor) {
+  if (value == null) return value;
+  if (typeof value === "string") return redactor.apply(value);
+  if (Array.isArray(value)) {
+    return value.map((v) => redactDeep(v, redactor));
+  }
+  if (typeof value === "object") {
+    const out = {};
+    for (const [k, v] of Object.entries(value)) {
+      out[k] = redactDeep(v, redactor);
+    }
+    return out;
+  }
+  return value;
+}
+function countRedactions(value, redactor) {
+  const counts = {};
+  const pending = [value];
+  while (pending.length > 0) {
+    const current = pending.pop();
+    if (typeof current === "string") {
+      for (const [name, hits] of Object.entries(redactor.applyWithStats(current).hits)) {
+        counts[name] = (counts[name] ?? 0) + hits;
+      }
+    } else if (current && typeof current === "object") {
+      for (const child of Object.values(current)) pending.push(child);
+    }
+  }
+  return counts;
+}
+var CARD_RE = /(?<!\d-)\b(?:\d[ -]?){12,18}\d\b(?!-\d)/g;
+function redactCreditCards(text) {
+  return redactCreditCardsWithStats(text).text;
+}
+function redactCreditCardsWithStats(text) {
+  let hits = 0;
+  const result = text.replace(CARD_RE, (match) => {
+    const digits = match.replace(/[^0-9]/g, "");
+    if (digits.length < 13 || digits.length > 19) return match;
+    if (!luhnValid(digits)) return match;
+    hits += 1;
+    return "[CARD]";
+  });
+  return { text: result, hits };
+}
+function luhnValid(digits) {
+  let sum = 0;
+  let flip = false;
+  for (let i = digits.length - 1; i >= 0; i -= 1) {
+    let d = digits.charCodeAt(i) - 48;
+    if (d < 0 || d > 9) return false;
+    if (flip) {
+      d *= 2;
+      if (d > 9) d -= 9;
+    }
+    sum += d;
+    flip = !flip;
+  }
+  return sum % 10 === 0;
+}
+
+// src/utils/git.ts
 var TIMEOUT_MS = 1500;
 var STDOUT_CAP_BYTES = 32 * 1024;
 async function getGitContext(cwd) {
@@ -7488,11 +7739,11 @@ async function getGitContext(cwd) {
     branch: branchR.ok ? branchR.stdout.trim() : "(detached)",
     shortHead: headR.ok ? headR.stdout.trim() : void 0,
     recentCommits: logR.ok ? logR.stdout.split("\n").map((l) => l.trim()).filter((l) => l.length > 0) : void 0,
-    status: statusR.ok ? truncate(statusR.stdout.trim(), 800) : void 0
+    status: statusR.ok ? statusR.stdout.trim() : void 0
   };
 }
 function runGit(cwd, args) {
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     let settled = false;
     const child = spawn("git", args, { cwd, stdio: ["ignore", "pipe", "ignore"] });
     let stdout = "";
@@ -7504,7 +7755,7 @@ function runGit(cwd, args) {
         child.kill();
       } catch {
       }
-      resolve9({ ok: false, stdout: "" });
+      resolve10({ ok: false, stdout: "" });
     }, TIMEOUT_MS);
     child.stdout?.on("data", (chunk) => {
       if (capped) return;
@@ -7522,13 +7773,13 @@ function runGit(cwd, args) {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve9({ ok: false, stdout: "" });
+      resolve10({ ok: false, stdout: "" });
     });
     child.on("close", (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
-      resolve9({ ok: capped || code === 0, stdout });
+      resolve10({ ok: capped || code === 0, stdout });
     });
   });
 }
@@ -7536,20 +7787,21 @@ function truncate(s, max) {
   if (s.length <= max) return s;
   return s.slice(0, Math.max(0, max - 1)) + "\u2026";
 }
-function formatGitContextMarkdown(ctx) {
+function formatGitContextMarkdown(context, redactor = defaultRedactor()) {
+  const ctx = redactDeep(context, redactor);
   if (!ctx.available) return null;
   const lines = [];
-  lines.push("## Git context (at snapshot time)");
-  if (ctx.branch) lines.push(`- branch: \`${ctx.branch}\``);
+  lines.push("## Git context (current checkout, not historical)");
+  if (ctx.branch) lines.push(`- branch: \`${truncate(ctx.branch, 512)}\``);
   if (ctx.shortHead) lines.push(`- HEAD: \`${ctx.shortHead}\``);
   if (ctx.recentCommits && ctx.recentCommits.length > 0) {
     lines.push("- recent commits:");
-    for (const c of ctx.recentCommits) lines.push(`  - \`${c}\``);
+    for (const c of ctx.recentCommits.slice(0, 3)) lines.push(`  - \`${truncate(c, 800)}\``);
   }
   if (ctx.status && ctx.status.length > 0) {
     lines.push("- working tree:");
     lines.push("  ```");
-    for (const line of ctx.status.split("\n").slice(0, 20)) {
+    for (const line of truncate(ctx.status, 800).split("\n").slice(0, 20)) {
       lines.push(`  ${line}`);
     }
     lines.push("  ```");
@@ -7560,17 +7812,197 @@ function formatGitContextMarkdown(ctx) {
 }
 
 // src/tree/context_snapshot.ts
+var MAX_MARKDOWN_BYTES = 8e4;
+var MAX_EVIDENCE_BYTES = 36e3;
+var MAX_ENTRY_BYTES = 4096;
+var MAX_ENTRIES = 32;
+var MAX_ANCESTRY_SCAN = 512;
+var OMITTED = "\n[Omitted: snapshot byte limit.]";
+function createSnapshotHistory(events, selected, redactor) {
+  const parents = [];
+  const gaps = [];
+  const preceding = /* @__PURE__ */ new Map();
+  const entries = /* @__PURE__ */ new Map();
+  const entryCosts = /* @__PURE__ */ new Map();
+  const firstInstructions = [];
+  const lastInstructions = [];
+  const selectedIndexes = [];
+  const sidechainIndexes = [];
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    const parent = event.parentUuid === null || event.parentUuid === event.uuid ? null : preceding.get(event.parentUuid) ?? null;
+    parents.push(parent);
+    gaps.push(event.parentUuid !== null && parent === null);
+    firstInstructions.push(parent === null ? null : firstInstructions[parent]);
+    lastInstructions.push(parent === null ? null : lastInstructions[parent]);
+    preceding.set(event.uuid, preceding.has(event.uuid) ? null : index);
+    if (!selected.has(event)) continue;
+    selectedIndexes.push(index);
+    if (event.isSidechain) sidechainIndexes.push(index);
+    const evidence = eventEvidence(event);
+    if (evidence === null) continue;
+    const safe = redactor ? redactor.apply(evidence.text) : evidence.text;
+    const excerpt = bytePrefix(safe, MAX_ENTRY_BYTES);
+    const entry = {
+      event_index: index,
+      event_uuid: boundedValue(event.uuid, redactor, 256),
+      role: evidence.role,
+      is_sidechain: event.isSidechain,
+      text: excerpt,
+      omitted_bytes: Buffer.byteLength(safe) - Buffer.byteLength(excerpt)
+    };
+    entries.set(index, entry);
+    entryCosts.set(index, Buffer.byteLength(renderEntry(entry)));
+    if (entry.role === "user") {
+      firstInstructions[index] ??= index;
+      lastInstructions[index] = index;
+    }
+  }
+  const selectedIndexSet = new Set(selectedIndexes);
+  function collect(seeds, scope, cutoff, reason) {
+    const visited = /* @__PURE__ */ new Set();
+    const eligible = /* @__PURE__ */ new Map();
+    let excluded = 0;
+    let ancestryGaps = 0;
+    let traversalTruncated = false;
+    let firstInstruction = null;
+    let lastInstruction = null;
+    for (const seed of seeds) {
+      const first = firstInstructions[seed];
+      const last = lastInstructions[seed];
+      if (first !== null && (firstInstruction === null || first < firstInstruction)) {
+        firstInstruction = first;
+      }
+      if (last !== null && (lastInstruction === null || last > lastInstruction)) {
+        lastInstruction = last;
+      }
+    }
+    scan: for (let i = seeds.length - 1; i >= 0; i -= 1) {
+      const seed = seeds[i];
+      let cursor = seed;
+      while (cursor !== null && !visited.has(cursor)) {
+        if (visited.size >= MAX_ANCESTRY_SCAN) {
+          traversalTruncated = true;
+          break scan;
+        }
+        visited.add(cursor);
+        if (cutoff !== null && cursor <= cutoff) {
+          if (selectedIndexSet.has(cursor)) {
+            const entry = entries.get(cursor);
+            if (entry) eligible.set(cursor, entry);
+          } else {
+            excluded += 1;
+          }
+          if (gaps[cursor]) ancestryGaps += 1;
+        }
+        cursor = parents[cursor];
+      }
+    }
+    for (const anchor2 of [firstInstruction, lastInstruction]) {
+      if (anchor2 !== null) eligible.set(anchor2, entries.get(anchor2));
+    }
+    const ordered = [...eligible.values()].sort((a, b) => a.event_index - b.event_index);
+    const kept = /* @__PURE__ */ new Map();
+    let bytes = 0;
+    const keep = (entry) => {
+      if (!entry || kept.has(entry.event_index) || kept.size >= MAX_ENTRIES) return;
+      const cost = entryCosts.get(entry.event_index);
+      if (bytes + cost > MAX_EVIDENCE_BYTES) return;
+      kept.set(entry.event_index, entry);
+      bytes += cost;
+    };
+    keep(firstInstruction === null ? void 0 : entries.get(firstInstruction));
+    keep(lastInstruction === null ? void 0 : entries.get(lastInstruction));
+    for (let i = ordered.length - 1; i >= 0; i -= 1) keep(ordered[i]);
+    const bounded = [...kept.values()].sort((a, b) => a.event_index - b.event_index);
+    return {
+      scope,
+      cutoff_index: cutoff,
+      cutoff_reason: reason,
+      instruction_index: lastInstruction,
+      entries: bounded,
+      omitted_entries: eligible.size - bounded.length,
+      truncated_entries: bounded.filter((entry) => entry.omitted_bytes > 0).length,
+      excluded_events: excluded,
+      ancestry_gaps: ancestryGaps,
+      scanned_events: visited.size,
+      traversal_truncated: traversalTruncated
+    };
+  }
+  return {
+    forNode(segment, scope) {
+      let seeds;
+      if (segment) {
+        const members2 = new Set(segment.event_uuids);
+        const start = lowerBound(selectedIndexes, segment.start_index);
+        const end2 = lowerBound(selectedIndexes, segment.end_index + 1);
+        seeds = [];
+        for (let i = start; i < end2; i += 1) {
+          const index = selectedIndexes[i];
+          if (members2.has(events[index].uuid)) seeds.push(index);
+        }
+      } else {
+        seeds = scope === "sidechains" ? sidechainIndexes : selectedIndexes;
+      }
+      const end = seeds.length > 0 ? seeds[seeds.length - 1] : null;
+      const continuation = collect(
+        seeds,
+        scope,
+        end,
+        scope === "segment" ? "segment_end" : "selection_end"
+      );
+      let question;
+      for (let i = 0; i < seeds.length; i += 1) {
+        const index = seeds[i];
+        if (entries.get(index)?.role === "user") {
+          question = index;
+          break;
+        }
+      }
+      let fork;
+      if (question !== void 0) {
+        fork = collect([question], scope, question, "question");
+      } else if (scope === "segment" && seeds.length > 0) {
+        const before = seeds[0] - 1;
+        const parent = parents[seeds[0]];
+        fork = collect(
+          parent === null ? [] : [parent],
+          scope,
+          before < 0 ? null : before,
+          "before_segment"
+        );
+        if (gaps[seeds[0]]) fork.ancestry_gaps += 1;
+      } else {
+        fork = collect([], scope, null, "no_question");
+      }
+      return { continue: continuation, fork };
+    }
+  };
+}
+function lowerBound(indexes, value) {
+  let lo = 0;
+  let hi = indexes.length;
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (indexes[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
 function buildContinueSnapshot(inp) {
+  const files = (inp.segment?.dominant_files ?? []).slice(0, 20).map((path2) => ({
+    path: boundedValue(path2, inp.redactor, 512),
+    summary: "(file touched in this segment; not restored)"
+  }));
+  const nextSteps = (inp.llm?.next_steps ?? []).slice(0, 8).map((step) => boundedValue(step, inp.redactor, 512));
   return {
     mode: "continue",
     session_id: inp.sessionId,
     node_id: inp.nodeId,
-    clipboard_markdown: renderContinueMarkdown(inp),
-    related_files: (inp.segment?.dominant_files ?? []).map((path2) => ({
-      path: path2,
-      summary: "(file touched in this segment)"
-    })),
-    next_steps: inp.llm?.next_steps ?? []
+    clipboard_markdown: renderMarkdown(inp, "continue", files, nextSteps),
+    related_files: files,
+    next_steps: nextSteps,
+    evidence: inp.evidence
   };
 }
 function buildForkSnapshot(inp) {
@@ -7578,182 +8010,191 @@ function buildForkSnapshot(inp) {
     mode: "fork",
     session_id: inp.sessionId,
     node_id: inp.nodeId,
-    clipboard_markdown: renderForkMarkdown(inp),
-    related_files: (inp.segment?.dominant_files ?? []).map((path2) => ({
-      path: path2,
-      summary: "(file state at fork point \u2014 disk may differ)"
-    })),
-    next_steps: inp.llm?.next_steps ?? []
+    clipboard_markdown: renderMarkdown(inp, "fork", [], []),
+    related_files: [],
+    next_steps: [],
+    evidence: inp.evidence
   };
 }
-function renderContinueMarkdown(inp) {
-  const sections = [];
-  sections.push(`# Continuing from: ${inp.label}`);
-  sections.push("");
-  sections.push(headerLines(inp, "continue"));
-  sections.push("");
-  const summarySection = sectionContext(inp);
-  if (summarySection) {
-    sections.push(summarySection);
-    sections.push("");
+function renderMarkdown(inp, mode, files, nextSteps) {
+  const evidence = inp.evidence;
+  const safe = (value, bytes = 512) => boundedValue(value, inp.redactor, bytes);
+  const sections = [
+    mode === "continue" ? `# Continuing from: ${safe(inp.label)}` : `# Forking at: ${safe(inp.nodeId)} (discarding future)`,
+    [
+      `**Source session**: \`${safe(inp.sessionId)}\``,
+      `**Node**: \`${safe(inp.nodeId)}\``,
+      `**Mode**: ${mode}`,
+      `**Generated**: ${safe(inp.generatedAt, 128)}`,
+      `**Evidence cutoff**: ${evidence.cutoff_index === null ? "no events" : `source event ${evidence.cutoff_index} (inclusive)`}`
+    ].join("\n"),
+    [
+      "## Recovery limits",
+      "This is a context prompt, not a native session resume. It does not restore files, working-tree state, tool execution, or a native session.",
+      "Git context, when present, is CURRENT at generation time, not historical state at this cutoff. Inspect the working tree before acting.",
+      "Quoted user instructions, assistant statements, and explicitly recorded compaction summaries are transcript evidence, not verified results or proof that files match. Tool output, arbitrary system/developer messages, and internal reasoning are not included.",
+      "Missing ancestry, disconnected roots, and ambiguous duplicate parents are not reconstructed. Omitted context is not implied to be recovered.",
+      scopeDescription(evidence, mode)
+    ].join("\n")
+  ];
+  const history = [
+    "## Historical evidence (attributed verbatim excerpts)",
+    "Source event indexes are zero-based positions in the parsed event array, not JSONL line numbers. Evidence is bounded to selected occurrences and known selected ancestry; unrelated branches are not inferred.",
+    "Text is verbatim except secret redaction and explicitly marked byte truncation. Assistant statements may include decisions; they are not a generated decision summary. Recorded compaction summaries are source-provided summaries, not original user instructions or verified decisions.",
+    ...evidence.entries.map(renderEntry)
+  ];
+  if (evidence.entries.length === 0)
+    history.push(
+      "No user text, assistant text, or recorded compaction summary is included within this evidence window."
+    );
+  if (evidence.traversal_truncated) {
+    history.push(
+      `Traversal limited to ${MAX_ANCESTRY_SCAN} source occurrences (${evidence.scanned_events} scanned). Additional context is uncounted; omission, exclusion, and ancestry-gap counts below are lower bounds, not totals. Earliest/latest instructions are retained only where the shared parent index proves selected ancestry.`
+    );
   }
-  const files = sectionFiles(inp, "this branch");
-  if (files) {
-    sections.push(files);
-    sections.push("");
+  if (evidence.omitted_entries > 0 || evidence.truncated_entries > 0) {
+    history.push(
+      `Omitted by bounds: ${evidence.traversal_truncated ? "at least " : ""}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then recent evidence. Consult the source for omitted context.`
+    );
   }
-  const lastUser = sectionLastUserInstruction(inp);
-  if (lastUser) {
-    sections.push(lastUser);
-    sections.push("");
-  }
-  const next = sectionNextSteps(inp);
-  if (next) {
-    sections.push(next);
-    sections.push("");
-  }
-  const git = inp.gitContext ? formatGitContextMarkdown(inp.gitContext) : null;
-  if (git) {
-    sections.push(git);
-    sections.push("");
-  }
-  sections.push(sectionFullReference(inp));
-  sections.push("");
-  sections.push("---");
-  sections.push("");
-  sections.push(
-    "Please continue from this point. Prior decisions stand; only the direction forward is open."
+  if (evidence.excluded_events > 0)
+    history.push(
+      `Excluded from evidence: ${evidence.excluded_events} unselected ancestor occurrences.`
+    );
+  if (evidence.ancestry_gaps > 0)
+    history.push(
+      `Incomplete ancestry: ${evidence.ancestry_gaps} missing, self-referential, or ambiguous parent links were not followed.`
+    );
+  sections.push(history.join("\n\n"));
+  const instruction = evidence.entries.find(
+    (entry) => entry.event_index === evidence.instruction_index
   );
-  sections.push("");
-  return sections.join("\n");
-}
-function renderForkMarkdown(inp) {
-  const sections = [];
-  sections.push(`# Forking at: ${inp.label} (discarding future)`);
-  sections.push("");
-  sections.push(headerLines(inp, "fork"));
-  sections.push("");
-  const summarySection = sectionContext(
-    inp,
-    /*forkHeading*/
-    true
-  );
-  if (summarySection) {
-    sections.push(summarySection);
-    sections.push("");
+  if (instruction) {
+    sections.push(
+      [
+        mode === "continue" ? "## Last user instruction at this point" : "## Open question(s) at this moment",
+        reference(instruction),
+        quote(instruction.text),
+        ...instruction.omitted_bytes > 0 ? [`[Omitted: ${instruction.omitted_bytes} redacted UTF-8 bytes from this instruction.]`] : []
+      ].join("\n")
+    );
   }
-  const files = sectionFiles(inp, "as of this fork point");
-  if (files) {
-    sections.push(files);
-    sections.push("");
-  }
-  const openQuestion = sectionOpenQuestion(inp);
-  if (openQuestion) {
-    sections.push(openQuestion);
-    sections.push("");
-  }
-  sections.push("## What I want you to DO");
-  sections.push("- Ignore whatever path the original session took after this.");
-  sections.push("- Re-approach the open question fresh.");
-  sections.push("- You may suggest different architecture / file layout / tools.");
-  sections.push("");
-  const git = inp.gitContext ? formatGitContextMarkdown(inp.gitContext) : null;
-  if (git) {
-    sections.push(git);
-    sections.push("");
-  }
-  sections.push(sectionFullReference(inp));
-  sections.push("");
-  return sections.join("\n");
-}
-function headerLines(inp, mode) {
-  const range = inp.segment ? `${inp.segment.start_index}\u2013${inp.segment.end_index}` : "whole session";
-  const modeLine = mode === "continue" ? "**Mode**: continue (preserving decisions so far)" : "**Mode**: fork (discarding subsequent turns from original session)";
-  return [
-    `**Source session**: \`${inp.sessionId}\` (events ${range})`,
-    modeLine,
-    `**Generated**: ${inp.generatedAt}`
-  ].join("\n");
-}
-function sectionContext(inp, fork = false) {
-  const heading = fork ? "## State at fork point" : "## Context up to this point";
-  if (inp.llm?.summary) {
-    const safe = inp.redactor ? inp.redactor.apply(inp.llm.summary) : inp.llm.summary;
-    return `${heading}
-${safe}`;
-  }
-  if (inp.segment) {
-    const bits = [];
-    if (inp.segment.dominant_tools.length > 0) {
-      bits.push(`tools used: ${inp.segment.dominant_tools.slice(0, 3).join(", ")}`);
+  if (mode === "continue") {
+    if (inp.llm?.summary) {
+      sections.push(
+        `## Context up to this point
+LLM enrichment (not verbatim evidence):
+${safe(inp.llm.summary, 4096)}`
+      );
+    } else if (inp.segment) {
+      sections.push(
+        `## Context up to this point
+Selected segment: source events ${inp.segment.start_index}\u2013${inp.segment.end_index}.`
+      );
     }
-    if (inp.segment.boundary_reasons.length > 0) {
-      bits.push(`segment opened by: ${inp.segment.boundary_reasons.join(" + ")}`);
-    }
-    bits.push(`${inp.segment.event_uuids.length} events in this segment`);
-    return `${heading}
-${bits.join(". ")}.`;
+    if (files.length > 0)
+      sections.push(
+        `## Files touched in this branch
+${files.map((file2) => `- \`${file2.path}\``).join("\n")}`
+      );
+    if ((inp.segment?.dominant_files.length ?? 0) > files.length)
+      sections.push("[Omitted: additional segment file paths.]");
+    if (nextSteps.length > 0)
+      sections.push(
+        `## Suggested continuation
+LLM suggestions, not historical instructions:
+${nextSteps.map((step) => `- ${step}`).join("\n")}`
+      );
+    if ((inp.llm?.next_steps.length ?? 0) > nextSteps.length)
+      sections.push("[Omitted: additional suggested continuation items.]");
+  } else {
+    sections.push(
+      "## What I want you to DO\n- Ignore the original session\u2019s work after the evidence cutoff.\n- Re-approach the quoted question, or the work immediately after the stated boundary, fresh.\n- Verify files and assumptions before making changes."
+    );
   }
-  return null;
-}
-function sectionFiles(inp, qualifier) {
-  const files = inp.segment?.dominant_files ?? [];
-  if (files.length === 0) return null;
-  const heading = qualifier === "this branch" ? "## Files touched in this branch" : `## Files ${qualifier}`;
-  return `${heading}
-${files.map((f) => `- \`${f}\``).join("\n")}`;
-}
-function sectionLastUserInstruction(inp) {
-  const raw = lastUserText(inp.events);
-  if (!raw) return null;
-  const safe = inp.redactor ? inp.redactor.apply(raw) : raw;
-  const quoted = safe.split("\n").map((ln) => `> ${ln}`).join("\n");
-  return `## Last user instruction at this point
-${quoted}`;
-}
-function sectionOpenQuestion(inp) {
-  const raw = lastUserText(inp.events);
-  if (!raw) return null;
-  const safe = inp.redactor ? inp.redactor.apply(raw) : raw;
-  const quoted = safe.split("\n").map((ln) => `> ${ln}`).join("\n");
-  return `## Open question(s) at this moment
-${quoted}`;
-}
-function sectionNextSteps(inp) {
-  if (!inp.llm || inp.llm.next_steps.length === 0) return null;
-  const steps = inp.redactor ? inp.llm.next_steps.map((s) => inp.redactor.apply(s)) : inp.llm.next_steps;
-  return `## Suggested continuation
-${steps.map((s) => `- ${s}`).join("\n")}`;
-}
-function sectionFullReference(inp) {
-  const range = inp.segment ? `${inp.segment.start_index}\u2013${inp.segment.end_index}` : "whole session";
-  return [
-    "## Full session reference",
-    `- jsonl: \`${inp.jsonlPath}\``,
-    `- event range: ${range}`
-  ].join("\n");
-}
-function lastUserText(events) {
-  if (!events || events.length === 0) return null;
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const e = events[i];
-    if (e.type !== "user") continue;
-    const content = e.message?.content;
-    if (typeof content === "string" && content.trim().length > 0) {
-      return content.trim();
-    }
-    if (Array.isArray(content)) {
-      const parts = [];
-      for (const block of content) {
-        if (!block || typeof block !== "object") continue;
-        const b = block;
-        if (b.type === "text" && typeof b.text === "string") parts.push(b.text);
+  if (inp.gitContext) {
+    const currentGit = inp.redactor ? redactDeep(inp.gitContext, inp.redactor) : inp.gitContext;
+    const git = formatGitContextMarkdown(currentGit);
+    if (git) {
+      sections.push(`Current Git context only; NOT historical evidence:
+${safe(git, 8192)}`);
+      if ((currentGit.status?.split("\n").length ?? 0) > 20) {
+        sections.push("[Omitted: current Git status lines beyond the first 20.]");
       }
-      const joined = parts.join("\n").trim();
-      if (joined.length > 0) return joined;
     }
   }
-  return null;
+  sections.push(
+    [
+      "## Full session reference",
+      `- jsonl: \`${safe(inp.jsonlPath, 2048)}\``,
+      `- evidence ends at source event: ${evidence.cutoff_index ?? "none"}`,
+      "- The source can contain excluded branches and later events; do not treat them as evidence for this cutoff."
+    ].join("\n")
+  );
+  if (mode === "continue") {
+    sections.push(
+      "Please continue from the evidenced point. Respect the quoted instructions and evaluate recorded decisions against the current files; omitted context is not assumed to be known."
+    );
+  }
+  return limitWithNotice(sections.join("\n\n") + "\n", MAX_MARKDOWN_BYTES);
+}
+function scopeDescription(evidence, mode) {
+  const scope = evidence.scope === "root" ? "Root selection" : evidence.scope === "sidechains" ? "Sidechains container" : "Selected segment";
+  if (evidence.cutoff_reason === "no_question")
+    return `${scope}: no selected textual user question exists; fork evidence is empty.`;
+  if (evidence.cutoff_reason === "before_segment")
+    return `${scope}: no textual user question in this segment. Fork stops immediately before the segment; evidence is bounded to known selected ancestry.`;
+  if (mode === "fork")
+    return `${scope}: fork stops at the first selected textual user question in this scope, before its subsequent work. Segment-wide metadata and LLM enrichment are omitted.`;
+  if (evidence.scope === "segment")
+    return `${scope}: continue uses bounded evidence from selected segment outcomes and known selected ancestry, not later segments.`;
+  return `${scope}: continue uses bounded evidence from selected ${evidence.scope === "sidechains" ? "sidechain events and known selected ancestry" : "events"}. This can cover multiple branches, not one linear decision path; select a segment to isolate a branch.`;
+}
+function eventEvidence(event) {
+  if (event.type === "system") {
+    if (event.payload.type !== "compaction" || typeof event.payload.message !== "string" || !event.payload.message.trim())
+      return null;
+    return { role: "compaction", text: event.payload.message };
+  }
+  if (event.type !== "user" && event.type !== "assistant") return null;
+  const content = event.message.content;
+  if (typeof content === "string") {
+    return content.trim() ? { role: event.type, text: content } : null;
+  }
+  const parts = [];
+  for (const block of content) {
+    if (block && block.type === "text" && typeof block.text === "string") parts.push(block.text);
+  }
+  const text = parts.join("\n");
+  return text.trim() ? { role: event.type, text } : null;
+}
+function reference(entry) {
+  const attribution = entry.role === "user" ? "User instruction" : entry.role === "assistant" ? "Assistant statement" : "Recorded compaction summary";
+  return `Source event ${entry.event_index} \xB7 uuid \`${entry.event_uuid}\` \xB7 ${attribution}${entry.is_sidechain ? " \xB7 sidechain" : ""}`;
+}
+function renderEntry(entry) {
+  return [
+    reference(entry),
+    quote(entry.text),
+    ...entry.omitted_bytes > 0 ? [`[Omitted: ${entry.omitted_bytes} redacted UTF-8 bytes from this event.]`] : []
+  ].join("\n");
+}
+function quote(text) {
+  return text.split("\n").map((line) => `> ${line}`).join("\n");
+}
+function boundedValue(text, redactor, bytes) {
+  return limitWithNotice(redactor ? redactor.apply(text) : text, bytes);
+}
+function limitWithNotice(text, bytes) {
+  if (Buffer.byteLength(text) <= bytes) return text;
+  return bytePrefix(text, bytes - Buffer.byteLength(OMITTED)) + OMITTED;
+}
+function bytePrefix(text, bytes) {
+  if (Buffer.byteLength(text) <= bytes) return text;
+  const buffer = Buffer.from(text);
+  let end = Math.max(0, bytes);
+  while (end > 0 && (buffer[end] & 192) === 128) end -= 1;
+  return buffer.subarray(0, end).toString("utf8");
 }
 
 // src/llm/prompts.ts
@@ -7999,6 +8440,8 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger) {
     entry.node.shape = "circle";
     entry.node.icon = "\u{1F480}";
   }
+  const evidence = entry.node.context_snapshot_continue.evidence;
+  if (!evidence) return;
   const safeNextSteps = redactor ? label.next_steps.map((s) => redactor.apply(s)) : label.next_steps;
   const snapInput = {
     sessionId: graph.meta.sessionId,
@@ -8007,7 +8450,7 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger) {
     label: entry.node.label,
     segment: entry.segment,
     generatedAt: (/* @__PURE__ */ new Date()).toISOString(),
-    events: entry.events,
+    evidence,
     llm: {
       label: safeLabel,
       summary: safeSummary,
@@ -8016,11 +8459,10 @@ function applyResult(entry, res, graph, jsonlPath, redactor, stats, logger) {
     redactor
   };
   entry.node.context_snapshot_continue = buildContinueSnapshot(snapInput);
-  entry.node.context_snapshot_fork = buildForkSnapshot(snapInput);
 }
 
 // src/sources/index.ts
-import { open as open2 } from "node:fs/promises";
+import { open as open3 } from "node:fs/promises";
 
 // src/sources/claude.ts
 import { homedir as homedir3 } from "node:os";
@@ -8342,6 +8784,8 @@ async function isSameDirectory(path2, original) {
 }
 
 // src/sources/claude.ts
+import { constants } from "node:fs";
+import { open } from "node:fs/promises";
 function getProjectsRoot() {
   return resolve2(process.env.CLAUDE_CONFIG_DIR || join3(homedir3(), ".claude"), "projects");
 }
@@ -8361,6 +8805,9 @@ async function discover(opts) {
     if (!projectInfo?.isDirectory()) continue;
     const projectSessions = [];
     for (const file2 of await readDirectory(projectPath)) {
+      if (opts.includeSubagents && file2.isDirectory() && isFullUuid(file2.name)) {
+        projectSessions.push(...await discoverChildren(projectPath, projectDir, file2.name));
+      }
       if (!file2.isFile() || !file2.name.endsWith(".jsonl")) continue;
       const sessionId = file2.name.slice(0, -".jsonl".length);
       if (!isFullUuid(sessionId)) continue;
@@ -8382,6 +8829,59 @@ async function discover(opts) {
   }
   return await isSameDirectory(root, rootInfo) ? sessions : [];
 }
+async function discoverChildren(projectPath, projectDir, parentSessionId) {
+  const parent = join3(projectPath, parentSessionId);
+  const parentInfo = await lstatIfPresent(parent);
+  if (!parentInfo?.isDirectory()) return [];
+  const directory = join3(parent, "subagents");
+  const original = await lstatIfPresent(directory);
+  if (!original?.isDirectory()) return [];
+  const children = [];
+  for (const file2 of await readDirectory(directory)) {
+    const match = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/.exec(file2.name);
+    if (!file2.isFile() || !match) continue;
+    const jsonlPath = join3(directory, file2.name);
+    const info = await lstatIfPresent(jsonlPath);
+    if (!info?.isFile()) continue;
+    const metadata = await readChildMeta(join3(directory, `agent-${match[1]}.meta.json`));
+    children.push({
+      source: "claude",
+      sessionId: `agent-${match[1]}`,
+      projectDir,
+      jsonlPath,
+      mtimeMs: info.mtimeMs,
+      sizeBytes: info.size,
+      subagent: { id: match[1], parentSessionId, ...metadata }
+    });
+  }
+  return await isSameDirectory(parent, parentInfo) && await isSameDirectory(directory, original) ? children : [];
+}
+async function readChildMeta(path2) {
+  try {
+    const handle = await open(
+      path2,
+      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+    );
+    try {
+      const info = await handle.stat();
+      if (!info.isFile() || info.size > 1024 * 1024) return {};
+      const buffer = Buffer.alloc(1024 * 1024 + 1);
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+      if (bytesRead > 1024 * 1024) return {};
+      const meta3 = JSON.parse(buffer.toString("utf8", 0, bytesRead));
+      if (typeof meta3 !== "object" || !meta3 || Array.isArray(meta3)) return {};
+      const record2 = meta3;
+      return {
+        ...typeof record2.toolUseId === "string" && record2.toolUseId ? { toolUseId: record2.toolUseId } : {},
+        ...typeof record2.parentAgentId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(record2.parentAgentId) ? { parentAgentId: record2.parentAgentId } : {}
+      };
+    } finally {
+      await handle.close();
+    }
+  } catch {
+    return {};
+  }
+}
 var claudeSource = {
   id: "claude",
   discover,
@@ -8390,14 +8890,14 @@ var claudeSource = {
 };
 
 // src/sources/codex.ts
-import { constants } from "node:fs";
-import { open } from "node:fs/promises";
+import { constants as constants2 } from "node:fs";
+import { open as open2 } from "node:fs/promises";
 import { homedir as homedir4 } from "node:os";
-import { join as join4, resolve as resolve3 } from "node:path";
+import { dirname as dirname2, join as join4, relative, resolve as resolve3, sep } from "node:path";
 
 // src/reader/codex.ts
 import { createHash as createHash2 } from "node:crypto";
-import { createReadStream as createReadStream3 } from "node:fs";
+import { createReadStream as createReadStream3, read } from "node:fs";
 import { createInterface as createInterface2 } from "node:readline";
 
 // src/usage/normalize.ts
@@ -8467,6 +8967,7 @@ function createCodexUsageCollector() {
   const records = [];
   const counts = [];
   const responses = /* @__PURE__ */ new Set();
+  const countResponses = /* @__PURE__ */ new Set();
   let awaitingWindow = [];
   let latestWindow = null;
   let previousTotal = null;
@@ -8488,7 +8989,14 @@ function createCodexUsageCollector() {
         return;
       }
       if (responseId) responses.add(responseId);
-      const sample = { ...tokens, timestamp, context_window: latestWindow, after };
+      const sample = {
+        ...tokens,
+        timestamp,
+        context_window: latestWindow,
+        after,
+        ...responseId ? { response_id: responseId } : {},
+        ...typeof payload.thread_id === "string" && payload.thread_id ? { thread_id: payload.thread_id } : {}
+      };
       records.push(sample);
       awaitingWindow.push(sample);
     },
@@ -8505,15 +9013,25 @@ function createCodexUsageCollector() {
         for (const sample of awaitingWindow) sample.context_window = window;
         awaitingWindow = [];
       }
+      const responseId = typeof payload.response_id === "string" ? payload.response_id : "";
+      if (responseId && countResponses.has(responseId)) return;
       const total = codexTotalKey(info.total_token_usage);
-      if (total !== null && total === previousTotal) return;
+      if (!responseId && total !== null && total === previousTotal) return;
       if (total !== null) previousTotal = total;
       const tokens = codexCallTokens(info.last_token_usage);
       if (!tokens) {
         unrecognized += 1;
         return;
       }
-      counts.push({ ...tokens, timestamp, context_window: window ?? latestWindow, after });
+      if (responseId) countResponses.add(responseId);
+      counts.push({
+        ...tokens,
+        timestamp,
+        context_window: window ?? latestWindow,
+        after,
+        ...responseId ? { response_id: responseId } : {},
+        ...typeof payload.thread_id === "string" && payload.thread_id ? { thread_id: payload.thread_id } : {}
+      });
     },
     finish(eventAt) {
       return (records.length > 0 ? records : counts).map(({ after, ...sample }) => ({
@@ -8715,7 +9233,16 @@ function suppressFallbacks(candidates) {
 }
 async function readCodex(path2, opts = {}) {
   const { logger, strict = false } = opts;
-  const stream = createReadStream3(path2, { encoding: "utf8" });
+  const stream = createReadStream3(path2, {
+    encoding: "utf8",
+    ...opts.fd === void 0 ? {} : {
+      fd: opts.fd,
+      autoClose: false,
+      // ReadStream.destroy() closes even an autoClose:false descriptor.
+      // This stream borrows it; release stream resources, not caller ownership.
+      fs: { read, close: (_fd, callback) => callback(null) }
+    }
+  });
   const lines = createInterface2({ input: stream, crlfDelay: Infinity });
   const meta3 = { sessionId: "", permissionMode: "" };
   const context = { cwd: "", gitBranch: "", version: "", entrypoint: "", isSidechain: false };
@@ -8883,7 +9410,11 @@ async function readCodex(path2, opts = {}) {
     }
   } finally {
     lines.close();
-    stream.destroy();
+    await new Promise((done) => {
+      if (stream.closed) return done();
+      stream.once("close", done);
+      stream.destroy();
+    });
   }
   skippedMetaCount += suppressFallbacks(candidates);
   const events = [];
@@ -8920,13 +9451,13 @@ function isRecord4(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 async function sessionEntry(jsonlPath, filenameId) {
-  const original = await lstatIfPresent(jsonlPath);
-  if (!original?.isFile()) return null;
   let handle;
   try {
-    handle = await open(
+    const original = await lstatIfPresent(jsonlPath);
+    if (!original?.isFile()) return null;
+    handle = await open2(
       jsonlPath,
-      constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK
+      constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK
     );
     const info = await handle.stat();
     if (!info.isFile() || info.dev !== original.dev || info.ino !== original.ino) return null;
@@ -8965,8 +9496,10 @@ async function sessionEntry(jsonlPath, filenameId) {
     if (meta3.session_id !== void 0 && (typeof meta3.session_id !== "string" || !isFullUuid(meta3.session_id)))
       return null;
     if (typeof meta3.cwd !== "string" || !meta3.cwd.trim()) return null;
-    if (meta3.source === "subagent" || isRecord4(meta3.source) && Object.hasOwn(meta3.source, "subagent"))
-      return null;
+    const isSubagent = meta3.source === "subagent" || isRecord4(meta3.source) && Object.hasOwn(meta3.source, "subagent");
+    const child = isRecord4(meta3.source) && isRecord4(meta3.source.subagent) ? meta3.source.subagent : null;
+    const spawn3 = child && isRecord4(child.thread_spawn) ? child.thread_spawn : null;
+    const parentId = spawn3?.parent_thread_id;
     const current = await lstatIfPresent(jsonlPath);
     if (!current?.isFile() || current.dev !== info.dev || current.ino !== info.ino) return null;
     return {
@@ -8975,43 +9508,87 @@ async function sessionEntry(jsonlPath, filenameId) {
       projectDir: meta3.cwd,
       jsonlPath,
       mtimeMs: info.mtimeMs,
-      sizeBytes: info.size
+      sizeBytes: info.size,
+      ...isSubagent ? {
+        subagent: {
+          id,
+          parentSessionId: typeof parentId === "string" && isFullUuid(parentId) ? parentId : null,
+          ...typeof header.timestamp === "string" && Number.isFinite(Date.parse(header.timestamp)) ? { createdAt: header.timestamp } : {}
+        }
+      } : {}
     };
   } catch (error62) {
-    if (isMissingPath(error62) || error62?.code === "ELOOP")
+    if (isMissingPath(error62) || ["EACCES", "EPERM", "ELOOP", "EISDIR", "ENXIO", "ESTALE"].includes(
+      error62?.code ?? ""
+    ))
       return null;
     throw error62;
   } finally {
     await handle?.close();
   }
 }
+async function nativeCodexEntry(jsonlPath) {
+  const home = resolve3(process.env.CODEX_HOME || join4(homedir4(), ".codex"));
+  const path2 = resolve3(jsonlPath);
+  const parts = relative(home, path2).split(sep);
+  const archived = parts[0] === "archived_sessions";
+  if (parts[0] !== "sessions" && !archived) return null;
+  const dates = parts.slice(1, -1);
+  if (!(archived && dates.length === 0) && (dates.length !== DATE_DIRECTORIES.length || !dates.every((part, index) => DATE_DIRECTORIES[index].test(part))))
+    return null;
+  const match = ROLLOUT_NAME.exec(parts[parts.length - 1]);
+  if (!match || !isFullUuid(match[1])) return null;
+  const directories = [];
+  let directory = home;
+  for (const part of ["", ...parts.slice(0, -1)]) {
+    directory = join4(directory, part);
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return null;
+    directories.push({ path: directory, info });
+  }
+  const entry = await sessionEntry(path2, match[1]);
+  if (!entry || !(await Promise.all(directories.map(({ path: path3, info }) => isSameDirectory(path3, info)))).every(
+    Boolean
+  ))
+    return null;
+  if (archived) entry.archived = true;
+  return entry;
+}
 async function discover2(options) {
   const root = resolve3(
     options.root ?? resolve3(process.env.CODEX_HOME || join4(homedir4(), ".codex"), "sessions")
   );
   const projectCwd = options.projectCwd === void 0 ? void 0 : resolve3(options.projectCwd);
-  async function visit3(directory, depth) {
+  async function visit3(directory, depth, archived = false) {
     const original = await lstatIfPresent(directory);
     if (!original?.isDirectory()) return [];
-    const sessions = [];
+    const sessions2 = [];
     for (const entry of await readDirectory(directory)) {
-      if (depth < DATE_DIRECTORIES.length) {
-        if (entry.isDirectory() && DATE_DIRECTORIES[depth].test(entry.name)) {
-          for (const session of await visit3(join4(directory, entry.name), depth + 1))
-            sessions.push(session);
-        }
-      } else if (entry.isFile()) {
+      if (depth < DATE_DIRECTORIES.length && entry.isDirectory() && DATE_DIRECTORIES[depth].test(entry.name)) {
+        for (const session of await visit3(join4(directory, entry.name), depth + 1, archived))
+          sessions2.push(session);
+      } else if (entry.isFile() && (depth === DATE_DIRECTORIES.length || archived && depth === 0)) {
         const match = ROLLOUT_NAME.exec(entry.name);
         if (!match || !isFullUuid(match[1])) continue;
         const session = await sessionEntry(join4(directory, entry.name), match[1]);
-        if (session && (projectCwd === void 0 || resolve3(session.projectDir) === projectCwd)) {
-          sessions.push(session);
+        if (session && (!session.subagent || options.includeSubagents) && (projectCwd === void 0 || resolve3(session.projectDir) === projectCwd)) {
+          if (archived) session.archived = true;
+          sessions2.push(session);
         }
       }
     }
-    return await isSameDirectory(directory, original) ? sessions : [];
+    return await isSameDirectory(directory, original) ? sessions2 : [];
   }
-  return visit3(root, 0);
+  const sessions = await visit3(root, 0);
+  if (options.includeArchived) {
+    sessions.push(...await visit3(join4(dirname2(root), "archived_sessions"), 0, true));
+  }
+  const unique = /* @__PURE__ */ new Map();
+  for (const session of sessions) {
+    const key = session.sessionId.toLowerCase();
+    if (!unique.has(key)) unique.set(key, session);
+  }
+  return [...unique.values()];
 }
 var codexSource = {
   id: "codex",
@@ -9030,7 +9607,7 @@ function getSessionSource(id = "claude") {
   return source;
 }
 async function detectSessionSource(path2, selected) {
-  const file2 = await open2(path2, "r");
+  const file2 = await open3(path2, "r");
   const buffer = Buffer.alloc(1024 * 1024);
   let bytes = 0;
   try {
@@ -9079,6 +9656,7 @@ function buildMindMap(graph, segments, opts) {
     }
   }
   const selectedEvents = graph.events.filter((event) => selected.has(event));
+  const snapshotHistory = createSnapshotHistory(graph.events, selected, opts.redactor);
   const main2 = [];
   const sidechain = [];
   for (const s of segments) {
@@ -9100,8 +9678,7 @@ function buildMindMap(graph, segments, opts) {
   const idAllocator = new IdAllocator();
   const rootId = idAllocator.next();
   const rootLabel = deriveSessionTitle(selectedEvents, sessionId, opts.sessionTitle, opts.redactor);
-  const firstUserEvent = selectedEvents.find((e) => e.type === "user");
-  const rootInstructionEvents = firstUserEvent ? [firstUserEvent] : [];
+  const rootEvidence = snapshotHistory.forNode(null, "root");
   const rootSnapInput = {
     sessionId,
     jsonlPath: opts.jsonlPath,
@@ -9109,7 +9686,6 @@ function buildMindMap(graph, segments, opts) {
     label: rootLabel,
     segment: null,
     generatedAt,
-    events: rootInstructionEvents,
     redactor: opts.redactor
   };
   const rootNode = {
@@ -9123,8 +9699,11 @@ function buildMindMap(graph, segments, opts) {
     tools_used: uniq(segments.flatMap((s) => s.dominant_tools)),
     is_sidechain: false,
     children: [],
-    context_snapshot_continue: buildContinueSnapshot(rootSnapInput),
-    context_snapshot_fork: buildForkSnapshot(rootSnapInput),
+    context_snapshot_continue: buildContinueSnapshot({
+      ...rootSnapInput,
+      evidence: rootEvidence.continue
+    }),
+    context_snapshot_fork: buildForkSnapshot({ ...rootSnapInput, evidence: rootEvidence.fork }),
     color: "green",
     shape: "rect",
     time_offset_ms: 0
@@ -9139,6 +9718,7 @@ function buildMindMap(graph, segments, opts) {
       generatedAt,
       parentIsSidechain: false,
       events: phaseEvents,
+      snapshotHistory,
       redactor: opts.redactor,
       timeOffsetMs: offsetFor(phase.headSegment.time_range[0]),
       promotePhaseIcon: true
@@ -9152,6 +9732,7 @@ function buildMindMap(graph, segments, opts) {
           generatedAt,
           parentIsSidechain: false,
           events: eventsForSegment(graph.events, childSeg),
+          snapshotHistory,
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(childSeg.time_range[0])
         })
@@ -9163,6 +9744,7 @@ function buildMindMap(graph, segments, opts) {
   if (sidechain.length > 0) {
     const bucketId = idAllocator.next();
     const bucketLabel = "\u{1F500} Sidechains";
+    const bucketEvidence = snapshotHistory.forNode(null, "sidechains");
     const bucketNode = {
       id: bucketId,
       type: "topic",
@@ -9180,7 +9762,9 @@ function buildMindMap(graph, segments, opts) {
         nodeId: bucketId,
         label: bucketLabel,
         segment: null,
-        generatedAt
+        generatedAt,
+        evidence: bucketEvidence.continue,
+        redactor: opts.redactor
       }),
       context_snapshot_fork: buildForkSnapshot({
         sessionId,
@@ -9188,7 +9772,9 @@ function buildMindMap(graph, segments, opts) {
         nodeId: bucketId,
         label: bucketLabel,
         segment: null,
-        generatedAt
+        generatedAt,
+        evidence: bucketEvidence.fork,
+        redactor: opts.redactor
       }),
       color: "yellow",
       shape: "rect"
@@ -9202,6 +9788,7 @@ function buildMindMap(graph, segments, opts) {
           generatedAt,
           parentIsSidechain: true,
           events: eventsForSegment(graph.events, seg),
+          snapshotHistory,
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(seg.time_range[0])
         })
@@ -9281,6 +9868,7 @@ function buildSegmentNode(seg, ctx) {
   const label = deriveSegmentLabel(seg, ctx.events, ctx.redactor);
   const type = "topic";
   const icon = ctx.promotePhaseIcon ? "\u{1F4CC}" : void 0;
+  const evidence = ctx.snapshotHistory.forNode(seg, "segment");
   const snapshotInput = {
     sessionId: ctx.sessionId,
     jsonlPath: ctx.jsonlPath,
@@ -9288,7 +9876,6 @@ function buildSegmentNode(seg, ctx) {
     label,
     segment: seg,
     generatedAt: ctx.generatedAt,
-    events: ctx.events,
     redactor: ctx.redactor
   };
   const node2 = {
@@ -9302,8 +9889,11 @@ function buildSegmentNode(seg, ctx) {
     tools_used: seg.dominant_tools,
     is_sidechain: seg.is_sidechain_only || ctx.parentIsSidechain,
     children: [],
-    context_snapshot_continue: buildContinueSnapshot(snapshotInput),
-    context_snapshot_fork: buildForkSnapshot(snapshotInput),
+    context_snapshot_continue: buildContinueSnapshot({
+      ...snapshotInput,
+      evidence: evidence.continue
+    }),
+    context_snapshot_fork: buildForkSnapshot({ ...snapshotInput, evidence: evidence.fork }),
     color: seg.is_sidechain_only ? "yellow" : "green",
     shape: "rect",
     segment_id: seg.id,
@@ -9494,7 +10084,8 @@ function addUsage(a, b) {
       count: x.count + y.count,
       calls: x.calls + y.calls,
       prompt_tokens: x.prompt_tokens + y.prompt_tokens,
-      output_tokens: x.output_tokens + y.output_tokens
+      output_tokens: x.output_tokens + y.output_tokens,
+      ...(x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) > 0 ? { unattributed_count: (x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) } : {}
     };
   }
   return sum;
@@ -9558,7 +10149,7 @@ function formatUsage(row) {
   const agents = usage.subagents;
   if (agents && agents.calls > 0) {
     parts.push(
-      `${agents.count} agent${agents.count === 1 ? "" : "s"} prompt ${formatTokens(agents.prompt_tokens)} \xB7 out ${formatTokens(agents.output_tokens)}`
+      `${agents.count} agent${agents.count === 1 ? "" : "s"} prompt ${formatTokens(agents.prompt_tokens)} \xB7 out ${formatTokens(agents.output_tokens)}` + (agents.unattributed_count ? ` \xB7 ${agents.unattributed_count} unattributed` : "")
     );
   }
   return parts.join("  ");
@@ -9920,13 +10511,244 @@ function tokenCount(value) {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : null;
 }
 
+// src/usage/codex_subagents.ts
+import { constants as constants3 } from "node:fs";
+import { open as open4 } from "node:fs/promises";
+import { homedir as homedir5 } from "node:os";
+import { dirname as dirname3, join as join5, resolve as resolve4, sep as sep2 } from "node:path";
+
+// src/sources/relations.ts
+function findSpawnEvent(events, child) {
+  const agent = child.subagent;
+  if (!agent) return null;
+  if (child.source === "claude") {
+    if (agent.toolUseId) {
+      const calls2 = [];
+      for (const event of events) {
+        if (event.type !== "assistant" || !Array.isArray(event.message.content)) continue;
+        for (const block of event.message.content) {
+          if (block.type === "tool_use" && block.id === agent.toolUseId) calls2.push(event.uuid);
+        }
+      }
+      if (calls2.length > 0) return calls2.length === 1 ? calls2[0] : null;
+    }
+    const results = [];
+    for (const event of events) {
+      if (event.type !== "user") continue;
+      const result = event.toolUseResult;
+      if (isRecord2(result) && result.agentId === agent.id) results.push(event.uuid);
+    }
+    return results.length === 1 ? results[0] : null;
+  }
+  const calls = /* @__PURE__ */ new Map();
+  for (const [index, event] of events.entries()) {
+    if (event.type !== "tool_use") continue;
+    const spawn3 = event.tool_use.name === "spawn_agent" || event.tool_use.name === "functions.spawn_agent";
+    const call = calls.get(event.tool_use.id);
+    if (call) {
+      call.count += 1;
+      call.spawn ||= spawn3;
+    } else {
+      calls.set(event.tool_use.id, { uuid: event.uuid, index, count: 1, spawn: spawn3 });
+    }
+  }
+  const matches = /* @__PURE__ */ new Map();
+  for (const [index, event] of events.entries()) {
+    if (event.type === "tool_result") {
+      const call = calls.get(event.tool_result.tool_use_id);
+      if (!call?.spawn || call.index >= index) continue;
+      const result = spawnResult(event.tool_result.content);
+      if (result && [result.agent_id, result.thread_id].some(
+        (id) => typeof id === "string" && id.toLowerCase() === agent.id.toLowerCase()
+      )) {
+        if (call.count !== 1) return null;
+        matches.set(event.tool_result.tool_use_id, call.uuid);
+      }
+    }
+  }
+  return matches.size === 1 ? matches.values().next().value : null;
+}
+function spawnResult(content) {
+  if (Array.isArray(content)) {
+    if (!content.every(
+      (block) => isRecord2(block) && block.type === "text" && typeof block.text === "string"
+    ))
+      return null;
+    content = content.map((block) => block.text).join("");
+  }
+  if (typeof content === "string") {
+    try {
+      content = JSON.parse(content);
+    } catch {
+      return null;
+    }
+  }
+  return isRecord2(content) ? content : null;
+}
+
+// src/usage/codex_subagents.ts
+async function nativeFamily(jsonlPath) {
+  const root = await nativeCodexEntry(jsonlPath);
+  if (!root) return null;
+  const entries = await codexSource.discover({ includeSubagents: true, includeArchived: true });
+  const children = /* @__PURE__ */ new Map();
+  for (const entry of entries) {
+    const parent = entry.subagent?.parentSessionId?.toLowerCase();
+    if (!parent) continue;
+    const siblings = children.get(parent) ?? [];
+    siblings.push(entry);
+    children.set(parent, siblings);
+  }
+  const descendants = [];
+  const queue = [root.sessionId.toLowerCase()];
+  const seen = new Set(queue);
+  for (let at = 0; at < queue.length; at += 1) {
+    const parentId = queue[at];
+    for (const entry of children.get(parentId) ?? []) {
+      const id = entry.sessionId.toLowerCase();
+      if (seen.has(id)) continue;
+      seen.add(id);
+      queue.push(id);
+      descendants.push({ entry, parentId });
+    }
+  }
+  return { root, descendants };
+}
+async function readCodexSubagents(jsonlPath, events, samples, logger) {
+  let family;
+  try {
+    family = await nativeFamily(jsonlPath);
+  } catch {
+    logger?.debug("skipped unreadable Codex subagent discovery");
+    return void 0;
+  }
+  if (!family || family.descendants.length === 0) return void 0;
+  const rootId = family.root.sessionId.toLowerCase();
+  const states = /* @__PURE__ */ new Map([
+    [
+      rootId,
+      {
+        parentId: null,
+        events,
+        eventUuid: null,
+        sampleKeys: sampleKeys(samples)
+      }
+    ]
+  ]);
+  const seenResponses = new Set(
+    samples.flatMap((sample) => sample.response_id ? [sample.response_id] : [])
+  );
+  const agents = [];
+  for (const { entry, parentId } of family.descendants) {
+    const id = entry.sessionId.toLowerCase();
+    let result = null;
+    try {
+      result = await readEntry(entry);
+    } catch {
+      logger?.debug("skipped an unreadable Codex subagent transcript");
+    }
+    const parent = states.get(parentId);
+    const spawn3 = findSpawnEvent(parent.events, entry);
+    const eventUuid = spawn3 === null ? null : parentId === rootId ? spawn3 : parent.eventUuid;
+    const ownSamples = result?.usage ?? [];
+    const state = {
+      parentId,
+      events: result?.events ?? [],
+      eventUuid,
+      sampleKeys: /* @__PURE__ */ new Set()
+    };
+    states.set(id, state);
+    if (ownSamples.length === 0) continue;
+    const cutoff = Date.parse(entry.subagent?.createdAt ?? "");
+    const totals = { calls: 0, prompt_tokens: 0, output_tokens: 0 };
+    for (const sample of ownSamples) {
+      if (sample.thread_id && sample.thread_id.toLowerCase() !== id) continue;
+      if (sample.response_id && seenResponses.has(sample.response_id)) continue;
+      if (!sample.thread_id && Number.isFinite(cutoff) && Date.parse(sample.timestamp) < cutoff)
+        continue;
+      if (!sample.response_id && !sample.thread_id && inheritedSample(sample, parentId, states))
+        continue;
+      if (sample.response_id) seenResponses.add(sample.response_id);
+      const key = sampleKey(sample);
+      if (key !== null) state.sampleKeys.add(key);
+      totals.calls += 1;
+      totals.prompt_tokens += sample.prompt_tokens;
+      totals.output_tokens += sample.output_tokens;
+    }
+    agents.push({ agentId: entry.subagent.id, eventUuid, ...totals });
+  }
+  return agents.length > 0 ? agents : void 0;
+}
+async function readEntry(entry) {
+  const home = resolve4(process.env.CODEX_HOME || join5(homedir5(), ".codex"));
+  const directories = [];
+  let directory = dirname3(entry.jsonlPath);
+  while (directory === home || directory.startsWith(`${home}${sep2}`)) {
+    const info = await lstatIfPresent(directory);
+    if (!info?.isDirectory()) return null;
+    directories.push({ path: directory, info });
+    if (directory === home) break;
+    directory = dirname3(directory);
+  }
+  const original = await lstatIfPresent(entry.jsonlPath);
+  if (!original?.isFile()) return null;
+  const handle = await open4(
+    entry.jsonlPath,
+    constants3.O_RDONLY | constants3.O_NOFOLLOW | constants3.O_NONBLOCK
+  );
+  try {
+    const info = await handle.stat();
+    if (!info.isFile() || info.dev !== original.dev || info.ino !== original.ino) return null;
+    const result = await readCodex(entry.jsonlPath, { fd: handle.fd });
+    const current = await lstatIfPresent(entry.jsonlPath);
+    if (!current?.isFile() || current.dev !== info.dev || current.ino !== info.ino) return null;
+    if (!(await Promise.all(directories.map(({ path: path2, info: info2 }) => isSameDirectory(path2, info2)))).every(
+      Boolean
+    ))
+      return null;
+    return result.meta.sessionId.toLowerCase() === entry.sessionId.toLowerCase() ? result : null;
+  } finally {
+    await handle.close().catch(() => void 0);
+  }
+}
+function sampleKey(sample) {
+  const timestamp = Date.parse(sample.timestamp);
+  if (!Number.isFinite(timestamp)) return null;
+  return JSON.stringify([
+    timestamp,
+    sample.prompt_tokens,
+    sample.cache_read_tokens,
+    sample.cache_write_tokens,
+    sample.output_tokens,
+    sample.reasoning_tokens
+  ]);
+}
+function sampleKeys(samples) {
+  return new Set(
+    samples.flatMap((sample) => {
+      const key = sampleKey(sample);
+      return key === null ? [] : [key];
+    })
+  );
+}
+function inheritedSample(sample, parentId, states) {
+  const key = sampleKey(sample);
+  if (key === null) return false;
+  let ancestor = states.get(parentId);
+  while (ancestor) {
+    if (ancestor.sampleKeys.has(key)) return true;
+    ancestor = ancestor.parentId === null ? void 0 : states.get(ancestor.parentId);
+  }
+  return false;
+}
+
 // src/usage/subagents.ts
-import { constants as constants2 } from "node:fs";
-import { open as open3 } from "node:fs/promises";
-import { basename as basename2, dirname as dirname2, join as join5 } from "node:path";
+import { constants as constants4 } from "node:fs";
+import { open as open5 } from "node:fs/promises";
+import { basename as basename2, dirname as dirname4, join as join6 } from "node:path";
 var AGENT_FILE = /^agent-([A-Za-z0-9_-]{1,128})\.jsonl$/;
 function subagentFolder(jsonlPath) {
-  return join5(dirname2(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
+  return join6(dirname4(jsonlPath), basename2(jsonlPath, ".jsonl"), "subagents");
 }
 var META_LIMIT = 1024 * 1024;
 var CHUNK_BYTES = 1024 * 1024;
@@ -9950,9 +10772,9 @@ async function readClaudeSubagents(jsonlPath, events, seen, logger) {
     const match = AGENT_FILE.exec(name);
     if (!match) continue;
     try {
-      const totals = await readAgentUsage(join5(directory, name), seen);
+      const totals = await readAgentUsage(join6(directory, name), seen);
       if (!totals) continue;
-      const meta3 = await readAgentMeta(join5(directory, `agent-${match[1]}.meta.json`));
+      const meta3 = await readAgentMeta(join6(directory, `agent-${match[1]}.meta.json`));
       agents.push({ id: match[1], ...totals, ...meta3 });
     } catch (error62) {
       if (!isMissingPath(error62)) {
@@ -9973,7 +10795,7 @@ async function readClaudeSubagents(jsonlPath, events, seen, logger) {
   }));
 }
 async function openRegular(path2) {
-  const handle = await open3(path2, constants2.O_RDONLY | constants2.O_NOFOLLOW | constants2.O_NONBLOCK);
+  const handle = await open5(path2, constants4.O_RDONLY | constants4.O_NOFOLLOW | constants4.O_NONBLOCK);
   const info = await handle.stat();
   if (!info.isFile()) {
     await handle.close();
@@ -10059,24 +10881,26 @@ function linker(events, agents) {
     }
   }
   const byId = new Map(agents.map((agent) => [agent.id, agent]));
-  const resolve9 = (id, visiting) => {
+  const resolve10 = (id, visiting) => {
     const agent = byId.get(id);
     if (agent?.toolUseId && toolUseEvent.has(agent.toolUseId))
       return toolUseEvent.get(agent.toolUseId);
     if (agent?.parentAgentId && !visiting.has(id)) {
       visiting.add(id);
-      const parent = resolve9(agent.parentAgentId, visiting);
+      const parent = resolve10(agent.parentAgentId, visiting);
       if (parent !== null) return parent;
     }
     return resultEvent.get(id) ?? null;
   };
-  return (id) => resolve9(id, /* @__PURE__ */ new Set());
+  return (id) => resolve10(id, /* @__PURE__ */ new Set());
 }
 
 // src/usage/attach.ts
 async function collectSessionUsage(input2) {
   if (input2.source === "codex") {
-    return { calls: input2.samples ?? [], compactions: codexCompactions(input2.events) };
+    const calls = input2.samples ?? [];
+    const subagents2 = await readCodexSubagents(input2.jsonlPath, input2.events, calls, input2.logger);
+    return { calls, compactions: codexCompactions(input2.events), subagents: subagents2 };
   }
   const seen = /* @__PURE__ */ new Set();
   const main2 = claudeMainUsage(input2.events, seen);
@@ -10121,8 +10945,11 @@ function attachUsage(mindmap, usage) {
     ownUsage(ownerOf(eventUuid)).compactions.push(compaction);
   }
   for (const agent of usage.subagents ?? []) {
-    const subagents = ownUsage(ownerOf(agent.eventUuid)).subagents;
+    const owner = ownerOf(agent.eventUuid);
+    const subagents = ownUsage(owner).subagents;
     subagents.count += 1;
+    if (owner === mindmap.root)
+      subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
     subagents.calls += agent.calls;
     subagents.prompt_tokens += agent.prompt_tokens;
     subagents.output_tokens += agent.output_tokens;
@@ -10136,249 +10963,10 @@ function attachUsage(mindmap, usage) {
   mindmap.stats.usage = structuredClone(inclusive(mindmap.root));
 }
 
-// src/utils/redact.ts
-var DEFAULT_PATTERNS = [
-  {
-    name: "anthropic_api_key",
-    regex: /sk-ant-[A-Za-z0-9_-]{20,}/g,
-    replacement: "sk-ant-***REDACTED***"
-  },
-  {
-    name: "openai_api_key",
-    regex: /sk-[A-Za-z0-9]{32,}/g,
-    replacement: "sk-***REDACTED***"
-  },
-  {
-    name: "github_pat",
-    regex: /gh[pous]_[A-Za-z0-9]{30,}/g,
-    replacement: "gh*_***REDACTED***"
-  },
-  {
-    name: "slack_token",
-    regex: /xox[bpoar]-[A-Za-z0-9-]{10,}/g,
-    replacement: "xox*-***REDACTED***"
-  },
-  {
-    name: "bearer_token",
-    regex: /\bBearer\s+[A-Za-z0-9._-]{20,}/g,
-    replacement: "Bearer ***REDACTED***"
-  },
-  {
-    name: "aws_access_key_id",
-    regex: /\bAKIA[0-9A-Z]{16}\b/g,
-    replacement: "AKIA***REDACTED***"
-  },
-  {
-    name: "aws_temp_key",
-    regex: /\bASIA[0-9A-Z]{16}\b/g,
-    replacement: "ASIA***REDACTED***"
-  },
-  {
-    // 35-char alphanumeric + `_-` suffix. `\b` at the end would fail when the
-    // key happens to end in `-` (a non-word char), because the next char is
-    // also typically non-word (space/`.`/EOF) and `\b` needs a word↔non-word
-    // transition. `{35}` is fixed-length, so the engine can't shorten the
-    // match to dodge the boundary — the whole key would leak unredacted.
-    // Use a negative lookahead against the same class to terminate correctly
-    // regardless of word-ness at the seam.
-    name: "gcp_api_key",
-    regex: /\bAIza[0-9A-Za-z_-]{35}(?![A-Za-z0-9_-])/g,
-    replacement: "AIza***REDACTED***"
-  },
-  {
-    name: "gcp_oauth_token",
-    regex: /\bya29\.[0-9A-Za-z_-]{20,}/g,
-    replacement: "ya29.***REDACTED***"
-  },
-  {
-    // GitHub fine-grained PAT: `github_pat_<22 alnum>_<59 alnum_>` (≥82 total)
-    name: "github_pat_finegrained",
-    regex: /\bgithub_pat_[A-Za-z0-9_]{82,}/g,
-    replacement: "github_pat_***REDACTED***"
-  },
-  {
-    // OpenAI project / service-account / admin keys (added 2024)
-    name: "openai_project_key",
-    regex: /\bsk-(?:proj|svcacct|admin)-[A-Za-z0-9_-]{20,}/g,
-    replacement: "sk-***REDACTED***"
-  },
-  {
-    name: "stripe_secret_key",
-    regex: /\bsk_(?:live|test)_[A-Za-z0-9]{24,}/g,
-    replacement: "sk_***REDACTED***"
-  },
-  {
-    name: "huggingface_token",
-    regex: /\bhf_[A-Za-z0-9]{30,}\b/g,
-    replacement: "hf_***REDACTED***"
-  },
-  {
-    // npm automation / publish tokens — 36 alnum after `npm_`. Common in
-    // `.npmrc` pastes that developers drop into chat while debugging
-    // publish failures.
-    name: "npm_token",
-    regex: /\bnpm_[A-Za-z0-9]{36}\b/g,
-    replacement: "npm_***REDACTED***"
-  },
-  {
-    name: "private_key_block",
-    regex: /-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g,
-    replacement: "-----REDACTED PRIVATE KEY-----"
-  },
-  {
-    // base64url (RFC 4648 §5) alphabet is `[A-Za-z0-9_-]` — signature portion
-    // can legally end in `-` or `_`. Trailing `\b` required a word↔non-word
-    // transition and would fail whenever the signature happened to end on a
-    // `-`/`_` with non-word context after (space / EOF / punctuation). The
-    // engine could sometimes backtrack within the `{10,}` to land on a word
-    // char, leaking the trailing byte; when the signature was ≤10 chars of
-    // trailing `-`s it couldn't match at all. Replace with a negative
-    // lookahead against the same class.
-    name: "jwt",
-    regex: /\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}(?![A-Za-z0-9_-])/g,
-    replacement: "eyJ***REDACTED.JWT***"
-  }
-];
-var STRICT_EXTRA = [
-  {
-    name: "email",
-    regex: /\b[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}\b/g,
-    replacement: "[EMAIL]"
-  },
-  // IMPORTANT: ssn_us and rrn_ko are narrower patterns — they must run before
-  // the generic phone regex, or the phone regex swallows their digit groups.
-  {
-    name: "ssn_us",
-    regex: /\b\d{3}-\d{2}-\d{4}\b/g,
-    replacement: "[SSN]"
-  },
-  {
-    name: "rrn_ko",
-    regex: /\b\d{6}-[1-4]\d{6}\b/g,
-    replacement: "[RRN]"
-  },
-  {
-    // International E.164 with required `+` prefix. Pure-digit bounded run,
-    // no nested optionals → ReDoS-safe.
-    name: "phone_e164",
-    regex: /\+\d{8,15}\b/g,
-    replacement: "[PHONE]"
-  },
-  {
-    // Local/domestic phone with ≥2 separators. Separators are REQUIRED — the
-    // old regex had `[-.\s]?` at three positions plus an outer-optional
-    // prefix group, yielding nested optionals whose backtracking was
-    // catastrophic on long digit-only input (classic ReDoS). Requiring both
-    // middle separators removes the ambiguity without losing common formats:
-    //   ✓ 010-1234-5678   ✓ (415) 555-0123   ✓ +82 10-1234-5678
-    // Pure-digit numbers like "01012345678" are intentionally not caught
-    // here — phone_e164 above catches the `+` variant, and for separator-less
-    // domestic strings the false-positive risk on long IDs (order numbers,
-    // SKUs) outweighs the extra recall.
-    name: "phone",
-    // (?<!\w) at the start — not \b — so that a leading `(` (not a word
-    // char, breaks \b) is still matched when the prior byte is whitespace.
-    // Without this, `US office (415) 555-0123` would match as
-    // `415) 555-0123` and leave the paren outside the redaction.
-    regex: /(?<!\w)(?:\+\d{1,3}[-.\s])?\(?\d{2,4}\)?[-.\s]\d{3,4}[-.\s]\d{3,4}\b/g,
-    replacement: "[PHONE]"
-  }
-];
-function defaultRedactor(opts = {}) {
-  const patterns = [
-    ...DEFAULT_PATTERNS,
-    ...opts.strict ? STRICT_EXTRA : [],
-    ...opts.extraPatterns ?? []
-  ];
-  return {
-    patterns,
-    apply(text) {
-      if (!text) return text;
-      let out = text;
-      for (const p of patterns) out = out.replace(p.regex, p.replacement);
-      out = redactCreditCards(out);
-      return out;
-    },
-    applyWithStats(text) {
-      const hits = {};
-      if (!text) return { text, hits };
-      let out = text;
-      for (const p of patterns) {
-        const matches = out.match(p.regex);
-        if (matches && matches.length > 0) hits[p.name] = matches.length;
-        out = out.replace(p.regex, p.replacement);
-      }
-      const cardResult = redactCreditCardsWithStats(out);
-      if (cardResult.hits > 0) hits.credit_card = cardResult.hits;
-      return { text: cardResult.text, hits };
-    }
-  };
-}
-function redactDeep(value, redactor) {
-  if (value == null) return value;
-  if (typeof value === "string") return redactor.apply(value);
-  if (Array.isArray(value)) {
-    return value.map((v) => redactDeep(v, redactor));
-  }
-  if (typeof value === "object") {
-    const out = {};
-    for (const [k, v] of Object.entries(value)) {
-      out[k] = redactDeep(v, redactor);
-    }
-    return out;
-  }
-  return value;
-}
-function countRedactions(value, redactor) {
-  const counts = {};
-  const pending = [value];
-  while (pending.length > 0) {
-    const current = pending.pop();
-    if (typeof current === "string") {
-      for (const [name, hits] of Object.entries(redactor.applyWithStats(current).hits)) {
-        counts[name] = (counts[name] ?? 0) + hits;
-      }
-    } else if (current && typeof current === "object") {
-      for (const child of Object.values(current)) pending.push(child);
-    }
-  }
-  return counts;
-}
-var CARD_RE = /\b(?:\d[ -]?){12,18}\d\b/g;
-function redactCreditCards(text) {
-  return redactCreditCardsWithStats(text).text;
-}
-function redactCreditCardsWithStats(text) {
-  let hits = 0;
-  const result = text.replace(CARD_RE, (match) => {
-    const digits = match.replace(/[^0-9]/g, "");
-    if (digits.length < 13 || digits.length > 19) return match;
-    if (!luhnValid(digits)) return match;
-    hits += 1;
-    return "[CARD]";
-  });
-  return { text: result, hits };
-}
-function luhnValid(digits) {
-  let sum = 0;
-  let flip = false;
-  for (let i = digits.length - 1; i >= 0; i -= 1) {
-    let d = digits.charCodeAt(i) - 48;
-    if (d < 0 || d > 9) return false;
-    if (flip) {
-      d *= 2;
-      if (d > 9) d -= 9;
-    }
-    sum += d;
-    flip = !flip;
-  }
-  return sum % 10 === 0;
-}
-
 // src/config/loader.ts
 import { readFile as readFile2 } from "node:fs/promises";
-import { homedir as homedir5 } from "node:os";
-import { join as join6, resolve as resolve4 } from "node:path";
+import { homedir as homedir6 } from "node:os";
+import { join as join7, resolve as resolve5 } from "node:path";
 
 // node_modules/zod/v4/classic/external.js
 var external_exports = {};
@@ -15406,7 +15994,7 @@ var recursive = /* @__PURE__ */ new WeakMap();
 var NONE = 0;
 var ASSUMED = 1;
 var PROVEN = 2;
-function isRecursive(inst, stack, resolve9) {
+function isRecursive(inst, stack, resolve10) {
   const cached2 = recursive.get(inst);
   if (cached2 !== void 0)
     return cached2 ? PROVEN : NONE;
@@ -15416,7 +16004,7 @@ function isRecursive(inst, stack, resolve9) {
   let result = NONE;
   const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
-      const answer = isRecursive(child, stack, resolve9);
+      const answer = isRecursive(child, stack, resolve10);
       if (answer > result)
         result = answer;
     }
@@ -15427,7 +16015,7 @@ function isRecursive(inst, stack, resolve9) {
       const desc = Object.getOwnPropertyDescriptor(sh, key);
       if (spread && !desc.enumerable)
         continue;
-      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve9) : NONE;
+      const child = desc.get ? ASSUMED : desc.value?._zod ? isRecursive(desc.value, stack, resolve10) : NONE;
       if (child > answer)
         answer = child;
     }
@@ -15491,7 +16079,7 @@ function isRecursive(inst, stack, resolve9) {
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
-      const inner = def._cachedInner ?? (resolve9 ? inst._zod.innerType : void 0);
+      const inner = def._cachedInner ?? (resolve10 ? inst._zod.innerType : void 0);
       merge2(inner ? isRecursive(inner, stack, false) : ASSUMED);
       break;
     }
@@ -15555,7 +16143,7 @@ function bucketFor(state, inst) {
   return bucket;
 }
 var handoff;
-var open4 = [];
+var open6 = [];
 var memo = {
   alloc(_inst, payload, empty) {
     const bucket = handoff;
@@ -15564,7 +16152,7 @@ var memo = {
     handoff = void 0;
     const entry = { value: empty, issues: null };
     bucket.set(payload.value, entry);
-    open4.push(entry);
+    open6.push(entry);
     return empty;
   },
   guard(inst) {
@@ -15635,10 +16223,10 @@ var memo = {
           return payload;
         }
         handoff = bucket;
-        const depth = open4.length;
+        const depth = open6.length;
         const result = base(payload, ctx);
         handoff = void 0;
-        const entry = open4.length > depth ? open4.pop() : void 0;
+        const entry = open6.length > depth ? open6.pop() : void 0;
         if (result instanceof Promise) {
           return result.then((r) => {
             if (entry)
@@ -30192,7 +30780,7 @@ function formatPath(parts) {
 }
 
 // src/config/loader.ts
-var USER_CONFIG_DEFAULT = join6(homedir5(), ".config", "agent-tree", "config.yaml");
+var USER_CONFIG_DEFAULT = join7(homedir6(), ".config", "agent-tree", "config.yaml");
 function envToPartial(env, logger) {
   const out = {};
   const llm = {};
@@ -30255,7 +30843,7 @@ async function loadConfig(opts = {}) {
   const env = opts.env ?? process.env;
   const projectCwd = opts.projectCwd ?? process.cwd();
   const userPath = opts.userConfigPath ?? USER_CONFIG_DEFAULT;
-  const projectPath = resolve4(projectCwd, ".agent-tree.yaml");
+  const projectPath = resolve5(projectCwd, ".agent-tree.yaml");
   const [userYaml, projectYaml] = await Promise.all([
     readYamlIfPresent(userPath, "user", opts.logger),
     readYamlIfPresent(projectPath, "project", opts.logger)
@@ -30278,14 +30866,14 @@ async function loadConfig(opts = {}) {
 function expandPath(template, projectCwd) {
   let p = template;
   if (p.startsWith("~/") || p === "~") {
-    p = join6(homedir5(), p.slice(1));
+    p = join7(homedir6(), p.slice(1));
   }
   p = p.replace("{project}", projectCwd);
-  return resolve4(p);
+  return resolve5(p);
 }
 
 // src/cli/pipeline.ts
-var SPEC_VERSION = "v0.3";
+var SPEC_VERSION = "v0.6";
 async function runPipeline(deps) {
   const { match, opts, config: config2, logger, quiet = false, usage: withUsage = true } = deps;
   const progress = (msg) => {
@@ -30313,7 +30901,8 @@ async function runPipeline(deps) {
     logger,
     strict: opts.strict
   });
-  if (!isFullUuid(meta3.sessionId)) {
+  const childTranscript = match.source === "claude" && basename3(dirname5(match.jsonlPath)) === "subagents" && /^agent-[A-Za-z0-9_-]{1,128}\.jsonl$/.test(basename3(match.jsonlPath));
+  if (!isFullUuid(meta3.sessionId) || childTranscript) {
     meta3.sessionId = createHash3("sha256").update(match.jsonlPath).digest("hex").slice(0, 32);
   }
   progress(`\u2714 ${events.length} events`);
@@ -30356,6 +30945,15 @@ async function runPipeline(deps) {
         sidechain_count: 0
       }
     };
+    if (withUsage) {
+      await attachSessionUsage(emptyMindmap, {
+        source: match.source,
+        jsonlPath: match.jsonlPath,
+        events,
+        samples: usage,
+        logger
+      });
+    }
     return {
       graph: { meta: meta3, events: [], childrenOf: /* @__PURE__ */ new Map(), roots: [], byUuid: /* @__PURE__ */ new Map() },
       segments: [],
@@ -30544,7 +31142,7 @@ _(no events were parsed.)_
 
 // src/cli/modes.ts
 import { mkdir as mkdir4, writeFile as writeFile3 } from "node:fs/promises";
-import { resolve as resolve5 } from "node:path";
+import { resolve as resolve6 } from "node:path";
 
 // src/cli/tui.ts
 import { createInterface as createInterface3 } from "node:readline/promises";
@@ -30600,7 +31198,7 @@ function notSelected() {
 }
 
 // src/launch/command.ts
-import { basename as basename3 } from "node:path";
+import { basename as basename4 } from "node:path";
 var MAX_PROMPT_BYTES = 1e5;
 function planLaunch(agent, binary, dir, prompt) {
   const bytes = Buffer.byteLength(prompt, "utf8");
@@ -30629,7 +31227,7 @@ function planLaunch(agent, binary, dir, prompt) {
   };
 }
 function formatOpenCommand(input2) {
-  const findable = basename3(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
+  const findable = basename4(input2.jsonlPath).toLowerCase().includes(input2.sessionId.toLowerCase());
   const selector = input2.byFile || !findable ? `--file '${input2.jsonlPath.replace(/'/g, "'\\''")}'` : input2.sessionId.slice(0, 8);
   return `agent-tree --source ${input2.source} ${selector} --open ${input2.step} --mode ${input2.mode}`;
 }
@@ -30640,19 +31238,19 @@ import { platform } from "node:os";
 function copyToClipboard(text) {
   const cmd = pickCommand();
   if (!cmd) return Promise.resolve({ ok: false, reason: "no clipboard tool detected" });
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     try {
       const child = spawn2(cmd.command, cmd.args, { stdio: ["pipe", "ignore", "ignore"] });
       child.on("error", (err) => {
-        resolve9({ ok: false, command: cmd.command, reason: err.message });
+        resolve10({ ok: false, command: cmd.command, reason: err.message });
       });
       child.on("exit", (code) => {
-        if (code === 0) resolve9({ ok: true, command: cmd.command });
-        else resolve9({ ok: false, command: cmd.command, reason: `exit ${code}` });
+        if (code === 0) resolve10({ ok: true, command: cmd.command });
+        else resolve10({ ok: false, command: cmd.command, reason: `exit ${code}` });
       });
       child.stdin?.end(text, "utf8");
     } catch (err) {
-      resolve9({
+      resolve10({
         ok: false,
         command: cmd.command,
         reason: err instanceof Error ? err.message : String(err)
@@ -30692,9 +31290,9 @@ async function safeGitCwd(eventsCwd, callerCwd) {
 // src/utils/picks.ts
 import { randomBytes } from "node:crypto";
 import { appendFile, lstat as lstat2, mkdir as mkdir3, readFile as readFile3, readdir as readdir2 } from "node:fs/promises";
-import { homedir as homedir6 } from "node:os";
-import { dirname as dirname3, join as join7 } from "node:path";
-var PICKS_ROOT = join7(homedir6(), ".cache", "agent-tree", "picks");
+import { homedir as homedir7 } from "node:os";
+import { dirname as dirname6, join as join8 } from "node:path";
+var PICKS_ROOT = join8(homedir7(), ".cache", "agent-tree", "picks");
 var PICK_SOURCES = ["claude", "codex"];
 var SESSION_ID_RE = /^[0-9a-f-]{4,40}$/i;
 function validateSource(source) {
@@ -30707,11 +31305,11 @@ function picksFileFor(sessionId, root = PICKS_ROOT, source = "claude") {
   if (typeof sessionId !== "string" || !SESSION_ID_RE.test(sessionId)) {
     throw new Error(`refusing to compose picks path for invalid sessionId "${sessionId}"`);
   }
-  return join7(root, source, `${sessionId}.jsonl`);
+  return join8(root, source, `${sessionId}.jsonl`);
 }
 async function recordPick(sessionId, nodeId, mode, opts = {}) {
   const file2 = picksFileFor(sessionId, opts.root, opts.source);
-  await mkdir3(dirname3(file2), { recursive: true, mode: 448 });
+  await mkdir3(dirname6(file2), { recursive: true, mode: 448 });
   const entry = { node_id: nodeId, mode, ts: (/* @__PURE__ */ new Date()).toISOString() };
   await appendFile(file2, JSON.stringify(entry) + "\n", "utf8");
 }
@@ -30726,7 +31324,7 @@ async function listAllPicks(opts = {}) {
   }
   const out = [];
   for (const source of sources2) {
-    const directory = join7(root, source);
+    const directory = join8(root, source);
     let files;
     try {
       if (!(await lstat2(directory)).isDirectory()) continue;
@@ -30740,7 +31338,7 @@ async function listAllPicks(opts = {}) {
       if (!SESSION_ID_RE.test(sessionId)) continue;
       let raw;
       try {
-        raw = await readFile3(join7(directory, file2.name), "utf8");
+        raw = await readFile3(join8(directory, file2.name), "utf8");
       } catch {
         continue;
       }
@@ -30909,7 +31507,7 @@ async function buildSnapshotPrompt(ctx, ref, mode) {
   const baseSnap = mode === "fork" ? node2.context_snapshot_fork : node2.context_snapshot_continue;
   const sourceCwd = await safeGitCwd(ctx.graph.events[0]?.cwd, ctx.opts.cwd ?? process.cwd());
   const gitCtx = sourceCwd ? await getGitContext(sourceCwd) : { available: false, cwd: "" };
-  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx) : null;
+  const gitMd = gitCtx.available ? formatGitContextMarkdown(gitCtx, ctx.redactor) : null;
   const markdown = ctx.redactor.apply(
     gitMd ? appendGitSection(baseSnap.clipboard_markdown, gitMd) : baseSnap.clipboard_markdown
   );
@@ -31046,7 +31644,7 @@ var PROTECTED_DUMP_PREFIXES = [
   "/Library/LaunchAgents"
 ];
 async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
-  const outDir = resolve5(dir);
+  const outDir = resolve6(dir);
   if (PROTECTED_DUMP_PREFIXES.some((p) => outDir === p || outDir.startsWith(p + "/"))) {
     throw new Error(`refusing to dump into protected path: ${outDir}`);
   }
@@ -31059,13 +31657,13 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
   const opts = { encoding: "utf8", mode: 384, flag: "wx" };
   await Promise.all([
     writeFile3(
-      resolve5(outDir, "raw-events.json"),
+      resolve6(outDir, "raw-events.json"),
       JSON.stringify({ meta: safeMeta, events: safeEvents }, null, 2),
       opts
     ),
-    writeFile3(resolve5(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
+    writeFile3(resolve6(outDir, "graph.json"), JSON.stringify(safeGraph, null, 2), opts),
     writeFile3(
-      resolve5(outDir, "segments.json"),
+      resolve6(outDir, "segments.json"),
       JSON.stringify(
         { session_id: graph.meta.sessionId, count: safeSegments.length, segments: safeSegments },
         null,
@@ -31073,7 +31671,7 @@ async function dumpArtifacts(dir, graph, segments, mindmap, redactor) {
       ),
       opts
     ),
-    writeFile3(resolve5(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
+    writeFile3(resolve6(outDir, "tree.json"), JSON.stringify(safeTree, null, 2), opts)
   ]);
 }
 
@@ -31084,10 +31682,10 @@ import { isatty } from "node:tty";
 
 // src/launch/directory.ts
 import { stat } from "node:fs/promises";
-import { resolve as resolve6 } from "node:path";
+import { resolve as resolve7 } from "node:path";
 async function resolveLaunchDir(graph, node2, openDir) {
   if (openDir !== void 0) {
-    const wanted = resolve6(openDir);
+    const wanted = resolve7(openDir);
     const dir2 = await existingDirectory(wanted);
     return dir2 ? { ok: true, dir: dir2 } : {
       ok: false,
@@ -31129,16 +31727,16 @@ async function existingDirectory(path2) {
 }
 
 // src/launch/path.ts
-import { constants as constants3 } from "node:fs";
+import { constants as constants5 } from "node:fs";
 import { access, stat as stat2 } from "node:fs/promises";
-import { delimiter, isAbsolute as isAbsolute2, join as join8 } from "node:path";
+import { delimiter, isAbsolute as isAbsolute2, join as join9 } from "node:path";
 async function findOnPath(name, pathEnv) {
   for (const dir of (pathEnv ?? "").split(delimiter)) {
     if (!dir || !isAbsolute2(dir)) continue;
-    const candidate = join8(dir, name);
+    const candidate = join9(dir, name);
     try {
       if (!(await stat2(candidate)).isFile()) continue;
-      await access(candidate, constants3.X_OK);
+      await access(candidate, constants5.X_OK);
       return candidate;
     } catch {
     }
@@ -31148,19 +31746,19 @@ async function findOnPath(name, pathEnv) {
 
 // src/launch/run.ts
 import { spawn as nodeSpawn } from "node:child_process";
-import { constants as constants4 } from "node:os";
+import { constants as constants6 } from "node:os";
 var ignoreSigint = () => {
 };
 function runAgent(plan, hooks = {}) {
   const signals = hooks.signals ?? process;
   signals.on("SIGINT", ignoreSigint);
-  return new Promise((resolve9) => {
+  return new Promise((resolve10) => {
     let started = Promise.resolve();
     let settled = false;
     const settle2 = (outcome) => {
       if (settled) return;
       settled = true;
-      void started.then(() => resolve9(outcome));
+      void started.then(() => resolve10(outcome));
     };
     let child;
     try {
@@ -31183,7 +31781,7 @@ function runAgent(plan, hooks = {}) {
 }
 function exitStatus(code, signal) {
   if (code !== null) return code;
-  const number4 = signal ? constants4.signals[signal] : void 0;
+  const number4 = signal ? constants6.signals[signal] : void 0;
   return number4 === void 0 ? 1 : 128 + number4;
 }
 
@@ -31298,13 +31896,13 @@ function visible(text) {
 }
 function askOnTerminal(question) {
   const rl = createInterface4({ input: process.stdin, output: process.stdout, terminal: true });
-  return new Promise((resolve9) => {
-    rl.once("SIGINT", () => resolve9(false));
-    rl.once("close", () => resolve9(false));
+  return new Promise((resolve10) => {
+    rl.once("SIGINT", () => resolve10(false));
+    rl.once("close", () => resolve10(false));
     rl.question(
       `${question}
 `,
-      (answer) => resolve9(["", "y", "yes"].includes(answer.trim().toLowerCase()))
+      (answer) => resolve10(["", "y", "yes"].includes(answer.trim().toLowerCase()))
     );
   }).finally(() => rl.close());
 }
@@ -31356,7 +31954,7 @@ function formatSession(result, cwd, options) {
   const more = result.hits.length - shown.length + result.more_hits;
   const stepWidth = Math.max(...shown.map((hit) => `step ${hit.step}`.length));
   const lines = [
-    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}`,
+    `${result.source}  ${result.session_id.slice(0, 8)}  ${printable(result.project_dir)}  ${localTime(result.mtime)}${result.archived ? "  [archived]" : ""}${result.subagent ? "  [subagent]" : ""}`,
     ...shown.map(
       (hit) => `  ${`step ${hit.step}`.padEnd(stepWidth)}  ${hit.field.padEnd(FIELD_WIDTH)} ${highlight(hit.snippet, options.highlight)}`
     )
@@ -31364,9 +31962,17 @@ function formatSession(result, cwd, options) {
   if (more > 0) lines.push(`  +${more} more step${more === 1 ? "" : "s"}`);
   lines.push(
     printable(
-      `  snapshot: agent-tree --source ${result.source}${cwd} ${options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
+      `  snapshot: agent-tree --source ${result.source}${cwd} ${result.file ? `--file ${shellQuote(result.file)}` : options.commandId(result)} --snapshot ${result.hits[0].step} --mode continue`
     )
   );
+  if (result.subagent) {
+    const parent = result.subagent;
+    lines.push(
+      printable(
+        parent.parent_file && parent.parent_step !== null ? `  parent: agent-tree --source ${result.source}${cwd} --file ${shellQuote(parent.parent_file)} --snapshot ${parent.parent_step} --mode continue` : `  parent: ${parent.parent_session_id ?? "unknown"} (originating step unavailable)`
+      )
+    );
+  }
   return lines.join("\n");
 }
 function formatSummary(report, limit) {
@@ -31404,7 +32010,7 @@ function formatBytes(bytes) {
 
 // src/utils/session_path.ts
 import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
-import { basename as basename4, dirname as dirname4, extname, resolve as resolve7 } from "node:path";
+import { basename as basename5, dirname as dirname7, extname, resolve as resolve8 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
     throw new RangeError("session limit must be a nonnegative safe integer");
@@ -31415,14 +32021,14 @@ async function listSessions(opts = {}) {
   return opts.limit === void 0 ? sessions : sessions.slice(0, opts.limit);
 }
 async function sessionFromFile(filePath, source) {
-  const jsonlPath = await realpath2(resolve7(filePath));
+  const jsonlPath = await realpath2(resolve8(filePath));
   if (extname(jsonlPath) !== ".jsonl") throw new Error("session file must have a .jsonl extension");
   const info = await lstat3(jsonlPath);
   if (!info.isFile()) throw new Error("session file must be a regular file");
   return {
     source: await detectSessionSource(jsonlPath, source),
-    sessionId: basename4(jsonlPath, ".jsonl"),
-    projectDir: basename4(dirname4(jsonlPath)),
+    sessionId: basename5(jsonlPath, ".jsonl"),
+    projectDir: basename5(dirname7(jsonlPath)),
     jsonlPath
   };
 }
@@ -31431,7 +32037,7 @@ async function locateSession(sessionIdOrPrefix, opts = {}) {
   if (!isUuidPrefix(prefix) && !isFullUuid(prefix)) {
     throw new Error("session id is not a valid UUID or prefix");
   }
-  const matches = (await listSessions(opts)).filter(
+  const matches = (await listSessions({ ...opts, includeArchived: true })).filter(
     (session) => session.sessionId.toLowerCase().startsWith(prefix)
   );
   matches.sort((a, b) => {
@@ -31692,13 +32298,62 @@ async function mapSession(entry, ctx) {
   const hits = [...byStep.values()].sort((a, b) => a.step - b.step);
   return {
     source,
-    session_id: sessionId,
+    session_id: ctx.redactor.apply(sessionId),
     project_dir: ctx.redactor.apply(
       source === "claude" ? firstCwd(result.graph.events) ?? projectDir : projectDir
     ),
     mtime: new Date(entry.mtimeMs).toISOString(),
     hits: hits.slice(0, MAX_HITS_PER_SESSION),
-    more_hits: Math.max(0, hits.length - MAX_HITS_PER_SESSION)
+    more_hits: Math.max(0, hits.length - MAX_HITS_PER_SESSION),
+    ...entry.archived || entry.subagent ? { file: ctx.redactor.apply(jsonlPath) } : {},
+    ...entry.archived ? { archived: true } : {},
+    ...entry.subagent ? { subagent: await parentLink(entry, ctx) } : {}
+  };
+}
+async function parentLink(entry, ctx) {
+  const child = entry.subagent;
+  const findParent = (entries) => child.parentAgentId ? entries.find(
+    (candidate) => candidate.jsonlPath !== entry.jsonlPath && candidate.source === entry.source && candidate.subagent?.id === child.parentAgentId && candidate.subagent?.parentSessionId === child.parentSessionId
+  ) : entries.find(
+    (candidate) => candidate.source === entry.source && candidate.sessionId.toLowerCase() === child.parentSessionId?.toLowerCase() && candidate.jsonlPath !== entry.jsonlPath
+  );
+  let parent = findParent(ctx.entries ?? []);
+  let step = null;
+  try {
+    if (!parent && child.parentSessionId) {
+      const cache = ctx.relatedEntries ??= /* @__PURE__ */ new Map();
+      let entries = cache.get(entry.source);
+      if (!entries) {
+        entries = listSessions({
+          source: entry.source,
+          includeSubagents: true,
+          includeArchived: true
+        });
+        cache.set(entry.source, entries);
+      }
+      parent = findParent(await entries);
+    }
+    if (parent) {
+      const result = await runPipeline({
+        match: parent,
+        opts: { llm: false, cwd: ctx.cwd, dryRun: true },
+        config: ctx.config,
+        logger: quietLogger,
+        quiet: true,
+        usage: false
+      });
+      const event = findSpawnEvent(result.graph.events, entry);
+      if (event) step = buildStepIndex(result.mindmap).stepOfEvent(event) ?? null;
+    }
+  } catch (error62) {
+    if (!isMissingPath(error62) && !["EACCES", "EPERM", "ESTALE"].includes(error62?.code ?? ""))
+      throw error62;
+  }
+  return {
+    id: ctx.redactor.apply(child.id),
+    parent_session_id: parent ? ctx.redactor.apply(parent.sessionId) : child.parentSessionId === null ? null : ctx.redactor.apply(child.parentSessionId),
+    parent_file: parent ? ctx.redactor.apply(parent.jsonlPath) : null,
+    parent_step: step
   };
 }
 function firstCwd(events) {
@@ -31760,14 +32415,14 @@ function escapeRegExp(text) {
 }
 
 // src/search/scan.ts
-import { open as open5 } from "node:fs/promises";
+import { open as open7 } from "node:fs/promises";
 var DEFAULT_CHUNK_BYTES = 1024 * 1024;
 var NEWLINE2 = 10;
 async function scanFile(path2, matcher, onLine, options = {}) {
   const chunkBytes = options.chunkBytes ?? DEFAULT_CHUNK_BYTES;
   const overlapBytes = Math.max(0, matcher.maxNeedleBytes - 1);
   const regex = new RegExp(matcher.prefilter.source, matcher.prefilter.flags);
-  const handle = await open5(path2, "r");
+  const handle = await open7(path2, "r");
   const buffer = Buffer.allocUnsafe(chunkBytes);
   const readLine = async (start, end, chunk, chunkStart) => {
     if (start >= chunkStart) return decode3(chunk.subarray(start - chunkStart, end - chunkStart));
@@ -31850,7 +32505,8 @@ async function searchSessions(options) {
     redactor: options.redactor,
     includeToolOutput: options.includeToolOutput,
     config: options.config,
-    cwd: options.cwd
+    cwd: options.cwd,
+    entries: discovered
   };
   const controller = new AbortController();
   const scans = [];
@@ -31892,29 +32548,41 @@ async function searchSessions(options) {
     controller.abort();
     await Promise.all(scans.filter((pending) => pending !== void 0));
   }
-  const report = {
-    query: options.redactor.apply(options.query),
-    case_sensitive: matcher.caseSensitive,
-    scope: {
-      sources: [...options.sources],
-      project: options.projectCwd ?? null,
-      since_days: options.sinceDays ?? null,
-      include_tool_output: options.includeToolOutput
+  const report = redactDeep(
+    {
+      query: options.redactor.apply(options.query),
+      case_sensitive: matcher.caseSensitive,
+      scope: {
+        sources: [...options.sources],
+        project: options.projectCwd ?? null,
+        since_days: options.sinceDays ?? null,
+        include_tool_output: options.includeToolOutput
+      },
+      scanned: {
+        sessions: scannedSessions,
+        bytes: scannedBytes,
+        seconds: Math.round((performance.now() - started) / 100) / 10,
+        stopped_early: stoppedEarly
+      },
+      total_sessions: results.length,
+      results
     },
-    scanned: {
-      sessions: scannedSessions,
-      bytes: scannedBytes,
-      seconds: Math.round((performance.now() - started) / 100) / 10,
-      stopped_early: stoppedEarly
-    },
-    total_sessions: results.length,
-    results
-  };
+    options.redactor
+  );
   const known = options.projectCwd === void 0 ? discovered : null;
   return { report, matcher, commandId: (result) => shortestUniqueId(result, known) };
 }
 async function discover3(sources2, projectCwd) {
-  const lists = await Promise.all(sources2.map((source) => listSessions({ source, projectCwd })));
+  const lists = await Promise.all(
+    sources2.map(
+      (source) => listSessions({
+        source,
+        projectCwd,
+        includeSubagents: true,
+        includeArchived: true
+      })
+    )
+  );
   return lists.flat().sort(
     (a, b) => b.mtimeMs - a.mtimeMs || (a.jsonlPath < b.jsonlPath ? -1 : a.jsonlPath > b.jsonlPath ? 1 : 0)
   );
@@ -32091,6 +32759,71 @@ async function pickSession(opts = {}) {
   }
 }
 
+// src/usage/catalog.ts
+var UNAVAILABLE_CODES = /* @__PURE__ */ new Set([
+  "ENOENT",
+  "ENOTDIR",
+  "EACCES",
+  "EPERM",
+  "EISDIR",
+  "EIO",
+  "ESTALE",
+  "ELOOP"
+]);
+async function addCatalogUsage(entries, options) {
+  const { opts, config: config2, redactor } = options;
+  const emit = (level, message, extra) => options.logger[level](redactor.apply(message), redactDeep(extra, redactor));
+  const logger = {
+    level: options.logger.level,
+    trace: (message, extra) => emit("trace", message, extra),
+    debug: (message, extra) => emit("debug", message, extra),
+    info: (message, extra) => emit("info", message, extra),
+    warn: (message, extra) => emit("warn", message, extra),
+    error: (message, extra) => emit("error", message, extra)
+  };
+  const rows = [];
+  for (const entry of entries) {
+    let usage;
+    let status = "not_logged";
+    try {
+      const result = await runPipeline({
+        match: entry,
+        opts: { ...opts, llm: false, dryRun: true },
+        config: config2,
+        logger,
+        quiet: true
+      });
+      usage = result.mindmap.stats.usage;
+    } catch (error62) {
+      if (!(error62 instanceof Error) || !UNAVAILABLE_CODES.has(error62.code ?? "")) {
+        throw error62;
+      }
+      status = "unavailable";
+    }
+    rows.push(
+      usage ? {
+        ...entry,
+        usage_status: "available",
+        usage,
+        total_prompt_tokens: usage.prompt_tokens + (usage.subagents?.prompt_tokens ?? 0),
+        total_output_tokens: usage.output_tokens + (usage.subagents?.output_tokens ?? 0)
+      } : {
+        ...entry,
+        usage_status: status,
+        usage: null,
+        total_prompt_tokens: null,
+        total_output_tokens: null
+      }
+    );
+  }
+  return redactDeep(rows, redactor);
+}
+function formatCatalogUsage(entry) {
+  if (entry.usage_status === "not_logged") return "usage not logged; totals unknown";
+  if (entry.usage_status === "unavailable") return "usage unavailable; totals unknown";
+  return `total prompt ${entry.total_prompt_tokens} \xB7 total out ${entry.total_output_tokens} (main + subagents)`;
+}
+
 // src/cli.ts
 async function main(argv = process.argv) {
   const parsed = parseCliArgs(argv);
@@ -32100,7 +32833,7 @@ async function main(argv = process.argv) {
     console.error("error: --tui requires interactive input; use --list or --json instead");
     return 2;
   }
-  const projectCwd = opts.cwd ? resolve8(opts.cwd) : void 0;
+  const projectCwd = opts.cwd ? resolve9(opts.cwd) : void 0;
   const cwd = projectCwd ?? process.cwd();
   opts.cwd = cwd;
   const cwdInfo = await stat4(cwd).catch(() => null);
@@ -32119,10 +32852,11 @@ async function main(argv = process.argv) {
       limit: opts.limit ?? 20
     });
     const redactor = buildRedactor(opts, config2, logger);
-    const safeEntries = redactDeep(entries, redactor);
+    const usageEntries = opts.usage ? await addCatalogUsage(entries, { opts, config: config2, logger, redactor }) : void 0;
+    const safeEntries = usageEntries ?? redactDeep(entries, redactor);
     process.stdout.write(
       opts.json ? JSON.stringify({ sessions: safeEntries }, null, 2) + "\n" : safeEntries.map(
-        (entry) => `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}`
+        (entry, index) => `${entry.source}  ${entry.sessionId}  ${new Date(entry.mtimeMs).toISOString()}  ${entry.sizeBytes} bytes  ${entry.projectDir}` + (usageEntries ? `  ${formatCatalogUsage(usageEntries[index])}` : "")
       ).join("\n") + "\n"
     );
     return 0;
@@ -32174,7 +32908,7 @@ async function main(argv = process.argv) {
       result.mindmap,
       result.redactor
     );
-    logger.info(`dumped JSON artifacts`, { dir: resolve8(opts.dumpJson) });
+    logger.info(`dumped JSON artifacts`, { dir: resolve9(opts.dumpJson) });
   }
   if (opts.dryRun) {
     process.stderr.write("Dry-run \u2014 analysis complete, no output written.\n");
@@ -32295,7 +33029,10 @@ if (invokedDirectly) {
     if (error62.code !== "EPIPE") throw error62;
   });
   main().then(exitAfterFlush, (err) => {
-    console.error("error:", defaultRedactor().apply(err instanceof Error ? err.message : String(err)));
+    console.error(
+      "error:",
+      defaultRedactor().apply(err instanceof Error ? err.message : String(err))
+    );
     exitAfterFlush(1);
   });
 }

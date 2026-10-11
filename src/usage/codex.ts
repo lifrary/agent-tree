@@ -32,6 +32,7 @@ export function createCodexUsageCollector(): CodexUsageCollector {
   const records: PendingSample[] = [];
   const counts: PendingSample[] = [];
   const responses = new Set<string>();
+  const countResponses = new Set<string>();
   // Records precede the token_count of the same response, which carries the
   // context window the record lacks.
   let awaitingWindow: PendingSample[] = [];
@@ -56,7 +57,16 @@ export function createCodexUsageCollector(): CodexUsageCollector {
         return;
       }
       if (responseId) responses.add(responseId);
-      const sample = { ...tokens, timestamp, context_window: latestWindow, after };
+      const sample: PendingSample = {
+        ...tokens,
+        timestamp,
+        context_window: latestWindow,
+        after,
+        ...(responseId ? { response_id: responseId } : {}),
+        ...(typeof payload.thread_id === 'string' && payload.thread_id
+          ? { thread_id: payload.thread_id }
+          : {}),
+      };
       records.push(sample);
       awaitingWindow.push(sample);
     },
@@ -73,15 +83,27 @@ export function createCodexUsageCollector(): CodexUsageCollector {
         for (const sample of awaitingWindow) sample.context_window = window;
         awaitingWindow = [];
       }
+      const responseId = typeof payload.response_id === 'string' ? payload.response_id : '';
+      if (responseId && countResponses.has(responseId)) return;
       const total = codexTotalKey(info.total_token_usage);
-      if (total !== null && total === previousTotal) return;
+      if (!responseId && total !== null && total === previousTotal) return;
       if (total !== null) previousTotal = total;
       const tokens = codexCallTokens(info.last_token_usage);
       if (!tokens) {
         unrecognized += 1;
         return;
       }
-      counts.push({ ...tokens, timestamp, context_window: window ?? latestWindow, after });
+      if (responseId) countResponses.add(responseId);
+      counts.push({
+        ...tokens,
+        timestamp,
+        context_window: window ?? latestWindow,
+        after,
+        ...(responseId ? { response_id: responseId } : {}),
+        ...(typeof payload.thread_id === 'string' && payload.thread_id
+          ? { thread_id: payload.thread_id }
+          : {}),
+      });
     },
     finish(eventAt) {
       return (records.length > 0 ? records : counts).map(({ after, ...sample }) => ({
