@@ -4,10 +4,10 @@ All notable changes to this project are documented here. The format follows [Kee
 
 ## [Unreleased]
 
-### 0.6.0 — recovery, search coverage and usage
+## [v0.6.0] — 2026-10-11
 
-This release combines the 0.5 and 0.6 roadmap milestones. It is not yet
-published to npm; there is no separate 0.5.0 publication.
+This release combines the 0.5 and 0.6 roadmap milestones: recovery,
+search coverage and usage. There is no separate 0.5.0 release.
 
 ### Added
 
@@ -37,7 +37,14 @@ published to npm; there is no separate 0.5.0 publication.
   prefixes, preserving usable file selectors while still redacting cards.
 - Git context is explicitly current, with redaction before display shortening.
 - The roadmap now prioritizes finding and resuming reliably, then complete
-  usage accounting; release metadata is prepared for 0.6.0.
+  usage accounting.
+
+### Fixed
+
+- Canonical native Codex paths retain child usage and cache invalidation
+  when the configured home uses filesystem ancestor aliases, including
+  macOS `/var` and `/private/var`. Native symlink and regular-file checks
+  remain enforced.
 
 ### Limits
 

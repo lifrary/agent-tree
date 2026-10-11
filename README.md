@@ -40,10 +40,12 @@ If agent-tree saves you a scroll, a ⭐ on GitHub helps others find it.
 ## Install
 
 ```bash
-npm install -g @seungwoolee/agent-tree
+npm install -g @seungwoolee/agent-tree@latest
+agent-tree --version
 ```
 
 This installs the `agent-tree` command and its short alias `atree`. It needs Node.js 22.13 or later. To let Claude browse sessions for you, add [the Claude Code plugin](#use-it-inside-claude-code) as well.
+Run the same install command to upgrade an existing installation.
 
 New work lands on `main` first and reaches npm with the next release, so npm can trail `main`; `npm view @seungwoolee/agent-tree version` shows what npm has.
 
@@ -84,10 +86,30 @@ agent-tree --list --usage              # tokens per step and how full the contex
 agent-tree --open 7                    # start a new session from step 7, no paste
 agent-tree --picks                     # every starred step, across sessions
 agent-tree --sessions --limit 10       # recent sessions, all projects
+agent-tree --sessions --usage --limit 5 # opt-in main + child token totals
 agent-tree 3f9c2a71 --list             # a specific session, by ID prefix
 ```
 
 If `ANTHROPIC_API_KEY` is set, agent-tree also asks Claude for short step labels, which bills your Anthropic account. Add `--no-llm` to skip that. `agent-tree --help` lists every option.
+
+### New in 0.6.0
+
+Version 0.6.0 combines the recovery/search and usage milestones:
+
+- **Recover context, not just one prompt.** Continue carries bounded prior
+  instructions, replies and recorded compaction summaries. Fork stops before
+  the selected question's subsequent work. Cutoffs and missing context are
+  explicit; neither mode restores historical files.
+- **Find archived and delegated work.** Search includes Codex archives and
+  both agents' child transcripts, with file selectors and proven parent steps.
+- **Account for Codex children.** Descendant tokens stay separate from main
+  usage; evidenced inherited calls are deduplicated and unknown attribution
+  is labeled rather than guessed.
+- **Compare recent sessions on demand.** `--sessions --usage` and MCP
+  `agent_tree_sessions` with `usage: true` add token totals. The default
+  catalog stays metadata-only; absent usage is not reported as zero.
+
+See the [0.6.0 changelog](./CHANGELOG.md#v060--2026-10-11) for details and limits.
 
 ## Features
 
@@ -647,9 +669,9 @@ Before every paid request, agent-tree counts the prepared prompt with `messages.
   duplicate inherited calls, distinguish unassigned usage, and offer opt-in
   session-list totals without slowing the default catalog.
 
-The 0.5 and 0.6 milestones were implemented together for 0.6.0. Repository
-implementation and npm publication are separate; the latest published release
-remains 0.4.0 until the release checklist is completed.
+The 0.5 and 0.6 milestones ship together in **0.6.0**; there is no separate
+0.5.0 release. Check [GitHub releases](https://github.com/lifrary/agent-tree/releases)
+and `npm view @seungwoolee/agent-tree version` for distribution availability.
 
 Have an idea or hit a bug? [Open an issue](https://github.com/lifrary/agent-tree/issues).
 
