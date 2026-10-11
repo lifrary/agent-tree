@@ -1,5 +1,5 @@
 import { constants, type Stats } from 'node:fs';
-import { open } from 'node:fs/promises';
+import { open, realpath } from 'node:fs/promises';
 import type { FileHandle } from 'node:fs/promises';
 import { homedir } from 'node:os';
 import { dirname, join, relative, resolve, sep } from 'node:path';
@@ -120,9 +120,20 @@ async function sessionEntry(jsonlPath: string, filenameId: string): Promise<Sess
 
 /** Validate an exact native selection independently of UUID catalog deduplication. */
 export async function nativeCodexEntry(jsonlPath: string): Promise<SessionEntry | null> {
-  const home = resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
+  let home = resolve(process.env.CODEX_HOME || join(homedir(), '.codex'));
   const path = resolve(jsonlPath);
-  const parts = relative(home, path).split(sep);
+  let parts = relative(home, path).split(sep);
+  const directories: Array<{ path: string; info: Stats }> = [];
+  if (parts[0] !== 'sessions' && parts[0] !== 'archived_sessions') {
+    // Explicit file selection is canonicalized, but configured homes can use
+    // OS ancestor aliases such as macOS /var -> /private/var. Resolve only the
+    // trusted home, never an unvalidated selected file or native subdirectory.
+    const original = await lstatIfPresent(home);
+    if (!original?.isDirectory()) return null;
+    directories.push({ path: home, info: original });
+    home = await realpath(home);
+    parts = relative(home, path).split(sep);
+  }
   const archived = parts[0] === 'archived_sessions';
   if (parts[0] !== 'sessions' && !archived) return null;
   const dates = parts.slice(1, -1);
@@ -135,7 +146,6 @@ export async function nativeCodexEntry(jsonlPath: string): Promise<SessionEntry 
   const match = ROLLOUT_NAME.exec(parts[parts.length - 1]);
   if (!match || !isFullUuid(match[1])) return null;
 
-  const directories: Array<{ path: string; info: Stats }> = [];
   let directory = home;
   for (const part of ['', ...parts.slice(0, -1)]) {
     directory = join(directory, part);

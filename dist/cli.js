@@ -8891,7 +8891,7 @@ var claudeSource = {
 
 // src/sources/codex.ts
 import { constants as constants2 } from "node:fs";
-import { open as open2 } from "node:fs/promises";
+import { open as open2, realpath } from "node:fs/promises";
 import { homedir as homedir4 } from "node:os";
 import { dirname as dirname2, join as join4, relative, resolve as resolve3, sep } from "node:path";
 
@@ -9528,9 +9528,17 @@ async function sessionEntry(jsonlPath, filenameId) {
   }
 }
 async function nativeCodexEntry(jsonlPath) {
-  const home = resolve3(process.env.CODEX_HOME || join4(homedir4(), ".codex"));
+  let home = resolve3(process.env.CODEX_HOME || join4(homedir4(), ".codex"));
   const path2 = resolve3(jsonlPath);
-  const parts = relative(home, path2).split(sep);
+  let parts = relative(home, path2).split(sep);
+  const directories = [];
+  if (parts[0] !== "sessions" && parts[0] !== "archived_sessions") {
+    const original = await lstatIfPresent(home);
+    if (!original?.isDirectory()) return null;
+    directories.push({ path: home, info: original });
+    home = await realpath(home);
+    parts = relative(home, path2).split(sep);
+  }
   const archived = parts[0] === "archived_sessions";
   if (parts[0] !== "sessions" && !archived) return null;
   const dates = parts.slice(1, -1);
@@ -9538,7 +9546,6 @@ async function nativeCodexEntry(jsonlPath) {
     return null;
   const match = ROLLOUT_NAME.exec(parts[parts.length - 1]);
   if (!match || !isFullUuid(match[1])) return null;
-  const directories = [];
   let directory = home;
   for (const part of ["", ...parts.slice(0, -1)]) {
     directory = join4(directory, part);
@@ -31271,7 +31278,7 @@ function pickCommand() {
 }
 
 // src/utils/safe_path.ts
-import { realpath } from "node:fs/promises";
+import { realpath as realpath2 } from "node:fs/promises";
 import { isAbsolute } from "node:path";
 async function safeGitCwd(eventsCwd, callerCwd) {
   for (const candidate of [eventsCwd, callerCwd]) {
@@ -31279,7 +31286,7 @@ async function safeGitCwd(eventsCwd, callerCwd) {
       continue;
     }
     try {
-      const real = await realpath(candidate);
+      const real = await realpath2(candidate);
       if (isAbsolute(real)) return real;
     } catch {
     }
@@ -32009,7 +32016,7 @@ function formatBytes(bytes) {
 }
 
 // src/utils/session_path.ts
-import { lstat as lstat3, realpath as realpath2 } from "node:fs/promises";
+import { lstat as lstat3, realpath as realpath3 } from "node:fs/promises";
 import { basename as basename5, dirname as dirname7, extname, resolve as resolve8 } from "node:path";
 async function listSessions(opts = {}) {
   if (opts.limit !== void 0 && (!Number.isSafeInteger(opts.limit) || opts.limit < 0)) {
@@ -32021,7 +32028,7 @@ async function listSessions(opts = {}) {
   return opts.limit === void 0 ? sessions : sessions.slice(0, opts.limit);
 }
 async function sessionFromFile(filePath, source) {
-  const jsonlPath = await realpath2(resolve8(filePath));
+  const jsonlPath = await realpath3(resolve8(filePath));
   if (extname(jsonlPath) !== ".jsonl") throw new Error("session file must have a .jsonl extension");
   const info = await lstat3(jsonlPath);
   if (!info.isFile()) throw new Error("session file must be a regular file");

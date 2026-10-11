@@ -4,6 +4,7 @@ import {
   copyFileSync,
   mkdirSync,
   mkdtempSync,
+  realpathSync,
   renameSync,
   rmSync,
   symlinkSync,
@@ -458,6 +459,23 @@ describe('per-entry Codex catalog isolation', () => {
 });
 
 describe('exact selected native Codex root', () => {
+  it('accepts a canonical selection through a trusted home ancestor alias', async () => {
+    const parent = rollout(ROOT, { lines: spawn() });
+    rollout(CHILD, { parent: ROOT, lines: [usage('child-response')] });
+    const ancestorAlias = join(temporary, 'ancestor-alias');
+    symlinkSync(temporary, ancestorAlias, 'dir');
+    vi.stubEnv('CODEX_HOME', join(ancestorAlias, 'codex'));
+    const canonicalParent = realpathSync(parent);
+    expect(await nativeCodexEntry(canonicalParent)).toMatchObject({
+      sessionId: ROOT,
+      jsonlPath: canonicalParent,
+    });
+    expect(await usageAt(canonicalParent)).toMatchObject([
+      { agentId: CHILD, calls: 1, prompt_tokens: 10 },
+    ]);
+    expect(await codexSubagentSignature(canonicalParent)).toMatch(/^[0-9a-f]{64}$/);
+  });
+
   it('uses an archived selected duplicate without losing children or append-sensitive signatures', async () => {
     const active = rollout(ROOT);
     const archived = rollout(ROOT, { archived: true, lines: spawn() });
