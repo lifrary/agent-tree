@@ -27,6 +27,8 @@ import type { SessionSourceId } from '../sources/types.js';
 import { readOnly, safely, sourceInput, text } from './common.js';
 import { registerSearchTool } from './search.js';
 import { subagentSignature } from '../usage/subagents.js';
+import { codexSubagentSignature } from '../usage/codex_subagents.js';
+import { addCatalogUsage } from '../usage/catalog.js';
 
 const logger = createLoggerSync('warn');
 const sessionInput = {
@@ -79,8 +81,10 @@ export function createServer(): McpServer {
       info.mtimeMs,
       info.ctimeMs,
       info.size,
-      // Usage also reads Claude subagent transcripts, which grow on their own.
-      match.source === 'claude' ? await subagentSignature(match.jsonlPath) : '',
+      // Child transcripts can grow while the main transcript stays unchanged.
+      match.source === 'claude'
+        ? await subagentSignature(match.jsonlPath)
+        : await codexSubagentSignature(match.jsonlPath),
       input.cwd,
       config,
     ]);
@@ -111,7 +115,7 @@ export function createServer(): McpServer {
     'agent_tree_sessions',
     {
       description:
-        'List recent sessions for one source (default claude). Codex reads metadata headers only. Returns sources, ids, paths, modification times and sizes.',
+        'List recent sessions for one source (default claude). By default Claude is parse-free and Codex reads metadata headers only. Returns sources, ids, paths, modification times and sizes. Opt-in usage adds main/child token counts and combined totals with extra log reads, never LLM calls.',
       inputSchema: {
         source: sourceInput,
         cwd: z
@@ -121,14 +125,23 @@ export function createServer(): McpServer {
           .optional()
           .describe('Restrict discovery to this project. Omit to search all projects.'),
         limit: z.number().int().min(1).max(1000).default(20),
+        usage: z
+          .boolean()
+          .optional()
+          .describe(
+            'Read the limited sessions and child logs for token totals; extra reads, no LLM.',
+          ),
       },
       annotations: readOnly,
     },
-    safely(async ({ cwd, limit, source }) => {
+    safely(async ({ cwd, limit, source, usage }) => {
       if (cwd && !(await stat(cwd)).isDirectory()) throw new Error('cwd must name a directory.');
       const { config } = await loadConfig({ projectCwd: cwd, logger });
       const redactor = buildRedactor({}, config, logger);
-      const sessions = redactDeep(await listSessions({ source, projectCwd: cwd, limit }), redactor);
+      const entries = await listSessions({ source, projectCwd: cwd, limit });
+      const sessions = usage
+        ? await addCatalogUsage(entries, { opts: { cwd }, config, logger, redactor })
+        : redactDeep(entries, redactor);
       return { ...text(JSON.stringify({ sessions }, null, 2)), structuredContent: { sessions } };
     }),
   );
@@ -205,7 +218,7 @@ export function createServer(): McpServer {
         input.mode === 'fork' ? node.context_snapshot_fork : node.context_snapshot_continue;
       const sourceCwd = await safeGitCwd(graph.events[0]?.cwd, input.cwd);
       const git = sourceCwd ? await getGitContext(sourceCwd) : null;
-      const gitMd = git?.available ? formatGitContextMarkdown(git) : null;
+      const gitMd = git?.available ? formatGitContextMarkdown(git, redactor) : null;
       let markdown = snap.clipboard_markdown;
       if (gitMd) {
         const index = markdown.indexOf('## Full session reference');

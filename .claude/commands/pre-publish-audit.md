@@ -7,6 +7,12 @@ You are running the agent-tree pre-publish audit. **Halt and report on the FIRST
 
 All paths below are relative to repo root (cwd is already the repo). Each code block starts with `set -euo pipefail` so a failed intermediate does not silently propagate to a green PASS.
 
+For 0.6.0, verify the combined 0.5/0.6 milestones: bounded recovery evidence
+and fork cutoffs, child/archive search and parent provenance, Codex descendant
+usage, and opt-in CLI/MCP catalog totals. Default catalogs must remain
+metadata-only. Run the installed-tarball `npm run smoke:release` as well as
+the regression suite. Passing these checks is not permission to publish.
+
 ## Check 1 — Version sync (6 fields)
 
 `package.json#version` is canonical. These five files / six fields must all match it:

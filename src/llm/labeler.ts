@@ -3,7 +3,8 @@
  *
  * Takes a heuristic-built MindMap + the underlying graph/segments and mutates
  * topic nodes with LLM-derived label/summary/type/color + upgrades
- * continue/fork snapshot markdown using verbatim last-user-msg and LLM bullets.
+ * continue snapshot markdown with LLM bullets. Deterministic history and fork
+ * prompts remain anchored to their original source-occurrence cutoffs.
  *
  * Graceful degrade per §7.8: each segment is independent. If the LLM call
  * fails for one, that segment keeps its heuristic label and the rest of the
@@ -22,7 +23,7 @@ import {
 import type { Redactor } from '../utils/redact.js';
 import { eventsForSegment } from '../analyzer/segments.js';
 
-import { buildContinueSnapshot, buildForkSnapshot } from '../tree/context_snapshot.js';
+import { buildContinueSnapshot } from '../tree/context_snapshot.js';
 
 import { SYSTEM_PROMPT, buildSegmentUserMessage } from './prompts.js';
 
@@ -240,11 +241,11 @@ function applyResult(
     entry.node.icon = '💀';
   }
 
-  // Rebuild snapshots from scratch with LLM enrichment. Cleaner than the old
-  // regex-replace dance — the snapshot factory handles both heuristic and
-  // enriched cases, and we never have stale "M3 placeholder" strings linger.
-  // Pre-redact next_steps too so the snapshot factory doesn't have to know
-  // which fields are LLM-derived vs user-text.
+  // Reuse bounded deterministic history, not just this segment's events.
+  // Fork snapshots are deliberately untouched: labels, summaries, files and
+  // suggestions from a whole segment may reveal work after its question.
+  const evidence = entry.node.context_snapshot_continue.evidence;
+  if (!evidence) return;
   const safeNextSteps = redactor
     ? label.next_steps.map((s) => redactor.apply(s))
     : label.next_steps;
@@ -255,7 +256,7 @@ function applyResult(
     label: entry.node.label,
     segment: entry.segment,
     generatedAt: new Date().toISOString(),
-    events: entry.events,
+    evidence,
     llm: {
       label: safeLabel,
       summary: safeSummary,
@@ -264,5 +265,4 @@ function applyResult(
     redactor,
   };
   entry.node.context_snapshot_continue = buildContinueSnapshot(snapInput);
-  entry.node.context_snapshot_fork = buildForkSnapshot(snapInput);
 }

@@ -174,17 +174,33 @@ Every step comes with two resume prompts.
 
 A resume prompt is plain markdown: where it came from, the files involved and your last instruction at that point, plus the current branch, recent commits and status of the git repository the session worked in. In a terminal it lands on your clipboard; paste it as the first message of a new session.
 
+Snapshots include bounded, attributed transcript evidence from before the chosen
+cutoff, not just the selected instruction. Continue includes work through the
+selected segment; fork stops at the first question anchoring that step, before
+its subsequent work or later questions in the same segment. Omitted
+evidence is identified with source references, not silently summarized away.
+These are context prompts, not native session or file restoration. The Git
+section describes the repository **now**, not its state at the historical step.
+Evidence is capped at 32 excerpts (4,096 UTF-8 bytes each), with a 36,000-byte
+rendered evidence budget. Each snapshot traverses at most 512 ancestral
+occurrences and preserves provable original/current instruction anchors.
+Older omitted context is explicitly unknown; omission counts are lower bounds
+when traversal stops early. Arbitrary system instructions and private reasoning
+are excluded; explicitly recorded compaction summaries are labeled as summaries.
+
 ```console
 $ agent-tree 3f9c2a71 --snapshot 7 --mode fork
-# Forking at: "Store sessions in Redis instead of memory" (discarding future)
+# Forking at: n_007 (discarding future)
 
-**Source session**: `3f9c2a71-5b8e-4d02-9a64-1c7e0b2d8f45` (events 14–19)
-**Mode**: fork (discarding subsequent turns from original session)
+**Source session**: `3f9c2a71-5b8e-4d02-9a64-1c7e0b2d8f45`
+**Node**: `n_007`
+**Mode**: fork
+**Evidence cutoff**: source event 14 (inclusive)
 …
 ## What I want you to DO
-- Ignore whatever path the original session took after this.
-- Re-approach the open question fresh.
-- You may suggest different architecture / file layout / tools.
+- Ignore the original session’s work after the evidence cutoff.
+- Re-approach the quoted question, or the work immediately after the stated boundary, fresh.
+- Verify files and assumptions before making changes.
 …
 ```
 
@@ -204,7 +220,12 @@ claude  cccc1111  /tmp/usage-proj  2026-10-10 14:48
 
 It reads every project and both agents unless you narrow it with `--cwd`, `--source` or `--since <days>`. It matches your prompts, the agent's replies and the commands and paths it used; add `--include-tool-output` to match tool results too. A lowercase query ignores the case of ASCII letters, and any capital letter makes it exact; letters outside ASCII, such as `é`, match only as typed. `--json` prints the results for scripts, and Claude gets the same search as the `agent_tree_search` tool.
 
-Search reads the main Claude Code transcripts and Codex sessions that `--sessions` lists. It does not read Claude Code subagent transcripts or Codex sessions archived under `~/.codex/session_archives/`. It skips its own `agent-tree --search` commands and `agent_tree_search` calls, but anything else that quotes the query, such as a message about it, is a real match, so a fresh search can find the session it was typed in.
+Search includes Claude Code and Codex subagent transcripts and Codex sessions
+under `<CODEX_HOME or ~/.codex>/archived_sessions/`. Child and archived results
+include an exact `--file` snapshot command. A child also links to its parent's
+originating step when the logs prove that relationship; otherwise the step is
+explicitly unavailable. Search skips its own `agent-tree --search` commands
+and `agent_tree_search` calls, but other text quoting the query remains a match.
 
 ### Token usage per step
 
@@ -217,7 +238,29 @@ $ agent-tree --list --usage
 3. └─ "Now write the tests for the parser please"  (0 actions · 1 file · 0min) T+20m  events 7–13  prompt 3.6k · out 49 · ctx 3.1k
 ```
 
-`prompt` counts every token the model read, cached or not, and `out` what it wrote. `ctx` is the largest prompt in the step, so you can see where the context filled up; Codex rows also show the model's window (`ctx 179k/258k`). A step that compacted the context shows it (Codex logs no counts, so its rows say only `compacted`), and subagent work appears beside the main numbers instead of inside them. Claude Code does not log the model's context window, so its rows show the context size without a limit, and Codex subagent sessions are not yet counted toward the step that started them. `--json` includes this usage whenever the session logged it.
+`prompt` counts every token the model read, cached or not, and `out` what it wrote.
+`ctx` is the largest prompt in the step; Codex also logs the model's window
+(`ctx 179k/258k`). Compactions and subagent usage appear beside the main numbers,
+not inside them. Claude Code does not log its model's context window. Both
+sources attribute linked subagent work to the initiating step, including nested
+children; usage with known session ancestry but no proven step remains at the
+session root. Portable exports do not pull in unrelated host Codex transcripts.
+`--json` includes usage whenever the session logged it.
+Unlinked descendants are marked `unattributed` in text and
+`subagents.unattributed_count` in JSON. Response IDs, thread IDs and timestamp
+evidence prevent inherited-call duplication when available; logs missing all
+such evidence cannot prove which history was copied. Totals describe available
+logs, not an independently verified billing ledger.
+
+For totals across recent sessions, use `agent-tree --sessions --usage` (or
+`agent_tree_sessions` with `usage: true`). This explicitly opts into transcript
+reads, only after `--limit` selects the rows; the default catalog remains cheap.
+Main and subagent usage stay separately available, alongside their combined
+prompt/output totals. Missing usage and unavailable files are not reported as
+zero, and token totals are not monetary cost estimates.
+Usage-enabled JSON catalog rows add `usage_status` (`available`, `not_logged`
+or `unavailable`), `usage`, `total_prompt_tokens` and `total_output_tokens`.
+Unavailable or unlogged totals are `null`; logged zeros remain numeric zero.
 
 ### Open a session from any step
 
@@ -250,7 +293,11 @@ A Codex resume prompt is a copy-paste context prompt, not a native `codex resume
 
 <br>
 
-Discovery reads only the metadata header of each rollout under `<CODEX_HOME or ~/.codex>/sessions/`. It skips subagent sessions and symlinks; `--file` can still open a subagent export. `--cwd` matches the working directory recorded in the header. Archived sessions are not scanned; open those with `--file`.
+The default catalog reads only metadata headers under
+`<CODEX_HOME or ~/.codex>/sessions/`, excluding child sessions and symlinks.
+Search additionally discovers children and `archived_sessions/`; explicit
+session IDs can resolve archived main sessions. `--file` opens exact transcripts,
+including child exports. `--cwd` matches the metadata working directory.
 
 Messages, tool calls and results, patch file paths and public reasoning summaries go through the same analysis as Claude logs. Duplicate message notifications are counted once, compaction summaries stay as system events, and encrypted reasoning is not decoded. A rollout is a chronological log, not a reconstructed fork tree.
 
@@ -443,6 +490,7 @@ Use the absolute path of your own install; after `npm install -g`, it is `$(npm 
 | "show my starred steps" / "remove that star" | `agent_tree_picks({})` / `agent_tree_unstar({ cwd, nodeId })` |
 | "where did we fix the redactor?"             | `agent_tree_search({ cwd, query: "redactor" })`, then a snapshot |
 | "where did the context fill up?"             | `agent_tree_list({ cwd, usage: true, phasesOnly: true })`     |
+| "how many tokens did recent sessions use?"   | `agent_tree_sessions({ cwd, usage: true, limit: 10 })`       |
 
 On the command line, the same requests map to `--sessions`, `--list`, `--snapshot <n> --mode <mode>`, `--diff <a> <b>`, `--picks`, `--unstar <n>` and `--search <text>`.
 
@@ -510,7 +558,7 @@ Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", 
 | `--file <path>`                                                       | —                   | read a Claude Code or Codex JSONL file; auto-detect its source                 |
 | `--source <claude\|codex>`                                            | Claude discovery; automatic file detection | select the session source                               |
 | `--cwd <dir>`                                                         | current directory   | project for discovery and `.agent-tree.yaml`                                   |
-| `--sessions`                                                          | off                 | list sessions without analyzing them; all projects unless `--cwd`              |
+| `--sessions`                                                          | off                 | list recent main sessions; opt into analysis with `--usage`; all projects unless `--cwd` |
 | `--limit <n>`                                                         | `20` / `10`         | how many sessions `--sessions` lists or `--search` reports                     |
 | `--json`                                                              | off                 | complete redacted tree, or the `--sessions` catalog                            |
 | `--strict`                                                            | off                 | fail on malformed JSONL instead of recovering                                  |
@@ -528,7 +576,7 @@ Inputs are validated with zod. Success returns `{ "content": [{ "type": "text", 
 | `--search <text>`                                                     | —                   | sessions and steps where the text appears; all projects and agents             |
 | `--since <days>`                                                      | —                   | with `--search`, only sessions changed in the last N days                      |
 | `--include-tool-output`                                               | off                 | with `--search`, also match tool results                                       |
-| `--usage`                                                             | off                 | token usage per step in the tree                                               |
+| `--usage`                                                             | off                 | token usage per tree step, or opt-in totals with `--sessions`                   |
 | `--open <id>`                                                         | —                   | start a new agent session from one step's resume prompt                        |
 | `--agent <claude\|codex>`                                             | the session's agent | which agent `--open` starts                                                    |
 | `--open-dir <dir>`                                                    | the step's directory | where `--open` starts the agent                                                |
@@ -592,9 +640,16 @@ Before every paid request, agent-tree counts the prepared prompt with `messages.
 - [x] **0.2** (October 2026, npm 0.2.1): session catalog, portable session files, JSON export, layered configuration, and support for the current Claude Code log format
 - [x] **0.3** (October 2026): a session-source interface, so logs from other coding agents can plug in, and Codex CLI sessions
 - [x] **0.4** (October 2026): search across sessions, token usage per step, and opening a new Claude Code or Codex session from any step
-- [ ] **Search subagent work and archived sessions**: reach Claude Code subagent transcripts and the Codex sessions moved to `~/.codex/session_archives/`
-- [ ] **Codex subagent usage**: count each Codex subagent's tokens against the step that started it
-- [ ] **Token totals in the session list**: show each session's total usage next to it in `--sessions`
+- [x] **0.5 — Find and resume reliably**: bounded, source-attributed recovery
+  context with explicit continue/fork cutoffs; search child and archived
+  transcripts and link results to their original files and proven parent steps.
+- [x] **0.6 — Complete usage accounting**: attribute Codex descendants without
+  duplicate inherited calls, distinguish unassigned usage, and offer opt-in
+  session-list totals without slowing the default catalog.
+
+The 0.5 and 0.6 milestones were implemented together for 0.6.0. Repository
+implementation and npm publication are separate; the latest published release
+remains 0.4.0 until the release checklist is completed.
 
 Have an idea or hit a bug? [Open an issue](https://github.com/lifrary/agent-tree/issues).
 

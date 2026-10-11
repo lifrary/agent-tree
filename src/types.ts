@@ -167,6 +167,31 @@ export interface TopicSegment {
 
 export type NodeType = 'root' | 'topic' | 'action' | 'decision' | 'error' | 'dead_end' | 'turn';
 
+/** A redacted verbatim excerpt, attributed to a source-array occurrence. */
+export interface SnapshotEvidenceEntry {
+  event_index: number; // zero-based source event index, not a JSONL line number
+  event_uuid: string;
+  role: 'user' | 'assistant' | 'compaction'; // recorded compaction is not an instruction
+  is_sidechain: boolean;
+  text: string;
+  omitted_bytes: number; // UTF-8 bytes removed AFTER redaction
+}
+
+/** Bounded deterministic evidence; never a reconstructed file/session state. */
+export interface SnapshotEvidence {
+  scope: 'segment' | 'root' | 'sidechains';
+  cutoff_index: number | null; // inclusive; null means no source events admitted
+  cutoff_reason: 'segment_end' | 'selection_end' | 'question' | 'before_segment' | 'no_question';
+  instruction_index: number | null;
+  entries: SnapshotEvidenceEntry[];
+  omitted_entries: number; // lower bound when traversal_truncated, otherwise exact
+  truncated_entries: number;
+  excluded_events: number; // observed unselected ancestor occurrences, never quoted
+  ancestry_gaps: number; // observed missing/ambiguous parent links; no invented ancestry
+  scanned_events: number; // source occurrences visited during the bounded ancestry scan
+  traversal_truncated: boolean; // additional context/exclusions/gaps may remain uncounted
+}
+
 export interface ContextSnapshot {
   mode: 'continue' | 'fork';
   session_id: string;
@@ -174,6 +199,7 @@ export interface ContextSnapshot {
   clipboard_markdown: string;
   related_files: Array<{ path: string; summary: string }>;
   next_steps: string[];
+  evidence?: SnapshotEvidence;
 }
 
 export interface MindMapNode {
@@ -232,7 +258,14 @@ export interface StepUsage {
   context_window: number | null;
   compactions: Array<{ pre_tokens: number | null; post_tokens: number | null; trigger: string }>;
   /** Subagent calls, reported beside the main numbers and never added into them. */
-  subagents?: { count: number; calls: number; prompt_tokens: number; output_tokens: number };
+  subagents?: {
+    count: number;
+    calls: number;
+    prompt_tokens: number;
+    output_tokens: number;
+    /** Included in the totals, but no initiating display step could be proven. */
+    unattributed_count?: number;
+  };
 }
 
 export interface MindMap {

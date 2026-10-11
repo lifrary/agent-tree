@@ -175,7 +175,12 @@ describe('buildMindMap sidechain selection', () => {
       );
       for (const snapshot of [node.context_snapshot_continue, node.context_snapshot_fork]) {
         expect(snapshot.clipboard_markdown).toContain(instructions[index]);
-        expect(snapshot.related_files.map((file) => file.path)).toEqual(['src/parser.ts']);
+        expect(snapshot.related_files.map((file) => file.path)).toEqual(
+          snapshot.mode === 'continue' ? ['src/parser.ts'] : [],
+        );
+        if (snapshot.mode === 'fork') {
+          expect(snapshot.evidence?.cutoff_index).toBe(index === 0 ? 2 : 6);
+        }
       }
     });
     const serialized = JSON.stringify(mm);
@@ -219,8 +224,14 @@ describe('buildMindMap sidechain selection', () => {
       expect(snapshot.clipboard_markdown).toContain('Now implement the main parser');
     }
     for (const snapshot of [action.context_snapshot_continue, action.context_snapshot_fork]) {
-      expect(snapshot.related_files.map((file) => file.path)).toEqual(['src/parser.ts']);
-      expect(snapshot.clipboard_markdown).not.toContain('user instruction');
+      expect(snapshot.related_files.map((file) => file.path)).toEqual(
+        snapshot.mode === 'continue' ? ['src/parser.ts'] : [],
+      );
+      expect(
+        snapshot.evidence?.entries
+          .filter((entry) => entry.role === 'user')
+          .map((entry) => entry.text),
+      ).toEqual(['Now implement the main parser']);
     }
     expect(JSON.stringify(mm)).not.toContain('hidden delegated');
     expect(JSON.stringify(mm)).not.toContain('Next validate');
@@ -284,7 +295,9 @@ describe('buildMindMap sidechain selection', () => {
     mm.root.children.forEach((node, index) => {
       for (const snapshot of [node.context_snapshot_continue, node.context_snapshot_fork]) {
         expect(snapshot.clipboard_markdown).toContain(expectedInstructions[index]);
-        expect(snapshot.related_files.map((file) => file.path)).toEqual([expectedFiles[index]]);
+        expect(snapshot.related_files.map((file) => file.path)).toEqual(
+          snapshot.mode === 'continue' ? [expectedFiles[index]] : [],
+        );
       }
     });
     expect(graph.events).toBe(events);

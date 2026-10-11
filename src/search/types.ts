@@ -21,6 +21,16 @@ export interface SessionResult {
   hits: SearchHit[];
   /** Matching steps beyond `hits`. */
   more_hits: number;
+  /** Present for archived/child transcripts, which should be opened by exact file. */
+  file?: string;
+  archived?: boolean;
+  subagent?: {
+    id: string;
+    parent_session_id: string | null;
+    parent_file: string | null;
+    /** Null means the transcript does not prove an originating step. */
+    parent_step: number | null;
+  };
 }
 
 export interface SearchReport {

@@ -8,6 +8,7 @@
  */
 
 import { spawn } from 'node:child_process';
+import { defaultRedactor, redactDeep, type Redactor } from './redact.js';
 
 export interface GitContext {
   cwd: string;
@@ -15,7 +16,7 @@ export interface GitContext {
   branch?: string;
   shortHead?: string;
   recentCommits?: string[]; // up to 3, oneline
-  status?: string; // condensed `git status -s` (truncated)
+  status?: string; // bounded capture; display truncation happens after redaction
   reason?: string; // when `available === false`
 }
 
@@ -58,7 +59,7 @@ export async function getGitContext(cwd: string): Promise<GitContext> {
           .map((l) => l.trim())
           .filter((l) => l.length > 0)
       : undefined,
-    status: statusR.ok ? truncate(statusR.stdout.trim(), 800) : undefined,
+    status: statusR.ok ? statusR.stdout.trim() : undefined,
   };
 }
 
@@ -122,20 +123,24 @@ function truncate(s: string, max: number): string {
   return s.slice(0, Math.max(0, max - 1)) + '…';
 }
 
-export function formatGitContextMarkdown(ctx: GitContext): string | null {
+export function formatGitContextMarkdown(
+  context: GitContext,
+  redactor: Redactor = defaultRedactor(),
+): string | null {
+  const ctx = redactDeep(context, redactor);
   if (!ctx.available) return null;
   const lines: string[] = [];
-  lines.push('## Git context (at snapshot time)');
-  if (ctx.branch) lines.push(`- branch: \`${ctx.branch}\``);
+  lines.push('## Git context (current checkout, not historical)');
+  if (ctx.branch) lines.push(`- branch: \`${truncate(ctx.branch, 512)}\``);
   if (ctx.shortHead) lines.push(`- HEAD: \`${ctx.shortHead}\``);
   if (ctx.recentCommits && ctx.recentCommits.length > 0) {
     lines.push('- recent commits:');
-    for (const c of ctx.recentCommits) lines.push(`  - \`${c}\``);
+    for (const c of ctx.recentCommits.slice(0, 3)) lines.push(`  - \`${truncate(c, 800)}\``);
   }
   if (ctx.status && ctx.status.length > 0) {
     lines.push('- working tree:');
     lines.push('  ```');
-    for (const line of ctx.status.split('\n').slice(0, 20)) {
+    for (const line of truncate(ctx.status, 800).split('\n').slice(0, 20)) {
       lines.push(`  ${line}`);
     }
     lines.push('  ```');

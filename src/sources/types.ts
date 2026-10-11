@@ -14,12 +14,24 @@ export interface SessionMatch {
 export interface SessionEntry extends SessionMatch {
   mtimeMs: number;
   sizeBytes: number;
+  archived?: boolean;
+  subagent?: {
+    id: string;
+    parentSessionId: string | null;
+    parentAgentId?: string;
+    toolUseId?: string;
+    createdAt?: string;
+  };
 }
 
 export interface DiscoverOptions {
   /** Override the adapter's session root, primarily for isolated callers/tests. */
   root?: string;
   projectCwd?: string;
+  /** Catalogs remain main-session-only unless explicitly requested. */
+  includeSubagents?: boolean;
+  /** Codex archives are searched, but excluded from the default recent catalog. */
+  includeArchived?: boolean;
 }
 
 export interface ReadSessionOptions {
@@ -38,6 +50,9 @@ export interface ReadSessionResult {
 
 /** One model call's token counts as the source logged them, before attribution to steps. */
 export interface UsageSample {
+  /** Stable call identity when logged, for deduplicating inherited subagent history. */
+  response_id?: string;
+  thread_id?: string;
   /** The event the call belongs to; for Codex, the last event emitted before it. */
   eventUuid: string | null;
   timestamp: string;

@@ -9,7 +9,7 @@
 import type { ResolvedConfig } from '../cli/pipeline.js';
 import { isMissingPath } from '../sources/files.js';
 import type { SessionEntry, SessionSourceId } from '../sources/types.js';
-import type { Redactor } from '../utils/redact.js';
+import { redactDeep, type Redactor } from '../utils/redact.js';
 import { listSessions } from '../utils/session_path.js';
 import { mapSession, type MapContext } from './map.js';
 import { createMatcher, type Matcher } from './matcher.js';
@@ -70,6 +70,7 @@ export async function searchSessions(options: SearchOptions): Promise<SearchOutc
     includeToolOutput: options.includeToolOutput,
     config: options.config,
     cwd: options.cwd,
+    entries: discovered,
   };
 
   const controller = new AbortController();
@@ -114,24 +115,27 @@ export async function searchSessions(options: SearchOptions): Promise<SearchOutc
     await Promise.all(scans.filter((pending) => pending !== undefined));
   }
 
-  const report: SearchReport = {
-    query: options.redactor.apply(options.query),
-    case_sensitive: matcher.caseSensitive,
-    scope: {
-      sources: [...options.sources],
-      project: options.projectCwd ?? null,
-      since_days: options.sinceDays ?? null,
-      include_tool_output: options.includeToolOutput,
+  const report: SearchReport = redactDeep(
+    {
+      query: options.redactor.apply(options.query),
+      case_sensitive: matcher.caseSensitive,
+      scope: {
+        sources: [...options.sources],
+        project: options.projectCwd ?? null,
+        since_days: options.sinceDays ?? null,
+        include_tool_output: options.includeToolOutput,
+      },
+      scanned: {
+        sessions: scannedSessions,
+        bytes: scannedBytes,
+        seconds: Math.round((performance.now() - started) / 100) / 10,
+        stopped_early: stoppedEarly,
+      },
+      total_sessions: results.length,
+      results,
     },
-    scanned: {
-      sessions: scannedSessions,
-      bytes: scannedBytes,
-      seconds: Math.round((performance.now() - started) / 100) / 10,
-      stopped_early: stoppedEarly,
-    },
-    total_sessions: results.length,
-    results,
-  };
+    options.redactor,
+  );
   // Prefixes are only provably unique against every session of the source.
   const known = options.projectCwd === undefined ? discovered : null;
   return { report, matcher, commandId: (result) => shortestUniqueId(result, known) };
@@ -141,7 +145,16 @@ async function discover(
   sources: SessionSourceId[],
   projectCwd: string | undefined,
 ): Promise<SessionEntry[]> {
-  const lists = await Promise.all(sources.map((source) => listSessions({ source, projectCwd })));
+  const lists = await Promise.all(
+    sources.map((source) =>
+      listSessions({
+        source,
+        projectCwd,
+        includeSubagents: true,
+        includeArchived: true,
+      }),
+    ),
+  );
   return lists
     .flat()
     .sort(

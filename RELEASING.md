@@ -3,7 +3,9 @@
 This is the v0.X.Y → v0.X.Y+1 (or v0.X+1.0) checklist. Captures the sequence
 that shipped v0.1.0 so the next release doesn't re-discover it.
 
-The latest release is **0.4.0**, published to npm on 2026-10-10. Updating the
+The latest published release is **0.4.0**, published to npm on 2026-10-10.
+The repository prepares **0.6.0**, including the 0.5 recovery/search milestone
+and 0.6 usage milestone; 0.5.0 is not a separate published release. Updating the
 repository does not publish to npm; registry and GitHub release steps below
 are a separate maintainer action after release approval.
 

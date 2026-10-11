@@ -260,7 +260,9 @@ export function countRedactions(value: unknown, redactor: Redactor): Record<stri
 // Luhn-gated credit-card redaction
 // ---------------------------------------------------------------------------
 
-const CARD_RE = /\b(?:\d[ -]?){12,18}\d\b/g;
+// A card must not be a partial numeric/hyphen identifier (notably UUIDs).
+// Keep ordinary spaced, dashed and unseparated card numbers protected.
+const CARD_RE = /(?<!\d-)\b(?:\d[ -]?){12,18}\d\b(?!-\d)/g;
 
 function redactCreditCards(text: string): string {
   return redactCreditCardsWithStats(text).text;

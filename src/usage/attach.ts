@@ -17,6 +17,7 @@ import type { MindMap, MindMapNode, RawEvent, StepUsage } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { claudeMainUsage } from './claude.js';
 import { codexCompactions } from './codex.js';
+import { readCodexSubagents } from './codex_subagents.js';
 import { readClaudeSubagents } from './subagents.js';
 import { addUsage, emptyUsage } from './sum.js';
 import type { CompactionAt, SubagentUsageAt } from './types.js';
@@ -39,7 +40,9 @@ export interface CollectUsageInput {
 
 export async function collectSessionUsage(input: CollectUsageInput): Promise<SessionUsage> {
   if (input.source === 'codex') {
-    return { calls: input.samples ?? [], compactions: codexCompactions(input.events) };
+    const calls = input.samples ?? [];
+    const subagents = await readCodexSubagents(input.jsonlPath, input.events, calls, input.logger);
+    return { calls, compactions: codexCompactions(input.events), subagents };
   }
   // One set for the session: a forked subagent repeats the main call that started it.
   const seen = new Set<string>();
@@ -96,8 +99,11 @@ export function attachUsage(mindmap: MindMap, usage: SessionUsage): void {
     ownUsage(ownerOf(eventUuid)).compactions.push(compaction);
   }
   for (const agent of usage.subagents ?? []) {
-    const subagents = ownUsage(ownerOf(agent.eventUuid)).subagents!;
+    const owner = ownerOf(agent.eventUuid);
+    const subagents = ownUsage(owner).subagents!;
     subagents.count += 1;
+    if (owner === mindmap.root)
+      subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
     subagents.calls += agent.calls;
     subagents.prompt_tokens += agent.prompt_tokens;
     subagents.output_tokens += agent.output_tokens;

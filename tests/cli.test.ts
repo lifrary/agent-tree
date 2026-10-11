@@ -1,8 +1,10 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
+import { createWriteStream } from 'node:fs';
 import { mkdtemp, mkdir, readFile, readdir, rm, utimes, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 import { promisify } from 'node:util';
+import { pipeline } from 'node:stream/promises';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { encodeProjectPath } from '../src/sources/claude.js';
 
@@ -92,7 +94,8 @@ describe('portable CLI workflows', () => {
       const prompt = `u-${turn}`;
       const reply = `a-${turn}`;
       const base = { isSidechain: false, sessionId: id, cwd: '/tmp/proj', userType: 'external' };
-      const at = (offset: number) => new Date(Date.UTC(2026, 3, 20, 10) + (turn * 60 + offset) * 1000);
+      const at = (offset: number) =>
+        new Date(Date.UTC(2026, 3, 20, 10) + (turn * 60 + offset) * 1000);
       records.push(
         JSON.stringify({
           ...base,
@@ -102,7 +105,9 @@ describe('portable CLI workflows', () => {
           type: 'user',
           message: {
             role: 'user',
-            content: [{ type: 'text', text: `Step ${turn}: refactor module ${turn} ${'x'.repeat(200)}` }],
+            content: [
+              { type: 'text', text: `Step ${turn}: refactor module ${turn} ${'x'.repeat(200)}` },
+            ],
           },
         }),
         JSON.stringify({
@@ -130,8 +135,28 @@ describe('portable CLI workflows', () => {
 
   it('writes the whole export to a pipe, past the 64 KiB pipe buffer', async () => {
     const file = await largeSession(1500);
-    const { stdout } = await cli('--file', file, '--json', '--no-llm');
-    // The full export is about 400 KiB; the old exit path cut it at a multiple of 64 KiB.
+    const output = join(root, 'piped-export.json');
+    const child = spawn(
+      process.execPath,
+      ['--import', 'tsx', entry, '--file', file, '--json', '--no-llm'],
+      {
+        env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: '', AGENT_TREE_NO_LLM: 'true' },
+        stdio: ['ignore', 'pipe', 'pipe'],
+      },
+    );
+    let stderr = '';
+    child.stderr.on('data', (chunk) => {
+      stderr += String(chunk);
+    });
+    const closed = new Promise<number | null>((done, reject) => {
+      child.once('error', reject);
+      child.once('close', done);
+    });
+    await pipeline(child.stdout, createWriteStream(output));
+    expect(await closed, stderr).toBe(0);
+    const stdout = await readFile(output, 'utf8');
+    // Stream the larger recovery payload instead of hitting execFile's capture cap.
+    // The old exit path cut exports at a multiple of the 64 KiB pipe capacity.
     expect(Buffer.byteLength(stdout)).toBeGreaterThan(256 * 1024);
     expect(JSON.parse(stdout).stats.total_events).toBe(3000);
   }, 30_000);

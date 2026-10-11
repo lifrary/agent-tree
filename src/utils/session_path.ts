@@ -52,7 +52,7 @@ export async function locateSession(
   if (!isUuidPrefix(prefix) && !isFullUuid(prefix)) {
     throw new Error('session id is not a valid UUID or prefix');
   }
-  const matches = (await listSessions(opts)).filter((session) =>
+  const matches = (await listSessions({ ...opts, includeArchived: true })).filter((session) =>
     session.sessionId.toLowerCase().startsWith(prefix),
   );
   matches.sort((a, b) => {

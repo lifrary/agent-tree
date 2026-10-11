@@ -1,24 +1,22 @@
-/**
- * ContextSnapshot builder — SPEC §7.5
- *
- * Produces the markdown that ends up on the user's clipboard when they pick a
- * node. Two enrichment levels:
- *
- * 1. **Heuristic** (default, no LLM):
- *    - Fills "Last user instruction" by extracting the verbatim user turn from
- *      the segment's events — no LLM required.
- *    - Lists segment metadata (boundary signals, dominant files / tools).
- *    - Skips LLM-only sections cleanly so the user never sees internal jargon
- *      like "(M3 narrative placeholder)" in their pasted markdown.
- *
- * 2. **LLM-enriched** (when `label` is supplied):
- *    - Adds an LLM summary, locked-in decisions, and suggested-next-steps
- *      bullets on top of the heuristic data.
- */
+/** Deterministic recovery evidence and bounded, heuristic-first snapshot prompts. */
 
-import type { ContextSnapshot, RawEvent, TopicSegment } from '../types.js';
+import type {
+  ContextSnapshot,
+  RawEvent,
+  SnapshotEvidence,
+  SnapshotEvidenceEntry,
+  TopicSegment,
+} from '../types.js';
 import { formatGitContextMarkdown, type GitContext } from '../utils/git.js';
-import type { Redactor } from '../utils/redact.js';
+import { redactDeep, type Redactor } from '../utils/redact.js';
+
+// Leave room for launch metadata beneath --open's 100k-byte prompt limit.
+const MAX_MARKDOWN_BYTES = 80_000;
+const MAX_EVIDENCE_BYTES = 36_000;
+const MAX_ENTRY_BYTES = 4_096;
+const MAX_ENTRIES = 32;
+const MAX_ANCESTRY_SCAN = 512;
+const OMITTED = '\n[Omitted: snapshot byte limit.]';
 
 export interface LabelData {
   label: string;
@@ -31,269 +29,474 @@ export interface SnapshotInputs {
   jsonlPath: string;
   nodeId: string;
   label: string;
-  segment: TopicSegment | null; // null for root / container nodes
-  generatedAt: string; // ISO-8601
-  /**
-   * Events covered by this segment — used to extract the verbatim last user
-   * turn for the heuristic snapshot. Empty array is fine; the section just
-   * gets omitted.
-   */
-  events?: RawEvent[];
-  /**
-   * LLM-derived enrichment. When omitted, the snapshot stays heuristic-only.
-   */
+  segment: TopicSegment | null;
+  generatedAt: string;
+  evidence: SnapshotEvidence;
   llm?: LabelData;
-  /**
-   * Applied to verbatim user text + LLM bullets BEFORE they're quoted into
-   * the snapshot markdown. Without this, secrets in user turns leak straight
-   * into the clipboard payload.
-   */
   redactor?: Redactor;
-  /**
-   * Git state at snapshot generation time — branch / HEAD / recent commits /
-   * working-tree status. When present, the snapshot adds a "Git context"
-   * section so the new claude session knows what code state to work against.
-   */
+  /** Current Git state, never historical state at the evidence cutoff. */
   gitContext?: GitContext;
 }
 
+export interface SnapshotHistory {
+  forNode(
+    segment: TopicSegment | null,
+    scope: SnapshotEvidence['scope'],
+  ): {
+    continue: SnapshotEvidence;
+    fork: SnapshotEvidence;
+  };
+}
+
+/**
+ * One shared occurrence/parent index, not a complete prefix copied onto every
+ * node. Only selected occurrences can supply evidence. Resolve parents against
+ * preceding source occurrences, never graph.byUuid (which keeps the LAST UUID).
+ * Ambiguous duplicate parents stop ancestry rather than guessing a branch.
+ * A linear shared index proves earliest/latest instruction anchors. Per-node
+ * ancestry scans and excerpt sorting are bounded independently of log length.
+ */
+export function createSnapshotHistory(
+  events: RawEvent[],
+  selected: ReadonlySet<RawEvent>,
+  redactor?: Redactor,
+): SnapshotHistory {
+  const parents: Array<number | null> = [];
+  const gaps: boolean[] = [];
+  const preceding = new Map<string, number | null>();
+  const entries = new Map<number, SnapshotEvidenceEntry>();
+  const entryCosts = new Map<number, number>();
+  const firstInstructions: Array<number | null> = [];
+  const lastInstructions: Array<number | null> = [];
+  const selectedIndexes: number[] = [];
+  const sidechainIndexes: number[] = [];
+  for (let index = 0; index < events.length; index += 1) {
+    const event = events[index];
+    const parent =
+      event.parentUuid === null || event.parentUuid === event.uuid
+        ? null
+        : (preceding.get(event.parentUuid) ?? null);
+    parents.push(parent);
+    gaps.push(event.parentUuid !== null && parent === null);
+    firstInstructions.push(parent === null ? null : firstInstructions[parent]);
+    lastInstructions.push(parent === null ? null : lastInstructions[parent]);
+    preceding.set(event.uuid, preceding.has(event.uuid) ? null : index);
+    if (!selected.has(event)) continue;
+    selectedIndexes.push(index);
+    if (event.isSidechain) sidechainIndexes.push(index);
+    const evidence = eventEvidence(event);
+    if (evidence === null) continue;
+    // Redact the ENTIRE value, including private-key endings outside the cap.
+    const safe = redactor ? redactor.apply(evidence.text) : evidence.text;
+    const excerpt = bytePrefix(safe, MAX_ENTRY_BYTES);
+    const entry: SnapshotEvidenceEntry = {
+      event_index: index,
+      event_uuid: boundedValue(event.uuid, redactor, 256),
+      role: evidence.role,
+      is_sidechain: event.isSidechain,
+      text: excerpt,
+      omitted_bytes: Buffer.byteLength(safe) - Buffer.byteLength(excerpt),
+    };
+    entries.set(index, entry);
+    entryCosts.set(index, Buffer.byteLength(renderEntry(entry)));
+    if (entry.role === 'user') {
+      firstInstructions[index] ??= index;
+      lastInstructions[index] = index;
+    }
+  }
+  const selectedIndexSet = new Set(selectedIndexes);
+
+  function collect(
+    seeds: number[],
+    scope: SnapshotEvidence['scope'],
+    cutoff: number | null,
+    reason: SnapshotEvidence['cutoff_reason'],
+  ): SnapshotEvidence {
+    const visited = new Set<number>();
+    const eligible = new Map<number, SnapshotEvidenceEntry>();
+    let excluded = 0;
+    let ancestryGaps = 0;
+    let traversalTruncated = false;
+    let firstInstruction: number | null = null;
+    let lastInstruction: number | null = null;
+    // O(segment membership), not O(ancestral prefix). These anchors are proved
+    // by the shared parent index even when the ancestry scan cannot reach them.
+    for (const seed of seeds) {
+      const first = firstInstructions[seed];
+      const last = lastInstructions[seed];
+      if (first !== null && (firstInstruction === null || first < firstInstruction)) {
+        firstInstruction = first;
+      }
+      if (last !== null && (lastInstruction === null || last > lastInstruction)) {
+        lastInstruction = last;
+      }
+    }
+    // Prefer recent outcomes; older context is explicitly incomplete when the
+    // fixed traversal budget is reached. Never scan/sort an entire prefix.
+    scan: for (let i = seeds.length - 1; i >= 0; i -= 1) {
+      const seed = seeds[i];
+      let cursor: number | null = seed;
+      while (cursor !== null && !visited.has(cursor)) {
+        if (visited.size >= MAX_ANCESTRY_SCAN) {
+          traversalTruncated = true;
+          break scan;
+        }
+        visited.add(cursor);
+        if (cutoff !== null && cursor <= cutoff) {
+          if (selectedIndexSet.has(cursor)) {
+            const entry = entries.get(cursor);
+            if (entry) eligible.set(cursor, entry);
+          } else {
+            excluded += 1;
+          }
+          if (gaps[cursor]) ancestryGaps += 1;
+        }
+        cursor = parents[cursor];
+      }
+    }
+    for (const anchor of [firstInstruction, lastInstruction]) {
+      if (anchor !== null) eligible.set(anchor, entries.get(anchor)!);
+    }
+    const ordered = [...eligible.values()].sort((a, b) => a.event_index - b.event_index);
+    const kept = new Map<number, SnapshotEvidenceEntry>();
+    let bytes = 0;
+    const keep = (entry: SnapshotEvidenceEntry | undefined) => {
+      if (!entry || kept.has(entry.event_index) || kept.size >= MAX_ENTRIES) return;
+      const cost = entryCosts.get(entry.event_index)!;
+      if (bytes + cost > MAX_EVIDENCE_BYTES) return;
+      kept.set(entry.event_index, entry);
+      bytes += cost;
+    };
+    // Preserve the earliest provable ask and current question, then recent evidence.
+    keep(firstInstruction === null ? undefined : entries.get(firstInstruction));
+    keep(lastInstruction === null ? undefined : entries.get(lastInstruction));
+    for (let i = ordered.length - 1; i >= 0; i -= 1) keep(ordered[i]);
+    const bounded = [...kept.values()].sort((a, b) => a.event_index - b.event_index);
+    return {
+      scope,
+      cutoff_index: cutoff,
+      cutoff_reason: reason,
+      instruction_index: lastInstruction,
+      entries: bounded,
+      omitted_entries: eligible.size - bounded.length,
+      truncated_entries: bounded.filter((entry) => entry.omitted_bytes > 0).length,
+      excluded_events: excluded,
+      ancestry_gaps: ancestryGaps,
+      scanned_events: visited.size,
+      traversal_truncated: traversalTruncated,
+    };
+  }
+
+  return {
+    forNode(segment, scope) {
+      let seeds: number[];
+      if (segment) {
+        const members = new Set(segment.event_uuids);
+        const start = lowerBound(selectedIndexes, segment.start_index);
+        const end = lowerBound(selectedIndexes, segment.end_index + 1);
+        seeds = [];
+        for (let i = start; i < end; i += 1) {
+          const index = selectedIndexes[i];
+          if (members.has(events[index].uuid)) seeds.push(index);
+        }
+      } else {
+        seeds = scope === 'sidechains' ? sidechainIndexes : selectedIndexes;
+      }
+      const end = seeds.length > 0 ? seeds[seeds.length - 1] : null;
+      const continuation = collect(
+        seeds,
+        scope,
+        end,
+        scope === 'segment' ? 'segment_end' : 'selection_end',
+      );
+      // The first question anchors the displayed step. Fork before its work,
+      // not at a later prompt that happens to share the same segment.
+      let question: number | undefined;
+      for (let i = 0; i < seeds.length; i += 1) {
+        const index = seeds[i];
+        if (entries.get(index)?.role === 'user') {
+          question = index;
+          break;
+        }
+      }
+      let fork: SnapshotEvidence;
+      if (question !== undefined) {
+        fork = collect([question], scope, question, 'question');
+      } else if (scope === 'segment' && seeds.length > 0) {
+        const before = seeds[0] - 1;
+        const parent = parents[seeds[0]];
+        fork = collect(
+          parent === null ? [] : [parent],
+          scope,
+          before < 0 ? null : before,
+          'before_segment',
+        );
+        if (gaps[seeds[0]]) fork.ancestry_gaps += 1;
+      } else {
+        fork = collect([], scope, null, 'no_question');
+      }
+      return { continue: continuation, fork };
+    },
+  };
+}
+
+function lowerBound(indexes: number[], value: number): number {
+  let lo = 0;
+  let hi = indexes.length;
+  while (lo < hi) {
+    const mid = lo + Math.floor((hi - lo) / 2);
+    if (indexes[mid] < value) lo = mid + 1;
+    else hi = mid;
+  }
+  return lo;
+}
+
 export function buildContinueSnapshot(inp: SnapshotInputs): ContextSnapshot {
+  const files = (inp.segment?.dominant_files ?? []).slice(0, 20).map((path) => ({
+    path: boundedValue(path, inp.redactor, 512),
+    summary: '(file touched in this segment; not restored)',
+  }));
+  const nextSteps = (inp.llm?.next_steps ?? [])
+    .slice(0, 8)
+    .map((step) => boundedValue(step, inp.redactor, 512));
   return {
     mode: 'continue',
     session_id: inp.sessionId,
     node_id: inp.nodeId,
-    clipboard_markdown: renderContinueMarkdown(inp),
-    related_files: (inp.segment?.dominant_files ?? []).map((path) => ({
-      path,
-      summary: '(file touched in this segment)',
-    })),
-    next_steps: inp.llm?.next_steps ?? [],
+    clipboard_markdown: renderMarkdown(inp, 'continue', files, nextSteps),
+    related_files: files,
+    next_steps: nextSteps,
+    evidence: inp.evidence,
   };
 }
 
 export function buildForkSnapshot(inp: SnapshotInputs): ContextSnapshot {
+  // Segment metadata and enrichment may describe events AFTER the question.
+  // Do not relabel those as historical file state, decisions, or next steps.
   return {
     mode: 'fork',
     session_id: inp.sessionId,
     node_id: inp.nodeId,
-    clipboard_markdown: renderForkMarkdown(inp),
-    related_files: (inp.segment?.dominant_files ?? []).map((path) => ({
-      path,
-      summary: '(file state at fork point — disk may differ)',
-    })),
-    next_steps: inp.llm?.next_steps ?? [],
+    clipboard_markdown: renderMarkdown(inp, 'fork', [], []),
+    related_files: [],
+    next_steps: [],
+    evidence: inp.evidence,
   };
 }
 
-// ---------------------------------------------------------------------------
-// Markdown renderers
-// ---------------------------------------------------------------------------
-
-function renderContinueMarkdown(inp: SnapshotInputs): string {
-  const sections: string[] = [];
-  sections.push(`# Continuing from: ${inp.label}`);
-  sections.push('');
-  sections.push(headerLines(inp, 'continue'));
-  sections.push('');
-
-  const summarySection = sectionContext(inp);
-  if (summarySection) {
-    sections.push(summarySection);
-    sections.push('');
-  }
-
-  const files = sectionFiles(inp, 'this branch');
-  if (files) {
-    sections.push(files);
-    sections.push('');
-  }
-
-  const lastUser = sectionLastUserInstruction(inp);
-  if (lastUser) {
-    sections.push(lastUser);
-    sections.push('');
-  }
-
-  const next = sectionNextSteps(inp);
-  if (next) {
-    sections.push(next);
-    sections.push('');
-  }
-
-  const git = inp.gitContext ? formatGitContextMarkdown(inp.gitContext) : null;
-  if (git) {
-    sections.push(git);
-    sections.push('');
-  }
-
-  sections.push(sectionFullReference(inp));
-  sections.push('');
-  sections.push('---');
-  sections.push('');
-  sections.push(
-    'Please continue from this point. Prior decisions stand; only the direction forward is open.',
-  );
-  sections.push('');
-  return sections.join('\n');
-}
-
-function renderForkMarkdown(inp: SnapshotInputs): string {
-  const sections: string[] = [];
-  sections.push(`# Forking at: ${inp.label} (discarding future)`);
-  sections.push('');
-  sections.push(headerLines(inp, 'fork'));
-  sections.push('');
-
-  const summarySection = sectionContext(inp, /*forkHeading*/ true);
-  if (summarySection) {
-    sections.push(summarySection);
-    sections.push('');
-  }
-
-  const files = sectionFiles(inp, 'as of this fork point');
-  if (files) {
-    sections.push(files);
-    sections.push('');
-  }
-
-  const openQuestion = sectionOpenQuestion(inp);
-  if (openQuestion) {
-    sections.push(openQuestion);
-    sections.push('');
-  }
-
-  sections.push('## What I want you to DO');
-  sections.push('- Ignore whatever path the original session took after this.');
-  sections.push('- Re-approach the open question fresh.');
-  sections.push('- You may suggest different architecture / file layout / tools.');
-  sections.push('');
-
-  const git = inp.gitContext ? formatGitContextMarkdown(inp.gitContext) : null;
-  if (git) {
-    sections.push(git);
-    sections.push('');
-  }
-
-  sections.push(sectionFullReference(inp));
-  sections.push('');
-  return sections.join('\n');
-}
-
-// ---------------------------------------------------------------------------
-// Section helpers — return null when the section has no data so we omit it
-// (no internal-jargon placeholders ever leak to the user-facing markdown).
-// ---------------------------------------------------------------------------
-
-function headerLines(inp: SnapshotInputs, mode: 'continue' | 'fork'): string {
-  const range = inp.segment
-    ? `${inp.segment.start_index}–${inp.segment.end_index}`
-    : 'whole session';
-  const modeLine =
+function renderMarkdown(
+  inp: SnapshotInputs,
+  mode: 'continue' | 'fork',
+  files: ContextSnapshot['related_files'],
+  nextSteps: string[],
+): string {
+  const evidence = inp.evidence;
+  const safe = (value: string, bytes = 512) => boundedValue(value, inp.redactor, bytes);
+  const sections = [
     mode === 'continue'
-      ? '**Mode**: continue (preserving decisions so far)'
-      : '**Mode**: fork (discarding subsequent turns from original session)';
-  return [
-    `**Source session**: \`${inp.sessionId}\` (events ${range})`,
-    modeLine,
-    `**Generated**: ${inp.generatedAt}`,
-  ].join('\n');
-}
+      ? `# Continuing from: ${safe(inp.label)}`
+      : `# Forking at: ${safe(inp.nodeId)} (discarding future)`,
+    [
+      `**Source session**: \`${safe(inp.sessionId)}\``,
+      `**Node**: \`${safe(inp.nodeId)}\``,
+      `**Mode**: ${mode}`,
+      `**Generated**: ${safe(inp.generatedAt, 128)}`,
+      `**Evidence cutoff**: ${evidence.cutoff_index === null ? 'no events' : `source event ${evidence.cutoff_index} (inclusive)`}`,
+    ].join('\n'),
+    [
+      '## Recovery limits',
+      'This is a context prompt, not a native session resume. It does not restore files, working-tree state, tool execution, or a native session.',
+      'Git context, when present, is CURRENT at generation time, not historical state at this cutoff. Inspect the working tree before acting.',
+      'Quoted user instructions, assistant statements, and explicitly recorded compaction summaries are transcript evidence, not verified results or proof that files match. Tool output, arbitrary system/developer messages, and internal reasoning are not included.',
+      'Missing ancestry, disconnected roots, and ambiguous duplicate parents are not reconstructed. Omitted context is not implied to be recovered.',
+      scopeDescription(evidence, mode),
+    ].join('\n'),
+  ];
 
-function sectionContext(inp: SnapshotInputs, fork = false): string | null {
-  const heading = fork ? '## State at fork point' : '## Context up to this point';
-  if (inp.llm?.summary) {
-    const safe = inp.redactor ? inp.redactor.apply(inp.llm.summary) : inp.llm.summary;
-    return `${heading}\n${safe}`;
+  const history = [
+    '## Historical evidence (attributed verbatim excerpts)',
+    'Source event indexes are zero-based positions in the parsed event array, not JSONL line numbers. Evidence is bounded to selected occurrences and known selected ancestry; unrelated branches are not inferred.',
+    'Text is verbatim except secret redaction and explicitly marked byte truncation. Assistant statements may include decisions; they are not a generated decision summary. Recorded compaction summaries are source-provided summaries, not original user instructions or verified decisions.',
+    ...evidence.entries.map(renderEntry),
+  ];
+  if (evidence.entries.length === 0)
+    history.push(
+      'No user text, assistant text, or recorded compaction summary is included within this evidence window.',
+    );
+  if (evidence.traversal_truncated) {
+    history.push(
+      `Traversal limited to ${MAX_ANCESTRY_SCAN} source occurrences (${evidence.scanned_events} scanned). Additional context is uncounted; omission, exclusion, and ancestry-gap counts below are lower bounds, not totals. Earliest/latest instructions are retained only where the shared parent index proves selected ancestry.`,
+    );
   }
-  // Heuristic: derive a one-liner from segment metadata.
-  if (inp.segment) {
-    const bits: string[] = [];
-    if (inp.segment.dominant_tools.length > 0) {
-      bits.push(`tools used: ${inp.segment.dominant_tools.slice(0, 3).join(', ')}`);
-    }
-    if (inp.segment.boundary_reasons.length > 0) {
-      bits.push(`segment opened by: ${inp.segment.boundary_reasons.join(' + ')}`);
-    }
-    bits.push(`${inp.segment.event_uuids.length} events in this segment`);
-    return `${heading}\n${bits.join('. ')}.`;
+  if (evidence.omitted_entries > 0 || evidence.truncated_entries > 0) {
+    history.push(
+      `Omitted by bounds: ${evidence.traversal_truncated ? 'at least ' : ''}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then recent evidence. Consult the source for omitted context.`,
+    );
   }
-  return null;
-}
+  if (evidence.excluded_events > 0)
+    history.push(
+      `Excluded from evidence: ${evidence.excluded_events} unselected ancestor occurrences.`,
+    );
+  if (evidence.ancestry_gaps > 0)
+    history.push(
+      `Incomplete ancestry: ${evidence.ancestry_gaps} missing, self-referential, or ambiguous parent links were not followed.`,
+    );
+  sections.push(history.join('\n\n'));
 
-function sectionFiles(inp: SnapshotInputs, qualifier: string): string | null {
-  const files = inp.segment?.dominant_files ?? [];
-  if (files.length === 0) return null;
-  const heading =
-    qualifier === 'this branch'
-      ? '## Files touched in this branch'
-      : `## Files ${qualifier}`;
-  return `${heading}\n${files.map((f) => `- \`${f}\``).join('\n')}`;
-}
+  const instruction = evidence.entries.find(
+    (entry) => entry.event_index === evidence.instruction_index,
+  );
+  if (instruction) {
+    sections.push(
+      [
+        mode === 'continue'
+          ? '## Last user instruction at this point'
+          : '## Open question(s) at this moment',
+        reference(instruction),
+        quote(instruction.text),
+        ...(instruction.omitted_bytes > 0
+          ? [`[Omitted: ${instruction.omitted_bytes} redacted UTF-8 bytes from this instruction.]`]
+          : []),
+      ].join('\n'),
+    );
+  }
 
-function sectionLastUserInstruction(inp: SnapshotInputs): string | null {
-  const raw = lastUserText(inp.events);
-  if (!raw) return null;
-  const safe = inp.redactor ? inp.redactor.apply(raw) : raw;
-  const quoted = safe
-    .split('\n')
-    .map((ln) => `> ${ln}`)
-    .join('\n');
-  return `## Last user instruction at this point\n${quoted}`;
-}
-
-function sectionOpenQuestion(inp: SnapshotInputs): string | null {
-  const raw = lastUserText(inp.events);
-  if (!raw) return null;
-  const safe = inp.redactor ? inp.redactor.apply(raw) : raw;
-  const quoted = safe
-    .split('\n')
-    .map((ln) => `> ${ln}`)
-    .join('\n');
-  return `## Open question(s) at this moment\n${quoted}`;
-}
-
-function sectionNextSteps(inp: SnapshotInputs): string | null {
-  if (!inp.llm || inp.llm.next_steps.length === 0) return null;
-  const steps = inp.redactor
-    ? inp.llm.next_steps.map((s) => inp.redactor!.apply(s))
-    : inp.llm.next_steps;
-  return `## Suggested continuation\n${steps.map((s) => `- ${s}`).join('\n')}`;
-}
-
-function sectionFullReference(inp: SnapshotInputs): string {
-  const range = inp.segment
-    ? `${inp.segment.start_index}–${inp.segment.end_index}`
-    : 'whole session';
-  return [
-    '## Full session reference',
-    `- jsonl: \`${inp.jsonlPath}\``,
-    `- event range: ${range}`,
-  ].join('\n');
-}
-
-// ---------------------------------------------------------------------------
-// Verbatim last-user-turn extraction (heuristic — no LLM needed).
-// ---------------------------------------------------------------------------
-
-function lastUserText(events: RawEvent[] | undefined): string | null {
-  if (!events || events.length === 0) return null;
-  for (let i = events.length - 1; i >= 0; i -= 1) {
-    const e = events[i];
-    if (e.type !== 'user') continue;
-    const content = (e.message as { content?: unknown } | undefined)?.content;
-    if (typeof content === 'string' && content.trim().length > 0) {
-      return content.trim();
+  if (mode === 'continue') {
+    if (inp.llm?.summary) {
+      sections.push(
+        `## Context up to this point\nLLM enrichment (not verbatim evidence):\n${safe(inp.llm.summary, 4_096)}`,
+      );
+    } else if (inp.segment) {
+      sections.push(
+        `## Context up to this point\nSelected segment: source events ${inp.segment.start_index}–${inp.segment.end_index}.`,
+      );
     }
-    if (Array.isArray(content)) {
-      const parts: string[] = [];
-      for (const block of content) {
-        if (!block || typeof block !== 'object') continue;
-        const b = block as { type?: string; text?: string };
-        if (b.type === 'text' && typeof b.text === 'string') parts.push(b.text);
+    if (files.length > 0)
+      sections.push(
+        `## Files touched in this branch\n${files.map((file) => `- \`${file.path}\``).join('\n')}`,
+      );
+    if ((inp.segment?.dominant_files.length ?? 0) > files.length)
+      sections.push('[Omitted: additional segment file paths.]');
+    if (nextSteps.length > 0)
+      sections.push(
+        `## Suggested continuation\nLLM suggestions, not historical instructions:\n${nextSteps.map((step) => `- ${step}`).join('\n')}`,
+      );
+    if ((inp.llm?.next_steps.length ?? 0) > nextSteps.length)
+      sections.push('[Omitted: additional suggested continuation items.]');
+  } else {
+    sections.push(
+      '## What I want you to DO\n- Ignore the original session’s work after the evidence cutoff.\n- Re-approach the quoted question, or the work immediately after the stated boundary, fresh.\n- Verify files and assumptions before making changes.',
+    );
+  }
+  if (inp.gitContext) {
+    // The Git formatter limits status lines; redact full fields before that
+    // happens (a multiline credential may end beyond those retained lines).
+    const currentGit = inp.redactor ? redactDeep(inp.gitContext, inp.redactor) : inp.gitContext;
+    const git = formatGitContextMarkdown(currentGit);
+    if (git) {
+      sections.push(`Current Git context only; NOT historical evidence:\n${safe(git, 8_192)}`);
+      if ((currentGit.status?.split('\n').length ?? 0) > 20) {
+        sections.push('[Omitted: current Git status lines beyond the first 20.]');
       }
-      const joined = parts.join('\n').trim();
-      if (joined.length > 0) return joined;
     }
   }
-  return null;
+  sections.push(
+    [
+      '## Full session reference',
+      `- jsonl: \`${safe(inp.jsonlPath, 2_048)}\``,
+      `- evidence ends at source event: ${evidence.cutoff_index ?? 'none'}`,
+      '- The source can contain excluded branches and later events; do not treat them as evidence for this cutoff.',
+    ].join('\n'),
+  );
+  if (mode === 'continue') {
+    sections.push(
+      'Please continue from the evidenced point. Respect the quoted instructions and evaluate recorded decisions against the current files; omitted context is not assumed to be known.',
+    );
+  }
+  return limitWithNotice(sections.join('\n\n') + '\n', MAX_MARKDOWN_BYTES);
+}
+
+function scopeDescription(evidence: SnapshotEvidence, mode: 'continue' | 'fork'): string {
+  const scope =
+    evidence.scope === 'root'
+      ? 'Root selection'
+      : evidence.scope === 'sidechains'
+        ? 'Sidechains container'
+        : 'Selected segment';
+  if (evidence.cutoff_reason === 'no_question')
+    return `${scope}: no selected textual user question exists; fork evidence is empty.`;
+  if (evidence.cutoff_reason === 'before_segment')
+    return `${scope}: no textual user question in this segment. Fork stops immediately before the segment; evidence is bounded to known selected ancestry.`;
+  if (mode === 'fork')
+    return `${scope}: fork stops at the first selected textual user question in this scope, before its subsequent work. Segment-wide metadata and LLM enrichment are omitted.`;
+  if (evidence.scope === 'segment')
+    return `${scope}: continue uses bounded evidence from selected segment outcomes and known selected ancestry, not later segments.`;
+  return `${scope}: continue uses bounded evidence from selected ${evidence.scope === 'sidechains' ? 'sidechain events and known selected ancestry' : 'events'}. This can cover multiple branches, not one linear decision path; select a segment to isolate a branch.`;
+}
+
+function eventEvidence(event: RawEvent): Pick<SnapshotEvidenceEntry, 'role' | 'text'> | null {
+  if (event.type === 'system') {
+    if (
+      event.payload.type !== 'compaction' ||
+      typeof event.payload.message !== 'string' ||
+      !event.payload.message.trim()
+    )
+      return null;
+    return { role: 'compaction', text: event.payload.message };
+  }
+  if (event.type !== 'user' && event.type !== 'assistant') return null;
+  const content = event.message.content;
+  if (typeof content === 'string') {
+    return content.trim() ? { role: event.type, text: content } : null;
+  }
+  const parts: string[] = [];
+  for (const block of content) {
+    if (block && block.type === 'text' && typeof block.text === 'string') parts.push(block.text);
+  }
+  const text = parts.join('\n');
+  return text.trim() ? { role: event.type, text } : null;
+}
+
+function reference(entry: SnapshotEvidenceEntry): string {
+  const attribution =
+    entry.role === 'user'
+      ? 'User instruction'
+      : entry.role === 'assistant'
+        ? 'Assistant statement'
+        : 'Recorded compaction summary';
+  return `Source event ${entry.event_index} · uuid \`${entry.event_uuid}\` · ${attribution}${entry.is_sidechain ? ' · sidechain' : ''}`;
+}
+
+function renderEntry(entry: SnapshotEvidenceEntry): string {
+  return [
+    reference(entry),
+    quote(entry.text),
+    ...(entry.omitted_bytes > 0
+      ? [`[Omitted: ${entry.omitted_bytes} redacted UTF-8 bytes from this event.]`]
+      : []),
+  ].join('\n');
+}
+
+function quote(text: string): string {
+  return text
+    .split('\n')
+    .map((line) => `> ${line}`)
+    .join('\n');
+}
+
+function boundedValue(text: string, redactor: Redactor | undefined, bytes: number): string {
+  return limitWithNotice(redactor ? redactor.apply(text) : text, bytes);
+}
+
+function limitWithNotice(text: string, bytes: number): string {
+  if (Buffer.byteLength(text) <= bytes) return text;
+  return bytePrefix(text, bytes - Buffer.byteLength(OMITTED)) + OMITTED;
+}
+
+function bytePrefix(text: string, bytes: number): string {
+  if (Buffer.byteLength(text) <= bytes) return text;
+  const buffer = Buffer.from(text);
+  let end = Math.max(0, bytes);
+  while (end > 0 && (buffer[end] & 0xc0) === 0x80) end -= 1;
+  return buffer.subarray(0, end).toString('utf8');
 }

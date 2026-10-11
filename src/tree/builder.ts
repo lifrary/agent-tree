@@ -15,7 +15,6 @@
  */
 
 import type {
-  ContextSnapshot,
   MindMap,
   MindMapNode,
   NodeType,
@@ -27,7 +26,12 @@ import type { Redactor } from '../utils/redact.js';
 import type { SessionSourceId } from '../sources/types.js';
 
 import { eventsForSegment } from '../analyzer/segments.js';
-import { buildContinueSnapshot, buildForkSnapshot } from './context_snapshot.js';
+import {
+  buildContinueSnapshot,
+  buildForkSnapshot,
+  createSnapshotHistory,
+  type SnapshotHistory,
+} from './context_snapshot.js';
 
 export interface BuildMindMapOptions {
   source?: SessionSourceId;
@@ -60,6 +64,7 @@ export function buildMindMap(
     }
   }
   const selectedEvents = graph.events.filter((event) => selected.has(event));
+  const snapshotHistory = createSnapshotHistory(graph.events, selected, opts.redactor);
 
   // Split segments into main + sidechain-only
   const main: TopicSegment[] = [];
@@ -86,12 +91,9 @@ export function buildMindMap(
   const rootId = idAllocator.next();
   const rootLabel = deriveSessionTitle(selectedEvents, sessionId, opts.sessionTitle, opts.redactor);
 
-  // For the root node, the meaningful "instruction" is the FIRST user turn
-  // (the original ask), not the last. We anchor it as a single-element array
-  // so the snapshot factory's last-user-text walker finds exactly that one.
-  const firstUserEvent = selectedEvents.find((e) => e.type === 'user');
-  const rootInstructionEvents = firstUserEvent ? [firstUserEvent] : [];
-
+  // Root continue covers the selected session; root fork returns to its first
+  // selected question. Neither changes the existing DFS node numbering.
+  const rootEvidence = snapshotHistory.forNode(null, 'root');
   const rootSnapInput = {
     sessionId,
     jsonlPath: opts.jsonlPath,
@@ -99,7 +101,6 @@ export function buildMindMap(
     label: rootLabel,
     segment: null,
     generatedAt,
-    events: rootInstructionEvents,
     redactor: opts.redactor,
   };
 
@@ -114,8 +115,11 @@ export function buildMindMap(
     tools_used: uniq(segments.flatMap((s) => s.dominant_tools)),
     is_sidechain: false,
     children: [],
-    context_snapshot_continue: buildContinueSnapshot(rootSnapInput),
-    context_snapshot_fork: buildForkSnapshot(rootSnapInput),
+    context_snapshot_continue: buildContinueSnapshot({
+      ...rootSnapInput,
+      evidence: rootEvidence.continue,
+    }),
+    context_snapshot_fork: buildForkSnapshot({ ...rootSnapInput, evidence: rootEvidence.fork }),
     color: 'green',
     shape: 'rect',
     time_offset_ms: 0,
@@ -143,6 +147,7 @@ export function buildMindMap(
       generatedAt,
       parentIsSidechain: false,
       events: phaseEvents,
+      snapshotHistory,
       redactor: opts.redactor,
       timeOffsetMs: offsetFor(phase.headSegment.time_range[0]),
       promotePhaseIcon: true,
@@ -156,6 +161,7 @@ export function buildMindMap(
           generatedAt,
           parentIsSidechain: false,
           events: eventsForSegment(graph.events, childSeg),
+          snapshotHistory,
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(childSeg.time_range[0]),
         }),
@@ -171,6 +177,7 @@ export function buildMindMap(
   if (sidechain.length > 0) {
     const bucketId = idAllocator.next();
     const bucketLabel = '🔀 Sidechains';
+    const bucketEvidence = snapshotHistory.forNode(null, 'sidechains');
     const bucketNode: MindMapNode = {
       id: bucketId,
       type: 'topic',
@@ -189,6 +196,8 @@ export function buildMindMap(
         label: bucketLabel,
         segment: null,
         generatedAt,
+        evidence: bucketEvidence.continue,
+        redactor: opts.redactor,
       }),
       context_snapshot_fork: buildForkSnapshot({
         sessionId,
@@ -197,6 +206,8 @@ export function buildMindMap(
         label: bucketLabel,
         segment: null,
         generatedAt,
+        evidence: bucketEvidence.fork,
+        redactor: opts.redactor,
       }),
       color: 'yellow',
       shape: 'rect',
@@ -210,6 +221,7 @@ export function buildMindMap(
           generatedAt,
           parentIsSidechain: true,
           events: eventsForSegment(graph.events, seg),
+          snapshotHistory,
           redactor: opts.redactor,
           timeOffsetMs: offsetFor(seg.time_range[0]),
         }),
@@ -251,6 +263,7 @@ interface SegmentNodeCtx {
   generatedAt: string;
   parentIsSidechain: boolean;
   events: RawEvent[]; // exact segment membership, for verbatim user-text extraction
+  snapshotHistory: SnapshotHistory;
   redactor?: Redactor;
   timeOffsetMs?: number;
   /** When true, render this node with the 📌 phase icon instead of 🧩. */
@@ -335,6 +348,7 @@ function buildSegmentNode(seg: TopicSegment, ctx: SegmentNodeCtx): MindMapNode {
   const label = deriveSegmentLabel(seg, ctx.events, ctx.redactor);
   const type: NodeType = 'topic';
   const icon = ctx.promotePhaseIcon ? '📌' : undefined;
+  const evidence = ctx.snapshotHistory.forNode(seg, 'segment');
   const snapshotInput = {
     sessionId: ctx.sessionId,
     jsonlPath: ctx.jsonlPath,
@@ -342,7 +356,6 @@ function buildSegmentNode(seg: TopicSegment, ctx: SegmentNodeCtx): MindMapNode {
     label,
     segment: seg,
     generatedAt: ctx.generatedAt,
-    events: ctx.events,
     redactor: ctx.redactor,
   };
   const node: MindMapNode = {
@@ -356,8 +369,11 @@ function buildSegmentNode(seg: TopicSegment, ctx: SegmentNodeCtx): MindMapNode {
     tools_used: seg.dominant_tools,
     is_sidechain: seg.is_sidechain_only || ctx.parentIsSidechain,
     children: [],
-    context_snapshot_continue: buildContinueSnapshot(snapshotInput) as ContextSnapshot,
-    context_snapshot_fork: buildForkSnapshot(snapshotInput) as ContextSnapshot,
+    context_snapshot_continue: buildContinueSnapshot({
+      ...snapshotInput,
+      evidence: evidence.continue,
+    }),
+    context_snapshot_fork: buildForkSnapshot({ ...snapshotInput, evidence: evidence.fork }),
     color: seg.is_sidechain_only ? 'yellow' : 'green',
     shape: 'rect',
     segment_id: seg.id,
