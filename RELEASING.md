@@ -3,11 +3,12 @@
 This is the v0.X.Y → v0.X.Y+1 (or v0.X+1.0) checklist. Captures the sequence
 that shipped v0.1.0 so the next release doesn't re-discover it.
 
-The latest published release is **0.4.0**, published to npm on 2026-10-10.
-The repository prepares **0.6.0**, including the 0.5 recovery/search milestone
-and 0.6 usage milestone; 0.5.0 is not a separate published release. Updating the
-repository does not publish to npm; registry and GitHub release steps below
-are a separate maintainer action after release approval.
+The latest published release is **0.6.0**, published to npm on 2026-10-11.
+It includes the 0.5 recovery/search milestone and 0.6 usage milestone;
+0.5.0 is not a separate published release. The same verified tarball is
+attached to the GitHub release. Updating the repository alone does not
+publish to npm; registry and GitHub release steps below are separate
+maintainer actions after release approval.
 
 The OMC `release` skill (`/oh-my-claudecode:release`) handles the generic
 ordering — this doc is the agent-tree-specific overlay (project-aware steps,
@@ -29,14 +30,11 @@ post-publish smoke test, MCP plugin re-install).
 - Logged in to GitHub via `gh`: `gh auth status`
 - On `main` branch with no untracked / uncommitted changes
 - Working directory at repo root
-- **npm Granular Access Token with "Bypass 2FA when publishing"** enabled —
-  one-time setup at https://www.npmjs.com/settings/seungwoolee/tokens →
-  Generate New Token → Granular Access Token → check "Bypass two-factor
-  authentication when publishing", grant Read+Write on `@seungwoolee/agent-tree`,
-  then `npm config set //registry.npmjs.org/:_authToken=npm_XXXXX`. Without
-  this, subprocess publish fails: `--auth-type=web` silent-fails (no
-  stdin/browser orchestration in agent-driven shells), classic-OTP path
-  requires interactive stdin. Token expires per its TTL — re-issue then.
+- The maintainer must be available for npm's publishing approval. A successful
+  `npm whoami` confirms CLI login, not approval to publish: npm can require
+  a separate web 2FA approval for the upload. Use an interactive terminal
+  or a supervised pseudo-terminal; do not disable 2FA or copy credentials
+  to a build server to work around the prompt.
 
 ## Release sequence
 
@@ -150,20 +148,19 @@ gh release create vX.Y.Z --title "vX.Y.Z" \
 
 ### 6. npm publish
 
-With a Granular Access Token + 2FA-bypass configured (Prerequisites
-above), publish proceeds straight through:
+From the validated release checkout:
 
 ```bash
 npm publish --access public
 ```
 
-Without bypass token, manual OTP fallback (interactive shell only):
+Manual OTP is an alternative in an interactive shell:
 
 ```bash
 npm publish --access public --otp=NNNNNN
 ```
 
-Without either, npm 12 uses web 2FA: it prints `Authenticate your account
+With a session login, npm 12 uses web 2FA: it prints `Authenticate your account
 at:` with a URL and polls until the approval lands in the browser (the
 window is about five minutes). npm only takes that path when stdin and
 stdout are both TTYs, so a scripted publish must run under a pseudo-terminal;
@@ -173,22 +170,48 @@ through without a second prompt, so publish consecutive versions back to back.
 
 Because the login session lasts only two hours, plan the login and the
 publish as one sitting: the maintainer approves the login page, then the
-publish's 2FA page, within minutes of each other. Unlike `npm publish`,
-`npm login --auth-type=web --no-browser` needs no TTY: it prints `Login at:`
-with a URL and polls, so a script can open that URL in the browser itself.
+publish's 2FA page, within minutes of each other. Prefer interactive
+`npm login --auth-type=web` so any fallback prompts remain under the
+maintainer's control. An old browser link, a terminated login process, or
+a browser sign-in alone is not proof of CLI authentication; check `npm whoami`.
 
-> `prepublishOnly` re-runs lint+typecheck+test+build automatically. If it
+When checks run on a separate build host, publish the verified artifact
+without transferring npm credentials:
+
+```bash
+# Build host: the exact release checkout, with the full checks enabled.
+npm run prepublishOnly
+npm run smoke:release
+npm pack --pack-destination /path/to/release-artifacts
+
+# Authenticated publisher: transfer the tarball and verify its recorded checksum.
+npm whoami
+npm publish /path/to/verified-package.tgz --access public --no-browser
+```
+
+Publishing an existing tarball does not run the source checkout's
+`prepublishOnly`. Its full checks and installed-tarball smoke must therefore
+pass **before** packing, and the transferred artifact must match the recorded
+checksum. Any content change requires fresh validation and packing.
+
+> Publishing from the source checkout runs `prepublishOnly` automatically. If it
 > fails, the publish is aborted before any registry write.
 >
 > **Re-trying after an auth fix**: rerun `npm publish --access public`
 > without disabling `prepublishOnly`, so the artifacts being published are
 > checked and rebuilt from the current source.
 
+npm can accept the upload and report that processing will take a few minutes.
+Do not retry an accepted upload just because the version initially returns
+404. Confirm the exact registry version, `latest` tag and tarball integrity,
+then install from the registry for the post-publish smoke test. A zero publish
+exit code alone does not prove that the package is available to users.
+
 ### 7. Post-publish smoke test
 
 ```bash
 # Run only after this exact version has been published.
-VERSION=0.4.0
+VERSION=0.6.0
 export VERSION
 SMOKE_DIR=$(mktemp -d)
 cd "$SMOKE_DIR"
@@ -256,6 +279,7 @@ try {
   assert.equal(catalog.limit.minimum, 1);
   assert.equal(catalog.limit.maximum, 1000);
   assert.equal(catalog.cwd.type, 'string');
+  assert.equal(catalog.usage.type, 'boolean');
   for (const schema of Object.values(schemas)) {
     assert.deepEqual(schema.properties.source.enum, ['claude', 'codex']);
   }
