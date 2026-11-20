@@ -2,7 +2,7 @@
  * Attribute usage to steps and sum it over subtrees.
  *
  * Each call, compaction and subagent belongs to the step of its event (the
- * deepest node holding it, `buildStepIndex`); one whose event no node holds,
+ * deepest node holding it); one whose event no node holds,
  * for example a dropped sidechain, belongs to the root, so the root always
  * holds the session total. A node's usage is inclusive of its subtree.
  *
@@ -12,8 +12,7 @@
  */
 
 import type { SessionSourceId, UsageSample } from '../sources/types.js';
-import { buildStepIndex } from '../tree/steps.js';
-import type { MindMap, MindMapNode, RawEvent, StepUsage } from '../types.js';
+import type { MindMap, RawEvent, StepUsage } from '../types.js';
 import type { Logger } from '../utils/logger.js';
 import { claudeMainUsage } from './claude.js';
 import { codexCompactions } from './codex.js';
@@ -64,18 +63,35 @@ export async function attachSessionUsage(
 }
 
 export function attachUsage(mindmap: MindMap, usage: SessionUsage): void {
+  const total = aggregateUsage(mindmap.root, usage);
+  if (total) mindmap.stats.usage = structuredClone(total);
+}
+
+/** Only event membership and hierarchy affect attribution, not labels or snapshots. */
+export interface UsageNode {
+  event_uuids: string[];
+  children: UsageNode[];
+  usage?: StepUsage;
+}
+
+export function aggregateUsage(root: UsageNode, usage: SessionUsage): StepUsage | undefined {
   const subagentCalls = usage.subagents?.reduce((sum, agent) => sum + agent.calls, 0) ?? 0;
   if (usage.calls.length === 0 && subagentCalls === 0) return;
 
-  const index = buildStepIndex(mindmap);
-  const ownerOf = (uuid: string | null): MindMapNode => {
-    if (uuid === null) return mindmap.root;
-    const step = index.stepOfEvent(uuid);
-    return (step === undefined ? undefined : index.nodeOfStep(step)) ?? mindmap.root;
+  const deepest = new Map<string, { node: UsageNode; depth: number }>();
+  const index = (node: UsageNode, depth: number): void => {
+    for (const uuid of node.event_uuids) {
+      const current = deepest.get(uuid);
+      if (!current || depth > current.depth) deepest.set(uuid, { node, depth });
+    }
+    for (const child of node.children) index(child, depth + 1);
   };
+  index(root, 0);
+  const ownerOf = (uuid: string | null): UsageNode =>
+    (uuid === null ? undefined : deepest.get(uuid)?.node) ?? root;
   const withSubagents = usage.subagents !== undefined;
-  const own = new Map<MindMapNode, StepUsage>();
-  const ownUsage = (node: MindMapNode): StepUsage => {
+  const own = new Map<UsageNode, StepUsage>();
+  const ownUsage = (node: UsageNode): StepUsage => {
     let entry = own.get(node);
     if (!entry) {
       entry = emptyUsage(withSubagents);
@@ -102,18 +118,17 @@ export function attachUsage(mindmap: MindMap, usage: SessionUsage): void {
     const owner = ownerOf(agent.eventUuid);
     const subagents = ownUsage(owner).subagents!;
     subagents.count += 1;
-    if (owner === mindmap.root)
-      subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
+    if (owner === root) subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
     subagents.calls += agent.calls;
     subagents.prompt_tokens += agent.prompt_tokens;
     subagents.output_tokens += agent.output_tokens;
   }
 
-  const inclusive = (node: MindMapNode): StepUsage => {
+  const inclusive = (node: UsageNode): StepUsage => {
     let total = own.get(node) ?? emptyUsage(withSubagents);
     for (const child of node.children) total = addUsage(total, inclusive(child));
     node.usage = total;
     return total;
   };
-  mindmap.stats.usage = structuredClone(inclusive(mindmap.root));
+  return inclusive(root);
 }

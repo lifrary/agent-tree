@@ -27,21 +27,8 @@ export interface EventSignals {
   isTurn: boolean;
 }
 
-const TOPIC_SHIFT_PATTERNS = [
-  // Korean
-  /\b이제\b/,
-  /\b다음은\b/,
-  /\b그럼\b/,
-  /\b참고로\b/,
-  /\b이번엔\b/,
-  /\b이번에는\b/,
-  // English — word-boundary, lowercase matched after .toLowerCase()
-  /\bnow\b/,
-  /\bnext\b/,
-  /\bswitching to\b/,
-  /let['’]s move\b/,
-  /\bokay so\b/,
-];
+const TOPIC_SHIFT_PHRASE =
+  /(?<![\p{L}\p{M}\p{N}_])(?:이제|다음은|그럼|참고로|이번엔|이번에는|now|next|switching to|let['’]s move|okay so)(?![\p{L}\p{M}\p{N}_])/iu;
 
 export function extractSignals(events: RawEvent[]): EventSignals[] {
   const out: EventSignals[] = new Array(events.length);
@@ -57,7 +44,7 @@ function extractOne(e: RawEvent, index: number): EventSignals {
   const tools = extractTools(e);
   const files = extractFiles(e, tools);
   const slashCommand = extractSlashCommand(e, text);
-  const hasTopicShiftPhrase = detectTopicShift(text);
+  const hasTopicShiftPhrase = e.type === 'user' && TOPIC_SHIFT_PHRASE.test(text);
   const isTurn = e.type === 'user' || e.type === 'assistant';
 
   return {
@@ -158,15 +145,6 @@ function extractSlashCommand(e: RawEvent, text: string): string | null {
   if (!trimmed.startsWith('/')) return null;
   const match = trimmed.slice(1).match(/^([A-Za-z0-9_:-]+)/);
   return match ? match[1] : null;
-}
-
-function detectTopicShift(text: string): boolean {
-  if (!text) return false;
-  const lowered = text.toLowerCase();
-  for (const re of TOPIC_SHIFT_PATTERNS) {
-    if (re.test(text) || re.test(lowered)) return true;
-  }
-  return false;
 }
 
 // ---------------------------------------------------------------------------

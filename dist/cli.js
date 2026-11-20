@@ -6896,21 +6896,7 @@ function resolveMode(opts, isTty) {
 }
 
 // src/analyzer/signals.ts
-var TOPIC_SHIFT_PATTERNS = [
-  // Korean
-  /\b이제\b/,
-  /\b다음은\b/,
-  /\b그럼\b/,
-  /\b참고로\b/,
-  /\b이번엔\b/,
-  /\b이번에는\b/,
-  // English — word-boundary, lowercase matched after .toLowerCase()
-  /\bnow\b/,
-  /\bnext\b/,
-  /\bswitching to\b/,
-  /let['’]s move\b/,
-  /\bokay so\b/
-];
+var TOPIC_SHIFT_PHRASE = /(?<![\p{L}\p{M}\p{N}_])(?:이제|다음은|그럼|참고로|이번엔|이번에는|now|next|switching to|let['’]s move|okay so)(?![\p{L}\p{M}\p{N}_])/iu;
 function extractSignals(events) {
   const out = new Array(events.length);
   for (let i = 0; i < events.length; i += 1) {
@@ -6924,7 +6910,7 @@ function extractOne(e, index) {
   const tools = extractTools(e);
   const files = extractFiles(e, tools);
   const slashCommand = extractSlashCommand(e, text);
-  const hasTopicShiftPhrase = detectTopicShift(text);
+  const hasTopicShiftPhrase = e.type === "user" && TOPIC_SHIFT_PHRASE.test(text);
   const isTurn = e.type === "user" || e.type === "assistant";
   return {
     index,
@@ -7010,14 +6996,6 @@ function extractSlashCommand(e, text) {
   if (!trimmed.startsWith("/")) return null;
   const match = trimmed.slice(1).match(/^([A-Za-z0-9_:-]+)/);
   return match ? match[1] : null;
-}
-function detectTopicShift(text) {
-  if (!text) return false;
-  const lowered = text.toLowerCase();
-  for (const re of TOPIC_SHIFT_PATTERNS) {
-    if (re.test(text) || re.test(lowered)) return true;
-  }
-  return false;
 }
 function jaccard(a, b) {
   if (a.size === 0 && b.size === 0) return 1;
@@ -7823,6 +7801,7 @@ function createSnapshotHistory(events, selected, redactor) {
   const gaps = [];
   const preceding = /* @__PURE__ */ new Map();
   const entries = /* @__PURE__ */ new Map();
+  const priorities = /* @__PURE__ */ new Map();
   const entryCosts = /* @__PURE__ */ new Map();
   const firstInstructions = [];
   const lastInstructions = [];
@@ -7852,6 +7831,7 @@ function createSnapshotHistory(events, selected, redactor) {
       omitted_bytes: Buffer.byteLength(safe) - Buffer.byteLength(excerpt)
     };
     entries.set(index, entry);
+    priorities.set(index, evidencePriority(entry));
     entryCosts.set(index, Buffer.byteLength(renderEntry(entry)));
     if (entry.role === "user") {
       firstInstructions[index] ??= index;
@@ -7901,7 +7881,9 @@ function createSnapshotHistory(events, selected, redactor) {
     for (const anchor2 of [firstInstruction, lastInstruction]) {
       if (anchor2 !== null) eligible.set(anchor2, entries.get(anchor2));
     }
-    const ordered = [...eligible.values()].sort((a, b) => a.event_index - b.event_index);
+    const ranked = [...eligible.values()].sort(
+      (a, b) => priorities.get(b.event_index) - priorities.get(a.event_index) || b.event_index - a.event_index
+    );
     const kept = /* @__PURE__ */ new Map();
     let bytes = 0;
     const keep = (entry) => {
@@ -7913,7 +7895,7 @@ function createSnapshotHistory(events, selected, redactor) {
     };
     keep(firstInstruction === null ? void 0 : entries.get(firstInstruction));
     keep(lastInstruction === null ? void 0 : entries.get(lastInstruction));
-    for (let i = ordered.length - 1; i >= 0; i -= 1) keep(ordered[i]);
+    for (const entry of ranked) keep(entry);
     const bounded = [...kept.values()].sort((a, b) => a.event_index - b.event_index);
     return {
       scope,
@@ -7978,6 +7960,13 @@ function createSnapshotHistory(events, selected, redactor) {
       return { continue: continuation, fork };
     }
   };
+}
+function evidencePriority(entry) {
+  const constraintOrCorrection = /\b(?:do not|don['’]t|must|never|only|keep|preserve|unchanged|instead|rather than|correction|actually)\b|^\s*no[,!.]|하지\s*(?:마|말)|금지|반드시|유지|보존|말고|아니(?:요|라)|대신|정정|바꾸지|변경하지|만\s*(?:변경|수정|사용|추가|처리|허용)/imu;
+  const recordedDecision = /\b(?:decision|decided|chosen|agreed|rejected)\b|결정|선택|채택|하기로|제외하기로/iu;
+  if (entry.role === "user" && constraintOrCorrection.test(entry.text)) return 2;
+  if (recordedDecision.test(entry.text)) return 1;
+  return 0;
 }
 function lowerBound(indexes, value) {
   let lo = 0;
@@ -8054,7 +8043,7 @@ function renderMarkdown(inp, mode, files, nextSteps) {
   }
   if (evidence.omitted_entries > 0 || evidence.truncated_entries > 0) {
     history.push(
-      `Omitted by bounds: ${evidence.traversal_truncated ? "at least " : ""}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then recent evidence. Consult the source for omitted context.`
+      `Omitted by bounds: ${evidence.traversal_truncated ? "at least " : ""}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then likely user constraints/corrections and recorded decisions using English/Korean wording heuristics, then recent evidence. These heuristics can miss relevant context. Consult the source for omitted context.`
     );
   }
   if (evidence.excluded_events > 0)
@@ -10057,401 +10046,6 @@ var IdAllocator = class {
   }
 };
 
-// src/usage/sum.ts
-function emptyUsage(withSubagents) {
-  return {
-    calls: 0,
-    prompt_tokens: 0,
-    cache_read_tokens: 0,
-    cache_write_tokens: 0,
-    output_tokens: 0,
-    reasoning_tokens: 0,
-    context_peak: 0,
-    context_window: null,
-    compactions: [],
-    ...withSubagents ? { subagents: { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 } } : {}
-  };
-}
-function addUsage(a, b) {
-  const sum = {
-    calls: a.calls + b.calls,
-    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
-    cache_read_tokens: a.cache_read_tokens + b.cache_read_tokens,
-    cache_write_tokens: a.cache_write_tokens + b.cache_write_tokens,
-    output_tokens: a.output_tokens + b.output_tokens,
-    reasoning_tokens: a.reasoning_tokens + b.reasoning_tokens,
-    context_peak: Math.max(a.context_peak, b.context_peak),
-    context_window: b.context_window ?? a.context_window,
-    compactions: [...a.compactions, ...b.compactions]
-  };
-  if (a.subagents || b.subagents) {
-    const x = a.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
-    const y = b.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
-    sum.subagents = {
-      count: x.count + y.count,
-      calls: x.calls + y.calls,
-      prompt_tokens: x.prompt_tokens + y.prompt_tokens,
-      output_tokens: x.output_tokens + y.output_tokens,
-      ...(x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) > 0 ? { unattributed_count: (x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) } : {}
-    };
-  }
-  return sum;
-}
-
-// src/usage/format.ts
-function formatTokens(n) {
-  if (n < 1e3) return String(n);
-  if (n < 9950) return `${(n / 1e3).toFixed(1)}k`;
-  if (n < 999500) return `${Math.round(n / 1e3)}k`;
-  if (n < 995e4) return `${(n / 1e6).toFixed(1)}M`;
-  if (n < 9995e5) return `${Math.round(n / 1e6)}M`;
-  if (n < 995e7) return `${(n / 1e9).toFixed(1)}B`;
-  return `${Math.round(n / 1e9)}B`;
-}
-function ownCompactions(node2) {
-  const key = (c) => JSON.stringify([c.pre_tokens, c.post_tokens, c.trigger]);
-  const inChildren = /* @__PURE__ */ new Map();
-  for (const child of node2.children) {
-    for (const c of child.usage?.compactions ?? []) {
-      inChildren.set(key(c), (inChildren.get(key(c)) ?? 0) + 1);
-    }
-  }
-  return (node2.usage?.compactions ?? []).filter((c) => {
-    const left = inChildren.get(key(c)) ?? 0;
-    if (left === 0) return true;
-    inChildren.set(key(c), left - 1);
-    return false;
-  });
-}
-function rowUsage(node2, childrenHidden) {
-  if (!node2.usage) return void 0;
-  return {
-    usage: node2.usage,
-    compactions: childrenHidden ? node2.usage.compactions : ownCompactions(node2)
-  };
-}
-function sumRowUsage(rows) {
-  const present2 = rows.filter((row) => row !== void 0);
-  if (present2.length === 0) return void 0;
-  return {
-    usage: present2.map((row) => row.usage).reduce((a, b) => addUsage(a, b)),
-    compactions: present2.flatMap((row) => row.compactions)
-  };
-}
-function formatUsage(row) {
-  if (!row) return "";
-  const { usage, compactions } = row;
-  const parts = [];
-  if (usage.calls > 0) {
-    const window = usage.context_window === null ? "" : `/${formatTokens(usage.context_window)}`;
-    parts.push(
-      `prompt ${formatTokens(usage.prompt_tokens)} \xB7 out ${formatTokens(usage.output_tokens)} \xB7 ctx ${formatTokens(usage.context_peak)}${window}`
-    );
-  }
-  for (const c of compactions) {
-    parts.push(
-      c.pre_tokens === null || c.post_tokens === null ? "compacted" : `compacted ${formatTokens(c.pre_tokens)} \u2192 ${formatTokens(c.post_tokens)}`
-    );
-  }
-  const agents = usage.subagents;
-  if (agents && agents.calls > 0) {
-    parts.push(
-      `${agents.count} agent${agents.count === 1 ? "" : "s"} prompt ${formatTokens(agents.prompt_tokens)} \xB7 out ${formatTokens(agents.output_tokens)}` + (agents.unattributed_count ? ` \xB7 ${agents.unattributed_count} unattributed` : "")
-    );
-  }
-  return parts.join("  ");
-}
-
-// src/render/text.ts
-var DEFAULT_MAX_WIDTH = 90;
-function detectTerminalWidth() {
-  const cols = process.stdout?.columns;
-  if (typeof cols !== "number" || !Number.isFinite(cols) || cols <= 0) {
-    return DEFAULT_MAX_WIDTH;
-  }
-  return Math.max(60, Math.min(cols, 200));
-}
-function displayWidth(s) {
-  let w = 0;
-  for (const ch of s) {
-    const cp = ch.codePointAt(0);
-    if (cp >= 4352 && cp <= 4447) w += 2;
-    else if (cp >= 11904 && cp <= 12350) w += 2;
-    else if (cp >= 12353 && cp <= 13311) w += 2;
-    else if (cp >= 13312 && cp <= 19903) w += 2;
-    else if (cp >= 19968 && cp <= 40959) w += 2;
-    else if (cp >= 40960 && cp <= 42191) w += 2;
-    else if (cp >= 44032 && cp <= 55203) w += 2;
-    else if (cp >= 63744 && cp <= 64255) w += 2;
-    else if (cp >= 65072 && cp <= 65103) w += 2;
-    else if (cp >= 65280 && cp <= 65376) w += 2;
-    else if (cp >= 65504 && cp <= 65510) w += 2;
-    else if (cp === 8205) w += 0;
-    else if (cp >= 65024 && cp <= 65039) w += 0;
-    else if (cp >= 917760 && cp <= 917999) w += 0;
-    else if (cp >= 65536)
-      w += 2;
-    else w += 1;
-  }
-  return w;
-}
-var ANSI = {
-  reset: "\x1B[0m",
-  dim: "\x1B[2m",
-  cyan: "\x1B[36m",
-  green: "\x1B[32m",
-  yellow: "\x1B[33m",
-  red: "\x1B[31m",
-  brightBlack: "\x1B[90m"
-};
-var wrap = (on, code, s) => on ? `${code}${s}${ANSI.reset}` : s;
-function renderTextTree(mindmap, opts = {}) {
-  const maxWidth = opts.maxWidth ?? detectTerminalWidth();
-  const showRange = opts.showRange !== false;
-  const filterKw = opts.filter?.toLowerCase().trim();
-  const groupConsecutive = opts.groupConsecutive ?? true;
-  const color = opts.color === true;
-  const numbered = [];
-  const allRows = [];
-  walk(mindmap.root, 0, [], true);
-  const padWidth = String(numbered.length || 1).length;
-  const numberToId = /* @__PURE__ */ new Map();
-  const idToNumber = /* @__PURE__ */ new Map();
-  for (const n of numbered) {
-    numberToId.set(n.number, n.id);
-    idToNumber.set(n.id, n.number);
-  }
-  let visibleRows = allRows;
-  if (filterKw) {
-    visibleRows = allRows.filter((r) => {
-      const haystack = `${r.label} ${r.time} ${r.range} ${r.id}`.toLowerCase();
-      return haystack.includes(filterKw);
-    });
-  }
-  if (groupConsecutive) {
-    visibleRows = collapseRuns(visibleRows);
-  }
-  const labelCol = Math.min(maxWidth, 70);
-  let maxLabelWidth = 0;
-  for (const r of visibleRows) {
-    const w = displayWidth(r.label);
-    if (w > maxLabelWidth) maxLabelWidth = w;
-  }
-  const targetCol = Math.min(maxLabelWidth, labelCol);
-  const lines = [];
-  const stats = mindmap.stats;
-  const headerParts = [
-    `agent-tree`,
-    `session ${shortId2(mindmap.session_id)}`,
-    `${stats.total_events} events`,
-    `${stats.total_turns} turns`,
-    `${stats.total_nodes} nodes`
-  ];
-  if (stats.duration_minutes > 0) headerParts.push(`${stats.duration_minutes} min`);
-  if (stats.sidechain_count > 0) headerParts.push(`${stats.sidechain_count} sidechain`);
-  lines.push(wrap(color, ANSI.dim, headerParts.join(" \xB7 ")));
-  if (filterKw) {
-    lines.push(
-      wrap(
-        color,
-        ANSI.dim,
-        `(filter: "${filterKw}" \u2014 ${visibleRows.length}/${allRows.length} rows)`
-      )
-    );
-  }
-  lines.push("");
-  for (const row of visibleRows) {
-    const numStr = wrap(color, ANSI.brightBlack, String(row.number).padStart(padWidth, " "));
-    const prefix = wrap(color, ANSI.brightBlack, row.prefix);
-    const pickMark = pickMarker(row);
-    const labelColored = colorizeLabel(row, color);
-    const rawWidth = displayWidth(pickMark + row.label);
-    const padding = rawWidth < targetCol ? " ".repeat(targetCol - rawWidth) : " ";
-    const time3 = wrap(color, ANSI.brightBlack, row.time);
-    const range = wrap(color, ANSI.brightBlack, row.range);
-    const usageText = formatUsage(row.usage);
-    const usage = usageText ? wrap(color, ANSI.brightBlack, usageText) : "";
-    const trailing = [time3, range, usage].filter((s) => s.length > 0).join("  ");
-    lines.push(`${numStr}. ${prefix}${pickMark}${labelColored}${padding}${trailing}`);
-  }
-  return {
-    text: lines.join("\n"),
-    nodes: numbered,
-    numberToId,
-    idToNumber
-  };
-  function walk(node2, depth, ancestorLastFlags, isLast) {
-    const number4 = numbered.length + 1;
-    numbered.push({ number: number4, id: node2.id, depth });
-    if (typeof opts.maxDepth === "number" && depth > opts.maxDepth) {
-      node2.children.forEach((child, index) => {
-        walk(child, depth + 1, [], index === node2.children.length - 1);
-      });
-      return;
-    }
-    let prefix = "";
-    for (const ancestorLast of ancestorLastFlags) {
-      prefix += ancestorLast ? "   " : "\u2502  ";
-    }
-    if (depth > 0) prefix += isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
-    const sidechainTag = node2.is_sidechain && node2.type !== "root" ? "[sidechain] " : "";
-    const meta3 = node2.phase_meta ? `  (${node2.phase_meta})` : "";
-    const label = `${sidechainTag}${node2.label}${meta3}`;
-    const time3 = typeof node2.time_offset_ms === "number" ? formatRelative(node2.time_offset_ms) : "";
-    const range = showRange ? `events ${node2.index_range[0]}\u2013${node2.index_range[1]}` : "";
-    const isUserText = label.startsWith('"');
-    const fileToolKey = isUserText ? null : extractFileKey(label);
-    const modes = opts.picks?.get(node2.id);
-    allRows.push({
-      number: number4,
-      id: node2.id,
-      prefix,
-      label,
-      time: time3,
-      range,
-      isUserText,
-      fileToolKey,
-      color: node2.color,
-      pickedContinue: !!modes?.has("continue"),
-      pickedFork: !!modes?.has("fork"),
-      ...opts.usage ? { usage: rowUsage(node2, typeof opts.maxDepth === "number" && depth >= opts.maxDepth) } : {}
-    });
-    const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
-    node2.children.forEach((c, i) => {
-      walk(c, depth + 1, nextAncestors, i === node2.children.length - 1);
-    });
-  }
-}
-function collapseRuns(rows) {
-  const out = [];
-  let i = 0;
-  while (i < rows.length) {
-    const head = rows[i];
-    if (!head.fileToolKey) {
-      out.push(head);
-      i += 1;
-      continue;
-    }
-    let j = i + 1;
-    while (j < rows.length && rows[j].fileToolKey === head.fileToolKey && rows[j].prefix === head.prefix) {
-      j += 1;
-    }
-    const runLen = j - i;
-    if (runLen >= 3) {
-      const last = rows[j - 1];
-      const collapsed = {
-        ...head,
-        label: `${head.fileToolKey} \xD7${runLen}`,
-        time: head.time && last.time ? `${head.time} \u2192 ${last.time}` : head.time || last.time,
-        range: head.range && last.range ? `events ${head.range.replace(/^events\s/, "").split("\u2013")[0]}\u2013${last.range.replace(/^events\s/, "").split("\u2013")[1]} (#${head.number}-#${last.number})` : head.range,
-        usage: sumRowUsage(rows.slice(i, j).map((row) => row.usage))
-      };
-      out.push(collapsed);
-    } else {
-      for (let k = i; k < j; k += 1) out.push(rows[k]);
-    }
-    i = j;
-  }
-  return out;
-}
-function extractFileKey(label) {
-  const m = label.match(/^([\w.\-/]+\.[A-Za-z0-9]+)\s+\(/);
-  return m ? m[1] : null;
-}
-function pickMarker(row) {
-  return row.pickedContinue || row.pickedFork ? "\u2B50 " : "";
-}
-function colorizeLabel(row, color) {
-  if (!color) return row.label;
-  let base;
-  if (row.isUserText) base = wrap(true, ANSI.cyan, row.label);
-  else if (row.color === "red") base = wrap(true, ANSI.red, row.label);
-  else if (row.color === "yellow") base = wrap(true, ANSI.yellow, row.label);
-  else if (row.color === "green") base = wrap(true, ANSI.green, row.label);
-  else base = wrap(true, ANSI.dim, row.label);
-  if (row.pickedContinue || row.pickedFork) {
-    return `\x1B[1m${base}\x1B[22m`;
-  }
-  return base;
-}
-function shortId2(id) {
-  return id.slice(0, 8);
-}
-function formatRelative(deltaMs) {
-  if (deltaMs < 1e3) return "T0";
-  const totalSec = Math.floor(deltaMs / 1e3);
-  const h = Math.floor(totalSec / 3600);
-  const m = Math.floor(totalSec % 3600 / 60);
-  const s = totalSec % 60;
-  if (h > 0) return `T+${h}h ${m}m`;
-  if (m > 0) return `T+${m}m`;
-  return `T+${s}s`;
-}
-function parseSelection(input2) {
-  const trimmed = input2.trim();
-  if (trimmed.length === 0) return { ok: false, mode: "continue", reason: "empty input" };
-  if (/^q(uit)?$/i.test(trimmed)) {
-    return { ok: false, mode: "continue", reason: "user quit" };
-  }
-  const tokens = trimmed.split(/\s+/);
-  const head = tokens[0];
-  const tail = tokens.slice(1).join(" ").toLowerCase();
-  let mode = "continue";
-  if (tail === "fork" || tail === "f") mode = "fork";
-  else if (tail === "continue" || tail === "c" || tail === "") mode = "continue";
-  else
-    return {
-      ok: false,
-      mode,
-      reason: `unknown mode "${tail}" \u2014 expected continue|fork (or omit)`
-    };
-  return { ok: true, numberOrId: head, mode };
-}
-function lookupSnapshot(mindmap, numberOrId, result) {
-  const asNumber = Number(numberOrId);
-  if (Number.isInteger(asNumber) && asNumber > 0) {
-    const id = result.numberToId.get(asNumber);
-    if (id) return findNodeById(mindmap.root, id);
-  }
-  const idCandidate = numberOrId.startsWith("n_") ? numberOrId : `n_${String(numberOrId).padStart(3, "0")}`;
-  return findNodeById(mindmap.root, idCandidate);
-}
-function findNodeById(node2, id) {
-  if (node2.id === id) return node2;
-  for (const c of node2.children) {
-    const hit = findNodeById(c, id);
-    if (hit) return hit;
-  }
-  return null;
-}
-
-// src/tree/steps.ts
-function buildStepIndex(mindmap) {
-  const { numberToId, idToNumber } = renderTextTree(mindmap);
-  const nodes = /* @__PURE__ */ new Map();
-  const deepest = /* @__PURE__ */ new Map();
-  const visit3 = (node2, depth) => {
-    nodes.set(node2.id, node2);
-    const step = idToNumber.get(node2.id);
-    if (step !== void 0) {
-      for (const uuid3 of node2.event_uuids) {
-        const current = deepest.get(uuid3);
-        if (!current || depth > current.depth) deepest.set(uuid3, { step, depth });
-      }
-    }
-    for (const child of node2.children) visit3(child, depth + 1);
-  };
-  visit3(mindmap.root, 0);
-  return {
-    stepOfEvent: (uuid3) => deepest.get(uuid3)?.step,
-    nodeOfStep: (step) => {
-      const id = numberToId.get(step);
-      return id === void 0 ? void 0 : nodes.get(id);
-    },
-    stepOfNode: (id) => idToNumber.get(id)
-  };
-}
-
 // src/usage/claude.ts
 function claudeCall(record2, seen) {
   if (record2.type !== "assistant" || !isRecord2(record2.message)) return null;
@@ -10902,6 +10496,47 @@ function linker(events, agents) {
   return (id) => resolve10(id, /* @__PURE__ */ new Set());
 }
 
+// src/usage/sum.ts
+function emptyUsage(withSubagents) {
+  return {
+    calls: 0,
+    prompt_tokens: 0,
+    cache_read_tokens: 0,
+    cache_write_tokens: 0,
+    output_tokens: 0,
+    reasoning_tokens: 0,
+    context_peak: 0,
+    context_window: null,
+    compactions: [],
+    ...withSubagents ? { subagents: { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 } } : {}
+  };
+}
+function addUsage(a, b) {
+  const sum = {
+    calls: a.calls + b.calls,
+    prompt_tokens: a.prompt_tokens + b.prompt_tokens,
+    cache_read_tokens: a.cache_read_tokens + b.cache_read_tokens,
+    cache_write_tokens: a.cache_write_tokens + b.cache_write_tokens,
+    output_tokens: a.output_tokens + b.output_tokens,
+    reasoning_tokens: a.reasoning_tokens + b.reasoning_tokens,
+    context_peak: Math.max(a.context_peak, b.context_peak),
+    context_window: b.context_window ?? a.context_window,
+    compactions: [...a.compactions, ...b.compactions]
+  };
+  if (a.subagents || b.subagents) {
+    const x = a.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
+    const y = b.subagents ?? { count: 0, calls: 0, prompt_tokens: 0, output_tokens: 0 };
+    sum.subagents = {
+      count: x.count + y.count,
+      calls: x.calls + y.calls,
+      prompt_tokens: x.prompt_tokens + y.prompt_tokens,
+      output_tokens: x.output_tokens + y.output_tokens,
+      ...(x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) > 0 ? { unattributed_count: (x.unattributed_count ?? 0) + (y.unattributed_count ?? 0) } : {}
+    };
+  }
+  return sum;
+}
+
 // src/usage/attach.ts
 async function collectSessionUsage(input2) {
   if (input2.source === "codex") {
@@ -10919,14 +10554,22 @@ async function attachSessionUsage(mindmap, input2) {
   attachUsage(mindmap, await collectSessionUsage(input2));
 }
 function attachUsage(mindmap, usage) {
+  const total = aggregateUsage(mindmap.root, usage);
+  if (total) mindmap.stats.usage = structuredClone(total);
+}
+function aggregateUsage(root, usage) {
   const subagentCalls = usage.subagents?.reduce((sum, agent) => sum + agent.calls, 0) ?? 0;
   if (usage.calls.length === 0 && subagentCalls === 0) return;
-  const index = buildStepIndex(mindmap);
-  const ownerOf = (uuid3) => {
-    if (uuid3 === null) return mindmap.root;
-    const step = index.stepOfEvent(uuid3);
-    return (step === void 0 ? void 0 : index.nodeOfStep(step)) ?? mindmap.root;
+  const deepest = /* @__PURE__ */ new Map();
+  const index = (node2, depth) => {
+    for (const uuid3 of node2.event_uuids) {
+      const current = deepest.get(uuid3);
+      if (!current || depth > current.depth) deepest.set(uuid3, { node: node2, depth });
+    }
+    for (const child of node2.children) index(child, depth + 1);
   };
+  index(root, 0);
+  const ownerOf = (uuid3) => (uuid3 === null ? void 0 : deepest.get(uuid3)?.node) ?? root;
   const withSubagents = usage.subagents !== void 0;
   const own2 = /* @__PURE__ */ new Map();
   const ownUsage = (node2) => {
@@ -10955,8 +10598,7 @@ function attachUsage(mindmap, usage) {
     const owner = ownerOf(agent.eventUuid);
     const subagents = ownUsage(owner).subagents;
     subagents.count += 1;
-    if (owner === mindmap.root)
-      subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
+    if (owner === root) subagents.unattributed_count = (subagents.unattributed_count ?? 0) + 1;
     subagents.calls += agent.calls;
     subagents.prompt_tokens += agent.prompt_tokens;
     subagents.output_tokens += agent.output_tokens;
@@ -10967,7 +10609,7 @@ function attachUsage(mindmap, usage) {
     node2.usage = total;
     return total;
   };
-  mindmap.stats.usage = structuredClone(inclusive(mindmap.root));
+  return inclusive(root);
 }
 
 // src/config/loader.ts
@@ -31151,6 +30793,333 @@ _(no events were parsed.)_
 import { mkdir as mkdir4, writeFile as writeFile3 } from "node:fs/promises";
 import { resolve as resolve6 } from "node:path";
 
+// src/usage/format.ts
+function formatTokens(n) {
+  if (n < 1e3) return String(n);
+  if (n < 9950) return `${(n / 1e3).toFixed(1)}k`;
+  if (n < 999500) return `${Math.round(n / 1e3)}k`;
+  if (n < 995e4) return `${(n / 1e6).toFixed(1)}M`;
+  if (n < 9995e5) return `${Math.round(n / 1e6)}M`;
+  if (n < 995e7) return `${(n / 1e9).toFixed(1)}B`;
+  return `${Math.round(n / 1e9)}B`;
+}
+function ownCompactions(node2) {
+  const key = (c) => JSON.stringify([c.pre_tokens, c.post_tokens, c.trigger]);
+  const inChildren = /* @__PURE__ */ new Map();
+  for (const child of node2.children) {
+    for (const c of child.usage?.compactions ?? []) {
+      inChildren.set(key(c), (inChildren.get(key(c)) ?? 0) + 1);
+    }
+  }
+  return (node2.usage?.compactions ?? []).filter((c) => {
+    const left = inChildren.get(key(c)) ?? 0;
+    if (left === 0) return true;
+    inChildren.set(key(c), left - 1);
+    return false;
+  });
+}
+function rowUsage(node2, childrenHidden) {
+  if (!node2.usage) return void 0;
+  return {
+    usage: node2.usage,
+    compactions: childrenHidden ? node2.usage.compactions : ownCompactions(node2)
+  };
+}
+function sumRowUsage(rows) {
+  const present2 = rows.filter((row) => row !== void 0);
+  if (present2.length === 0) return void 0;
+  return {
+    usage: present2.map((row) => row.usage).reduce((a, b) => addUsage(a, b)),
+    compactions: present2.flatMap((row) => row.compactions)
+  };
+}
+function formatUsage(row) {
+  if (!row) return "";
+  const { usage, compactions } = row;
+  const parts = [];
+  if (usage.calls > 0) {
+    const window = usage.context_window === null ? "" : `/${formatTokens(usage.context_window)}`;
+    parts.push(
+      `prompt ${formatTokens(usage.prompt_tokens)} \xB7 out ${formatTokens(usage.output_tokens)} \xB7 ctx ${formatTokens(usage.context_peak)}${window}`
+    );
+  }
+  for (const c of compactions) {
+    parts.push(
+      c.pre_tokens === null || c.post_tokens === null ? "compacted" : `compacted ${formatTokens(c.pre_tokens)} \u2192 ${formatTokens(c.post_tokens)}`
+    );
+  }
+  const agents = usage.subagents;
+  if (agents && agents.calls > 0) {
+    parts.push(
+      `${agents.count} agent${agents.count === 1 ? "" : "s"} prompt ${formatTokens(agents.prompt_tokens)} \xB7 out ${formatTokens(agents.output_tokens)}` + (agents.unattributed_count ? ` \xB7 ${agents.unattributed_count} unattributed` : "")
+    );
+  }
+  return parts.join("  ");
+}
+
+// src/render/text.ts
+var DEFAULT_MAX_WIDTH = 90;
+function detectTerminalWidth() {
+  const cols = process.stdout?.columns;
+  if (typeof cols !== "number" || !Number.isFinite(cols) || cols <= 0) {
+    return DEFAULT_MAX_WIDTH;
+  }
+  return Math.max(60, Math.min(cols, 200));
+}
+function displayWidth(s) {
+  let w = 0;
+  for (const ch of s) {
+    const cp = ch.codePointAt(0);
+    if (cp >= 4352 && cp <= 4447) w += 2;
+    else if (cp >= 11904 && cp <= 12350) w += 2;
+    else if (cp >= 12353 && cp <= 13311) w += 2;
+    else if (cp >= 13312 && cp <= 19903) w += 2;
+    else if (cp >= 19968 && cp <= 40959) w += 2;
+    else if (cp >= 40960 && cp <= 42191) w += 2;
+    else if (cp >= 44032 && cp <= 55203) w += 2;
+    else if (cp >= 63744 && cp <= 64255) w += 2;
+    else if (cp >= 65072 && cp <= 65103) w += 2;
+    else if (cp >= 65280 && cp <= 65376) w += 2;
+    else if (cp >= 65504 && cp <= 65510) w += 2;
+    else if (cp === 8205) w += 0;
+    else if (cp >= 65024 && cp <= 65039) w += 0;
+    else if (cp >= 917760 && cp <= 917999) w += 0;
+    else if (cp >= 65536)
+      w += 2;
+    else w += 1;
+  }
+  return w;
+}
+var ANSI = {
+  reset: "\x1B[0m",
+  dim: "\x1B[2m",
+  cyan: "\x1B[36m",
+  green: "\x1B[32m",
+  yellow: "\x1B[33m",
+  red: "\x1B[31m",
+  brightBlack: "\x1B[90m"
+};
+var wrap = (on, code, s) => on ? `${code}${s}${ANSI.reset}` : s;
+function renderTextTree(mindmap, opts = {}) {
+  const maxWidth = opts.maxWidth ?? detectTerminalWidth();
+  const showRange = opts.showRange !== false;
+  const filterKw = opts.filter?.toLowerCase().trim();
+  const groupConsecutive = opts.groupConsecutive ?? true;
+  const color = opts.color === true;
+  const numbered = [];
+  const allRows = [];
+  walk(mindmap.root, 0, [], true);
+  const padWidth = String(numbered.length || 1).length;
+  const numberToId = /* @__PURE__ */ new Map();
+  const idToNumber = /* @__PURE__ */ new Map();
+  for (const n of numbered) {
+    numberToId.set(n.number, n.id);
+    idToNumber.set(n.id, n.number);
+  }
+  let visibleRows = allRows;
+  if (filterKw) {
+    visibleRows = allRows.filter((r) => {
+      const haystack = `${r.label} ${r.time} ${r.range} ${r.id}`.toLowerCase();
+      return haystack.includes(filterKw);
+    });
+  }
+  if (groupConsecutive) {
+    visibleRows = collapseRuns(visibleRows);
+  }
+  const labelCol = Math.min(maxWidth, 70);
+  let maxLabelWidth = 0;
+  for (const r of visibleRows) {
+    const w = displayWidth(r.label);
+    if (w > maxLabelWidth) maxLabelWidth = w;
+  }
+  const targetCol = Math.min(maxLabelWidth, labelCol);
+  const lines = [];
+  const stats = mindmap.stats;
+  const headerParts = [
+    `agent-tree`,
+    `session ${shortId2(mindmap.session_id)}`,
+    `${stats.total_events} events`,
+    `${stats.total_turns} turns`,
+    `${stats.total_nodes} nodes`
+  ];
+  if (stats.duration_minutes > 0) headerParts.push(`${stats.duration_minutes} min`);
+  if (stats.sidechain_count > 0) headerParts.push(`${stats.sidechain_count} sidechain`);
+  lines.push(wrap(color, ANSI.dim, headerParts.join(" \xB7 ")));
+  if (filterKw) {
+    lines.push(
+      wrap(
+        color,
+        ANSI.dim,
+        `(filter: "${filterKw}" \u2014 ${visibleRows.length}/${allRows.length} rows)`
+      )
+    );
+  }
+  lines.push("");
+  for (const row of visibleRows) {
+    const numStr = wrap(color, ANSI.brightBlack, String(row.number).padStart(padWidth, " "));
+    const prefix = wrap(color, ANSI.brightBlack, row.prefix);
+    const pickMark = pickMarker(row);
+    const labelColored = colorizeLabel(row, color);
+    const rawWidth = displayWidth(pickMark + row.label);
+    const padding = rawWidth < targetCol ? " ".repeat(targetCol - rawWidth) : " ";
+    const time3 = wrap(color, ANSI.brightBlack, row.time);
+    const range = wrap(color, ANSI.brightBlack, row.range);
+    const usageText = formatUsage(row.usage);
+    const usage = usageText ? wrap(color, ANSI.brightBlack, usageText) : "";
+    const trailing = [time3, range, usage].filter((s) => s.length > 0).join("  ");
+    lines.push(`${numStr}. ${prefix}${pickMark}${labelColored}${padding}${trailing}`);
+  }
+  return {
+    text: lines.join("\n"),
+    nodes: numbered,
+    numberToId,
+    idToNumber
+  };
+  function walk(node2, depth, ancestorLastFlags, isLast) {
+    const number4 = numbered.length + 1;
+    numbered.push({ number: number4, id: node2.id, depth });
+    if (typeof opts.maxDepth === "number" && depth > opts.maxDepth) {
+      node2.children.forEach((child, index) => {
+        walk(child, depth + 1, [], index === node2.children.length - 1);
+      });
+      return;
+    }
+    let prefix = "";
+    for (const ancestorLast of ancestorLastFlags) {
+      prefix += ancestorLast ? "   " : "\u2502  ";
+    }
+    if (depth > 0) prefix += isLast ? "\u2514\u2500 " : "\u251C\u2500 ";
+    const sidechainTag = node2.is_sidechain && node2.type !== "root" ? "[sidechain] " : "";
+    const meta3 = node2.phase_meta ? `  (${node2.phase_meta})` : "";
+    const label = `${sidechainTag}${node2.label}${meta3}`;
+    const time3 = typeof node2.time_offset_ms === "number" ? formatRelative(node2.time_offset_ms) : "";
+    const range = showRange ? `events ${node2.index_range[0]}\u2013${node2.index_range[1]}` : "";
+    const isUserText = label.startsWith('"');
+    const fileToolKey = isUserText ? null : extractFileKey(label);
+    const modes = opts.picks?.get(node2.id);
+    allRows.push({
+      number: number4,
+      id: node2.id,
+      prefix,
+      label,
+      time: time3,
+      range,
+      isUserText,
+      fileToolKey,
+      color: node2.color,
+      pickedContinue: !!modes?.has("continue"),
+      pickedFork: !!modes?.has("fork"),
+      ...opts.usage ? { usage: rowUsage(node2, typeof opts.maxDepth === "number" && depth >= opts.maxDepth) } : {}
+    });
+    const nextAncestors = depth === 0 ? [] : [...ancestorLastFlags, isLast];
+    node2.children.forEach((c, i) => {
+      walk(c, depth + 1, nextAncestors, i === node2.children.length - 1);
+    });
+  }
+}
+function collapseRuns(rows) {
+  const out = [];
+  let i = 0;
+  while (i < rows.length) {
+    const head = rows[i];
+    if (!head.fileToolKey) {
+      out.push(head);
+      i += 1;
+      continue;
+    }
+    let j = i + 1;
+    while (j < rows.length && rows[j].fileToolKey === head.fileToolKey && rows[j].prefix === head.prefix) {
+      j += 1;
+    }
+    const runLen = j - i;
+    if (runLen >= 3) {
+      const last = rows[j - 1];
+      const collapsed = {
+        ...head,
+        label: `${head.fileToolKey} \xD7${runLen}`,
+        time: head.time && last.time ? `${head.time} \u2192 ${last.time}` : head.time || last.time,
+        range: head.range && last.range ? `events ${head.range.replace(/^events\s/, "").split("\u2013")[0]}\u2013${last.range.replace(/^events\s/, "").split("\u2013")[1]} (#${head.number}-#${last.number})` : head.range,
+        usage: sumRowUsage(rows.slice(i, j).map((row) => row.usage))
+      };
+      out.push(collapsed);
+    } else {
+      for (let k = i; k < j; k += 1) out.push(rows[k]);
+    }
+    i = j;
+  }
+  return out;
+}
+function extractFileKey(label) {
+  const m = label.match(/^([\w.\-/]+\.[A-Za-z0-9]+)\s+\(/);
+  return m ? m[1] : null;
+}
+function pickMarker(row) {
+  return row.pickedContinue || row.pickedFork ? "\u2B50 " : "";
+}
+function colorizeLabel(row, color) {
+  if (!color) return row.label;
+  let base;
+  if (row.isUserText) base = wrap(true, ANSI.cyan, row.label);
+  else if (row.color === "red") base = wrap(true, ANSI.red, row.label);
+  else if (row.color === "yellow") base = wrap(true, ANSI.yellow, row.label);
+  else if (row.color === "green") base = wrap(true, ANSI.green, row.label);
+  else base = wrap(true, ANSI.dim, row.label);
+  if (row.pickedContinue || row.pickedFork) {
+    return `\x1B[1m${base}\x1B[22m`;
+  }
+  return base;
+}
+function shortId2(id) {
+  return id.slice(0, 8);
+}
+function formatRelative(deltaMs) {
+  if (deltaMs < 1e3) return "T0";
+  const totalSec = Math.floor(deltaMs / 1e3);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor(totalSec % 3600 / 60);
+  const s = totalSec % 60;
+  if (h > 0) return `T+${h}h ${m}m`;
+  if (m > 0) return `T+${m}m`;
+  return `T+${s}s`;
+}
+function parseSelection(input2) {
+  const trimmed = input2.trim();
+  if (trimmed.length === 0) return { ok: false, mode: "continue", reason: "empty input" };
+  if (/^q(uit)?$/i.test(trimmed)) {
+    return { ok: false, mode: "continue", reason: "user quit" };
+  }
+  const tokens = trimmed.split(/\s+/);
+  const head = tokens[0];
+  const tail = tokens.slice(1).join(" ").toLowerCase();
+  let mode = "continue";
+  if (tail === "fork" || tail === "f") mode = "fork";
+  else if (tail === "continue" || tail === "c" || tail === "") mode = "continue";
+  else
+    return {
+      ok: false,
+      mode,
+      reason: `unknown mode "${tail}" \u2014 expected continue|fork (or omit)`
+    };
+  return { ok: true, numberOrId: head, mode };
+}
+function lookupSnapshot(mindmap, numberOrId, result) {
+  const asNumber = Number(numberOrId);
+  if (Number.isInteger(asNumber) && asNumber > 0) {
+    const id = result.numberToId.get(asNumber);
+    if (id) return findNodeById(mindmap.root, id);
+  }
+  const idCandidate = numberOrId.startsWith("n_") ? numberOrId : `n_${String(numberOrId).padStart(3, "0")}`;
+  return findNodeById(mindmap.root, idCandidate);
+}
+function findNodeById(node2, id) {
+  if (node2.id === id) return node2;
+  for (const c of node2.children) {
+    const hit = findNodeById(c, id);
+    if (hit) return hit;
+  }
+  return null;
+}
+
 // src/cli/tui.ts
 import { createInterface as createInterface3 } from "node:readline/promises";
 async function runTui(mindmap, opts = {}) {
@@ -32076,6 +32045,33 @@ function toSessionMatch(entry) {
   };
 }
 
+// src/tree/steps.ts
+function buildStepIndex(mindmap) {
+  const { numberToId, idToNumber } = renderTextTree(mindmap);
+  const nodes = /* @__PURE__ */ new Map();
+  const deepest = /* @__PURE__ */ new Map();
+  const visit3 = (node2, depth) => {
+    nodes.set(node2.id, node2);
+    const step = idToNumber.get(node2.id);
+    if (step !== void 0) {
+      for (const uuid3 of node2.event_uuids) {
+        const current = deepest.get(uuid3);
+        if (!current || depth > current.depth) deepest.set(uuid3, { step, depth });
+      }
+    }
+    for (const child of node2.children) visit3(child, depth + 1);
+  };
+  visit3(mindmap.root, 0);
+  return {
+    stepOfEvent: (uuid3) => deepest.get(uuid3)?.step,
+    nodeOfStep: (step) => {
+      const id = numberToId.get(step);
+      return id === void 0 ? void 0 : nodes.get(id);
+    },
+    stepOfNode: (id) => idToNumber.get(id)
+  };
+}
+
 // src/utils/logger.ts
 var LEVEL_RANK = {
   trace: 10,
@@ -32778,7 +32774,7 @@ var UNAVAILABLE_CODES = /* @__PURE__ */ new Set([
   "ELOOP"
 ]);
 async function addCatalogUsage(entries, options) {
-  const { opts, config: config2, redactor } = options;
+  const { config: config2, redactor } = options;
   const emit = (level, message, extra) => options.logger[level](redactor.apply(message), redactDeep(extra, redactor));
   const logger = {
     level: options.logger.level,
@@ -32793,14 +32789,46 @@ async function addCatalogUsage(entries, options) {
     let usage;
     let status = "not_logged";
     try {
-      const result = await runPipeline({
-        match: entry,
-        opts: { ...opts, llm: false, dryRun: true },
-        config: config2,
-        logger,
-        quiet: true
+      const { events, usage: samples } = await getSessionSource(entry.source).read(
+        entry.jsonlPath,
+        { logger }
+      );
+      const segments = detectSegments(events, {
+        sidechainHandling: config2.analyzer.sidechain_handling,
+        gapMs: config2.analyzer.topic_gap_minutes * 6e4,
+        fileJaccardThreshold: config2.analyzer.file_jaccard_threshold
       });
-      usage = result.mindmap.stats.usage;
+      const main2 = segments.filter((segment) => !segment.is_sidechain_only);
+      const sidechains = segments.filter((segment) => segment.is_sidechain_only);
+      const root = {
+        event_uuids: [],
+        children: groupSegmentsIntoPhases(main2, events).map((phase) => ({
+          event_uuids: phase.headSegment.event_uuids,
+          children: phase.children.map((segment) => ({
+            event_uuids: segment.event_uuids,
+            children: []
+          }))
+        }))
+      };
+      if (sidechains.length > 0) {
+        root.children.push({
+          event_uuids: [],
+          children: sidechains.map((segment) => ({
+            event_uuids: segment.event_uuids,
+            children: []
+          }))
+        });
+      }
+      usage = aggregateUsage(
+        root,
+        await collectSessionUsage({
+          source: entry.source,
+          jsonlPath: entry.jsonlPath,
+          events,
+          samples,
+          logger
+        })
+      );
     } catch (error62) {
       if (!(error62 instanceof Error) || !UNAVAILABLE_CODES.has(error62.code ?? "")) {
         throw error62;

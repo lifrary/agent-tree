@@ -1,5 +1,9 @@
 /** Opt-in catalog totals; discovery and its limit must run before this module is called. */
-import { runPipeline, type ResolvedConfig } from '../cli/pipeline.js';
+import type { ResolvedConfig } from '../cli/pipeline.js';
+import { detectSegments } from '../analyzer/segments.js';
+import { getSessionSource } from '../sources/index.js';
+import { groupSegmentsIntoPhases } from '../tree/builder.js';
+import { aggregateUsage, collectSessionUsage, type UsageNode } from './attach.js';
 import type { CliOptions } from '../cli/options.js';
 import type { SessionEntry } from '../sources/types.js';
 import type { StepUsage } from '../types.js';
@@ -50,7 +54,7 @@ export async function addCatalogUsage(
   entries: SessionEntry[],
   options: CatalogUsageOptions,
 ): Promise<CatalogUsageEntry[]> {
-  const { opts, config, redactor } = options;
+  const { config, redactor } = options;
   // Readers can log transcript paths; diagnostics need the same policy as rows.
   const emit = (level: LogLevel, message: string, extra?: unknown) =>
     options.logger[level](redactor.apply(message), redactDeep(extra, redactor));
@@ -67,14 +71,46 @@ export async function addCatalogUsage(
     let usage: StepUsage | undefined;
     let status: 'not_logged' | 'unavailable' = 'not_logged';
     try {
-      const result = await runPipeline({
-        match: entry,
-        opts: { ...opts, llm: false, dryRun: true },
-        config,
-        logger,
-        quiet: true,
+      const { events, usage: samples } = await getSessionSource(entry.source).read(
+        entry.jsonlPath,
+        { logger },
+      );
+      const segments = detectSegments(events, {
+        sidechainHandling: config.analyzer.sidechain_handling,
+        gapMs: config.analyzer.topic_gap_minutes * 60_000,
+        fileJaccardThreshold: config.analyzer.file_jaccard_threshold,
       });
-      usage = result.mindmap.stats.usage;
+      const main = segments.filter((segment) => !segment.is_sidechain_only);
+      const sidechains = segments.filter((segment) => segment.is_sidechain_only);
+      const root: UsageNode = {
+        event_uuids: [],
+        children: groupSegmentsIntoPhases(main, events).map((phase) => ({
+          event_uuids: phase.headSegment.event_uuids,
+          children: phase.children.map((segment) => ({
+            event_uuids: segment.event_uuids,
+            children: [],
+          })),
+        })),
+      };
+      if (sidechains.length > 0) {
+        root.children.push({
+          event_uuids: [],
+          children: sidechains.map((segment) => ({
+            event_uuids: segment.event_uuids,
+            children: [],
+          })),
+        });
+      }
+      usage = aggregateUsage(
+        root,
+        await collectSessionUsage({
+          source: entry.source,
+          jsonlPath: entry.jsonlPath,
+          events,
+          samples,
+          logger,
+        }),
+      );
     } catch (error) {
       if (
         !(error instanceof Error) ||

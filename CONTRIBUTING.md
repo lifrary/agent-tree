@@ -71,9 +71,8 @@ The reason: redaction and path-safety bugs are silent failures that bypass every
 
 ### Routing through canonical helpers
 
-If you add a new code path that analyzes a session, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Claude catalogs are parse-free; Codex catalogs read bounded metadata headers. Explicit `--sessions --usage`
-or MCP `usage: true` may analyze only the already-limited rows, through
-`runPipeline` with LLM disabled. Catalog strings still need redaction before output.
+If you add a new code path that renders a session tree, route it through `runPipeline` (MCP uses the analysis/cache helper inside `createServer`). Do **not** call `buildMindMap` directly — it bypasses the pipeline's redaction policy. v0.1.0 had this exact bug for three MCP tools. Claude catalogs are parse-free; Codex catalogs read bounded metadata headers. Explicit `--sessions --usage`
+or MCP `usage: true` may analyze only the already-limited rows. Reuse the usage collector and aggregation rules without building snapshots. Catalog strings still need redaction before output.
 
 ### Adding a session source
 

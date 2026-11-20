@@ -37,6 +37,20 @@ describe('detectSegments (§7.2)', () => {
     expect(segs.length).toBeGreaterThanOrEqual(2);
   });
 
+  it('splits on standalone Korean user transitions and ignores assistant prose', () => {
+    const events: RawEvent[] = [
+      userEvent(0),
+      {
+        ...userEvent(1),
+        type: 'assistant',
+        message: { role: 'assistant', content: 'The next field is optional.' },
+      },
+      userEvent(2, false, '이제 인증을 수정하자'),
+      userEvent(3, false, '이제껏 사용한 형식을 유지해'),
+    ];
+    expect(detectSegments(events).map((segment) => segment.start_index)).toEqual([0, 2]);
+  });
+
   it('records gap boundary reason when gap > 5 min', async () => {
     const { events } = await readJsonl(FIXTURE);
     const segs = detectSegments(events);

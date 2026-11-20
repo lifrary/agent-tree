@@ -282,7 +282,10 @@ interface SegmentPhase {
   children: TopicSegment[];
 }
 
-function groupSegmentsIntoPhases(segments: TopicSegment[], events: RawEvent[]): SegmentPhase[] {
+export function groupSegmentsIntoPhases(
+  segments: TopicSegment[],
+  events: RawEvent[],
+): SegmentPhase[] {
   if (segments.length === 0) return [];
   const phases: SegmentPhase[] = [];
   let current: SegmentPhase | null = null;

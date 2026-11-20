@@ -412,6 +412,114 @@ describe('deterministic recovery evidence', () => {
     expect(node.context_snapshot_fork.clipboard_markdown).not.toContain('LATEST_SELECTED_OUTCOME');
   });
 
+  it.each([
+    [
+      'English',
+      'Do not add dependencies.',
+      'Actually, keep the wire format unchanged.',
+      'Decision: reuse the existing parser.',
+    ],
+    [
+      'Korean',
+      '새 의존성을 추가하지 마세요.',
+      '그 방식 말고 기존 형식을 유지해주세요.',
+      '기존 파서를 사용하기로 결정했습니다.',
+    ],
+  ])(
+    'prioritizes %s constraints, corrections and decisions over routine progress at the entry limit',
+    (_language, constraint, correction, decision) => {
+      const events = [
+        message(0, 'user', 'Original request.'),
+        message(1, 'user', constraint),
+        message(2, 'assistant', decision),
+        message(3, 'user', correction),
+      ];
+      for (let index = 4; index < 80; index += 1) {
+        events.push(
+          message(
+            index,
+            index % 2 === 0 ? 'user' : 'assistant',
+            index % 2 === 0 ? 'Continue.' : `Checking file ${index}.`,
+          ),
+        );
+      }
+      events.push(message(80, 'user', 'Finish validation.'));
+      events.push(message(81, 'assistant', 'Validation finished.'));
+      const { mindmap } = synthetic(events, [
+        segment(events, 0, 79, 'prior'),
+        segment(events, 80, 81, 'selected'),
+      ]);
+      const node = segmentNode(mindmap.root, 'selected');
+      for (const snapshot of [node.context_snapshot_continue, node.context_snapshot_fork]) {
+        const evidence = snapshot.evidence!;
+        expect(evidence.entries.map((entry) => entry.event_index)).toEqual(
+          expect.arrayContaining([0, 1, 2, 3, 80]),
+        );
+        expect(evidence.entries).toHaveLength(32);
+        expect(evidence.omitted_entries + evidence.entries.length).toBe(evidence.cutoff_index! + 1);
+        expect(evidence.entries.map((entry) => entry.event_index)).toEqual(
+          evidence.entries.map((entry) => entry.event_index).sort((a, b) => a - b),
+        );
+        for (const text of [constraint, correction, decision])
+          expect(snapshot.clipboard_markdown).toContain(text);
+        expect(evidence.entries.every((entry) => entry.event_index <= evidence.cutoff_index!)).toBe(
+          true,
+        );
+      }
+      expect(node.context_snapshot_fork.clipboard_markdown).not.toContain('Validation finished.');
+    },
+  );
+
+  it('retains user constraints ahead of newer assistant decisions under byte pressure', () => {
+    const events = [
+      message(0, 'user', 'Original request.'),
+      message(
+        1,
+        'user',
+        `Only change validation; preserve the public API.\n${'context '.repeat(1_000)}`,
+      ),
+      message(
+        2,
+        'user',
+        `아니요. 새 패키지 대신 기존 코드를 사용하세요.\n${'설명 '.repeat(1_000)}`,
+      ),
+    ];
+    for (let index = 3; index < 40; index += 1) {
+      events.push(
+        message(
+          index,
+          'assistant',
+          `Decision: retain option ${index}.\n${'details '.repeat(1_000)}`,
+        ),
+      );
+    }
+    events.push(message(40, 'user', 'Finish validation.'));
+    const { mindmap } = synthetic(events, [
+      segment(events, 0, 39, 'prior'),
+      segment(events, 40, 40, 'selected'),
+    ]);
+    const snapshot = segmentNode(mindmap.root, 'selected').context_snapshot_continue;
+    expect(snapshot.evidence!.entries.map((entry) => entry.event_index)).toEqual(
+      expect.arrayContaining([0, 1, 2, 40]),
+    );
+    expect(snapshot.evidence!.entries.length).toBeLessThan(32);
+    expect(snapshot.evidence!.truncated_entries).toBeGreaterThan(0);
+    expect(
+      snapshot.evidence!.entries.every((entry) => Buffer.byteLength(entry.text) <= 4_096),
+    ).toBe(true);
+    const history = snapshot.clipboard_markdown
+      .split('## Historical evidence')[1]
+      .split('## Last user instruction')[0];
+    const excerpts = history.match(
+      /Source event \d+ [\s\S]*?(?=\n\nSource event |\n\nOmitted by bounds:)/g,
+    )!;
+    expect(excerpts).toHaveLength(snapshot.evidence!.entries.length);
+    expect(
+      excerpts.reduce((bytes, text) => bytes + Buffer.byteLength(text), 0),
+    ).toBeLessThanOrEqual(36_000);
+    expect(Buffer.byteLength(snapshot.clipboard_markdown)).toBeLessThanOrEqual(80_000);
+  });
+
   it('redacts complete secret values before excerpt truncation, including keys ending beyond the cap', () => {
     const privateKey = `-----BEGIN PRIVATE KEY-----\n${'PRIVATE_MATERIAL'.repeat(2_000)}\n-----END PRIVATE KEY-----`;
     const apiKey = `sk-proj-${'SECRET_VALUE'.repeat(600)}`;

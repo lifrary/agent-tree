@@ -8,6 +8,9 @@ import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { main } from '../src/cli.js';
 import * as pipeline from '../src/cli/pipeline.js';
+import * as builder from '../src/tree/builder.js';
+import * as disk from '../src/cache/disk.js';
+import * as snapshots from '../src/tree/context_snapshot.js';
 import { DEFAULT_CONFIG } from '../src/config/schema.js';
 import { createServer } from '../src/mcp/server.js';
 import { claudeSource, encodeProjectPath } from '../src/sources/claude.js';
@@ -331,6 +334,183 @@ describe('opt-in catalog usage', () => {
       expect(spy).not.toHaveBeenCalled();
   });
 
+  it('collects catalog usage without analysis, snapshots or input hashing', async () => {
+    await claude(ids.main, mainTokens, true);
+    const entries = await listSessions({ projectCwd: project });
+    const expected = await pipeline.runPipeline({
+      match: entries[0],
+      opts: { llm: false, dryRun: true },
+      config: DEFAULT_CONFIG,
+      logger: createLoggerSync('error'),
+      quiet: true,
+    });
+    const analysis = vi.spyOn(pipeline, 'runPipeline');
+    const tree = vi.spyOn(builder, 'buildMindMap');
+    const hash = vi.spyOn(disk, 'computeInputHash');
+    const snapshot = vi.spyOn(snapshots, 'createSnapshotHistory');
+    const rows = await addCatalogUsage(entries, aggregateOptions());
+    expect(rows[0].usage).toEqual(expected.mindmap.stats.usage);
+    for (const spy of [analysis, tree, hash, snapshot]) expect(spy).not.toHaveBeenCalled();
+  });
+
+  it.each(['include', 'flatten', 'drop'] as const)(
+    'preserves complete usage and compaction order with %s sidechains',
+    async (mode) => {
+      const file = await claude(ids.main, mainTokens, true);
+      const base = { sessionId: ids.main, cwd: project, parentUuid: null };
+      const compact = (uuid: string, second: number, sidechain = false) => ({
+        ...base,
+        uuid,
+        timestamp: at(second),
+        type: 'system',
+        isSidechain: sidechain,
+        subtype: 'compact_boundary',
+        content: 'Compacted',
+        compactMetadata: { trigger: uuid, preTokens: second, postTokens: 1 },
+      });
+      await appendFile(
+        file,
+        [
+          compact('main-before', 7),
+          {
+            ...base,
+            uuid: 'inline-call',
+            timestamp: at(8),
+            type: 'assistant',
+            isSidechain: true,
+            agentId: 'inline',
+            message: {
+              id: 'inline-call',
+              role: 'assistant',
+              content: [{ type: 'text', text: 'inline work' }],
+              usage: { input_tokens: 11, output_tokens: 2 },
+            },
+          },
+          compact('inline-compaction', 9, true),
+          {
+            ...base,
+            uuid: 'later-user',
+            timestamp: at(600),
+            type: 'user',
+            isSidechain: false,
+            message: { role: 'user', content: 'Now inspect the second module' },
+          },
+          compact('main-after', 601),
+        ]
+          .map((record) => JSON.stringify(record))
+          .join('\n') + '\n',
+      );
+      await writeLines(join(file.slice(0, -6), 'subagents', 'agent-unlinked.jsonl'), [
+        {
+          ...base,
+          uuid: 'unlinked',
+          timestamp: at(10),
+          type: 'assistant',
+          isSidechain: true,
+          message: {
+            id: 'unlinked-call',
+            role: 'assistant',
+            content: 'unlinked work',
+            usage: { input_tokens: 17, output_tokens: 3 },
+          },
+        },
+      ]);
+      const entries = await listSessions({ projectCwd: project });
+      const config = {
+        ...DEFAULT_CONFIG,
+        analyzer: {
+          ...DEFAULT_CONFIG.analyzer,
+          sidechain_handling: mode,
+        },
+      };
+      const expected = await pipeline.runPipeline({
+        match: entries[0],
+        opts: { llm: false, dryRun: true },
+        config,
+        logger: createLoggerSync('error'),
+        quiet: true,
+      });
+      const [row] = await addCatalogUsage(entries, { ...aggregateOptions(), config });
+      expect(row.usage).toEqual(expected.mindmap.stats.usage);
+      expect(row.usage?.subagents).toMatchObject({
+        count: 3,
+        calls: 3,
+        prompt_tokens: 73,
+        output_tokens: 8,
+        unattributed_count: mode === 'drop' ? 2 : 1,
+      });
+      expect(row.usage?.compactions.map((item) => item.trigger)).toEqual(
+        mode === 'drop'
+          ? ['inline-compaction', 'main-before', 'main-after']
+          : mode === 'include'
+            ? ['main-before', 'main-after', 'inline-compaction']
+            : ['main-before', 'inline-compaction', 'main-after'],
+      );
+    },
+  );
+
+  it('preserves phase traversal context windows when leading noise moves behind its phase', async () => {
+    const file = await codex(ids.main);
+    const count = (input: number, second: number, window: number) => {
+      const record = codexCount(input, 1, second);
+      return {
+        ...record,
+        payload: {
+          ...record.payload,
+          info: { ...record.payload.info, model_context_window: window },
+        },
+      };
+    };
+    await writeLines(file, [
+      {
+        timestamp: at(0),
+        type: 'session_meta',
+        payload: { id: ids.main, cwd: project, source: 'cli' },
+      },
+      {
+        timestamp: at(1),
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Preparing the environment' }],
+        },
+      },
+      count(10, 2, 100),
+      { timestamp: at(3), type: 'compacted', payload: { message: 'Initial compaction' } },
+      {
+        timestamp: at(600),
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'user',
+          content: [{ type: 'input_text', text: 'Review the parser behavior' }],
+        },
+      },
+      {
+        timestamp: at(601),
+        type: 'response_item',
+        payload: {
+          type: 'message',
+          role: 'assistant',
+          content: [{ type: 'output_text', text: 'Review completed' }],
+        },
+      },
+      count(20, 602, 200),
+    ]);
+    const entries = await listSessions({ projectCwd: project, source: 'codex' });
+    const expected = await pipeline.runPipeline({
+      match: entries[0],
+      opts: { llm: false, dryRun: true },
+      config: DEFAULT_CONFIG,
+      logger: createLoggerSync('error'),
+      quiet: true,
+    });
+    const [row] = await addCatalogUsage(entries, aggregateOptions());
+    expect(row.usage).toEqual(expected.mindmap.stats.usage);
+    expect(row.usage?.context_window).toBe(100);
+  });
+
   it('shares main/child fields and combined totals across CLI and MCP', async () => {
     await claude(ids.main, mainTokens, true);
     const run = await cli('--sessions', '--usage', '--json');
@@ -386,14 +566,15 @@ describe('opt-in catalog usage', () => {
     const older = await claude(ids.missing, mainTokens);
     await utimes(older, new Date(at(0)), new Date(at(0)));
     await utimes(newest, new Date(at(1)), new Date(at(1)));
-    const original = pipeline.runPipeline;
+    const pipelineRead = vi.spyOn(pipeline, 'runPipeline');
+    const original = claudeSource.read;
     let active = 0;
     let peak = 0;
-    const analyze = vi.spyOn(pipeline, 'runPipeline').mockImplementation(async (input) => {
+    const analyze = vi.spyOn(claudeSource, 'read').mockImplementation(async (...input) => {
       active++;
       peak = Math.max(peak, active);
       try {
-        return await original(input);
+        return await original(...input);
       } finally {
         active--;
       }
@@ -406,15 +587,11 @@ describe('opt-in catalog usage', () => {
     expect((await catalog({ usage: true, limit: 1 })).map((row) => row.sessionId)).toEqual([
       ids.main,
     ]);
-    expect(analyze.mock.calls.map(([input]) => input.match.jsonlPath)).toEqual([newest, newest]);
+    expect(analyze.mock.calls.map(([file]) => file)).toEqual([newest, newest]);
     await catalog({ usage: true, limit: 2 });
     expect(analyze).toHaveBeenCalledTimes(4);
     expect(peak).toBe(1);
-    for (const [input] of analyze.mock.calls)
-      expect(input).toMatchObject({
-        opts: { llm: false, dryRun: true },
-        quiet: true,
-      });
+    expect(pipelineRead).not.toHaveBeenCalled();
   });
 
   it('redacts paths, nested usage strings, text, JSON and diagnostics with project policy', async () => {
@@ -444,11 +621,11 @@ describe('opt-in catalog usage', () => {
   it('isolates unreadable entries on both surfaces and labels unavailable totals', async () => {
     const unavailable = await claude(ids.missing, mainTokens);
     await claude(ids.main, mainTokens);
-    const original = pipeline.runPipeline;
-    vi.spyOn(pipeline, 'runPipeline').mockImplementation((input) => {
-      if (input.match.jsonlPath === unavailable)
+    const original = claudeSource.read;
+    vi.spyOn(claudeSource, 'read').mockImplementation((file, options) => {
+      if (file === unavailable)
         return Promise.reject(Object.assign(new Error('denied'), { code: 'EACCES' }));
-      return original(input);
+      return original(file, options);
     });
     const run = await cli('--sessions', '--usage', '--json');
     expect(run.code, run.stderr).toBe(0);
@@ -476,7 +653,7 @@ describe('opt-in catalog usage', () => {
     expect(rows.find((row) => row.sessionId === ids.missing)?.usage_status).toBe('unavailable');
     expect(rows.find((row) => row.sessionId === ids.main)?.total_prompt_tokens).toBe(130);
     const bug = new TypeError('programming error');
-    vi.spyOn(pipeline, 'runPipeline').mockRejectedValueOnce(bug);
+    vi.spyOn(claudeSource, 'read').mockRejectedValueOnce(bug);
     await expect(addCatalogUsage(entries, aggregateOptions())).rejects.toBe(bug);
   });
 

@@ -65,6 +65,7 @@ export function createSnapshotHistory(
   const gaps: boolean[] = [];
   const preceding = new Map<string, number | null>();
   const entries = new Map<number, SnapshotEvidenceEntry>();
+  const priorities = new Map<number, number>();
   const entryCosts = new Map<number, number>();
   const firstInstructions: Array<number | null> = [];
   const lastInstructions: Array<number | null> = [];
@@ -98,6 +99,7 @@ export function createSnapshotHistory(
       omitted_bytes: Buffer.byteLength(safe) - Buffer.byteLength(excerpt),
     };
     entries.set(index, entry);
+    priorities.set(index, evidencePriority(entry));
     entryCosts.set(index, Buffer.byteLength(renderEntry(entry)));
     if (entry.role === 'user') {
       firstInstructions[index] ??= index;
@@ -157,7 +159,11 @@ export function createSnapshotHistory(
     for (const anchor of [firstInstruction, lastInstruction]) {
       if (anchor !== null) eligible.set(anchor, entries.get(anchor)!);
     }
-    const ordered = [...eligible.values()].sort((a, b) => a.event_index - b.event_index);
+    const ranked = [...eligible.values()].sort(
+      (a, b) =>
+        priorities.get(b.event_index)! - priorities.get(a.event_index)! ||
+        b.event_index - a.event_index,
+    );
     const kept = new Map<number, SnapshotEvidenceEntry>();
     let bytes = 0;
     const keep = (entry: SnapshotEvidenceEntry | undefined) => {
@@ -167,10 +173,10 @@ export function createSnapshotHistory(
       kept.set(entry.event_index, entry);
       bytes += cost;
     };
-    // Preserve the earliest provable ask and current question, then recent evidence.
+    // Priority changes selection only, never ancestry, cutoff, or verbatim attribution.
     keep(firstInstruction === null ? undefined : entries.get(firstInstruction));
     keep(lastInstruction === null ? undefined : entries.get(lastInstruction));
-    for (let i = ordered.length - 1; i >= 0; i -= 1) keep(ordered[i]);
+    for (const entry of ranked) keep(entry);
     const bounded = [...kept.values()].sort((a, b) => a.event_index - b.event_index);
     return {
       scope,
@@ -238,6 +244,17 @@ export function createSnapshotHistory(
       return { continue: continuation, fork };
     },
   };
+}
+
+function evidencePriority(entry: SnapshotEvidenceEntry): number {
+  // Inspect only the redacted, bounded excerpt that will actually be quoted.
+  const constraintOrCorrection =
+    /\b(?:do not|don['’]t|must|never|only|keep|preserve|unchanged|instead|rather than|correction|actually)\b|^\s*no[,!.]|하지\s*(?:마|말)|금지|반드시|유지|보존|말고|아니(?:요|라)|대신|정정|바꾸지|변경하지|만\s*(?:변경|수정|사용|추가|처리|허용)/imu;
+  const recordedDecision =
+    /\b(?:decision|decided|chosen|agreed|rejected)\b|결정|선택|채택|하기로|제외하기로/iu;
+  if (entry.role === 'user' && constraintOrCorrection.test(entry.text)) return 2;
+  if (recordedDecision.test(entry.text)) return 1;
+  return 0;
 }
 
 function lowerBound(indexes: number[], value: number): number {
@@ -330,7 +347,7 @@ function renderMarkdown(
   }
   if (evidence.omitted_entries > 0 || evidence.truncated_entries > 0) {
     history.push(
-      `Omitted by bounds: ${evidence.traversal_truncated ? 'at least ' : ''}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then recent evidence. Consult the source for omitted context.`,
+      `Omitted by bounds: ${evidence.traversal_truncated ? 'at least ' : ''}${evidence.omitted_entries} textual events; ${evidence.truncated_entries} included excerpts truncated. The earliest provable and latest instructions are prioritized, then likely user constraints/corrections and recorded decisions using English/Korean wording heuristics, then recent evidence. These heuristics can miss relevant context. Consult the source for omitted context.`,
     );
   }
   if (evidence.excluded_events > 0)
